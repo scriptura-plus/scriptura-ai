@@ -283,41 +283,79 @@ a:hover { text-decoration: underline; }
   margin: 0;
 }
 
+/* ─── Home page shell ─────────────────────────────────────────────────────── */
+.home-main {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 14px 14px 80px;
+}
+.home-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  gap: 10px;
+}
+.home-brand {
+  font-family: var(--serif);
+  font-size: 18px;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.home-controls {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  flex-shrink: 0;
+}
+.home-select {
+  appearance: none;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 5px 10px;
+  font-size: 13px;
+  color: var(--ink-soft);
+  font-family: inherit;
+  cursor: pointer;
+  height: 32px;
+}
+
 /* ─── Stepped Verse Picker ────────────────────────────────────────────────── */
 .picker-root {
   display: grid;
   gap: 0;
 }
 .picker-section-header {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.09em;
   text-transform: uppercase;
   color: var(--ink-soft);
   margin-bottom: 10px;
 }
 .picker-step-label {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.09em;
   text-transform: uppercase;
   color: var(--ink-soft);
   margin-bottom: 6px;
 }
 .picker-book-title {
   font-family: var(--serif);
-  font-size: 26px;
+  font-size: 30px;
   font-weight: 700;
   color: var(--ink);
-  margin-bottom: 16px;
-  line-height: 1.2;
+  margin-bottom: 18px;
+  line-height: 1.15;
 }
 .picker-back {
   background: transparent;
   border: none;
-  padding: 0 0 16px;
+  padding: 0 0 14px;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 15px;
   color: var(--ink-soft);
   text-align: left;
   font-family: inherit;
@@ -327,72 +365,99 @@ a:hover { text-decoration: underline; }
 
 .picker-grid {
   display: grid;
-  gap: 6px;
+  gap: 7px;
 }
-.picker-grid-books {
-  grid-template-columns: repeat(7, 1fr);
-}
-.picker-grid-numbers {
-  grid-template-columns: repeat(7, 1fr);
-}
+
+/* Mobile-first: 6 cols for books, 4 cols for numbers */
+.picker-grid-books   { grid-template-columns: repeat(6, 1fr); }
+.picker-grid-numbers { grid-template-columns: repeat(4, 1fr); }
 
 .picker-btn {
   border: none;
-  border-radius: 8px;
+  border-radius: 10px;
   cursor: pointer;
   font-family: inherit;
-  font-weight: 600;
-  transition: transform 0.1s ease, box-shadow 0.1s ease, background 0.1s ease;
+  font-weight: 700;
+  transition: transform 0.1s ease, box-shadow 0.1s ease, background 0.15s ease;
   -webkit-tap-highlight-color: transparent;
+  user-select: none;
 }
 .picker-btn:active {
-  transform: scale(0.93);
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  transform: scale(0.91);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.10);
 }
 
+/* Book abbreviation buttons */
 .picker-btn-book {
-  font-size: 12px;
-  padding: 8px 4px;
+  font-size: 14px;
+  min-height: 52px;
+  padding: 10px 3px;
   line-height: 1;
-  color: #2d4560;
+  color: #243a52;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
-.picker-btn-ot {
-  background: #c8d6e2;
-}
-.picker-btn-ot:hover { background: #b8c9d7; }
+.picker-btn-ot { background: #c6d5e3; }
+.picker-btn-ot:hover { background: #b5c8d8; }
+.picker-btn-nt { background: #bccde0; }
+.picker-btn-nt:hover { background: #aabfd5; }
 
-.picker-btn-nt {
-  background: #bfcfde;
-}
-.picker-btn-nt:hover { background: #afc1d2; }
-
+/* Chapter / verse number buttons */
 .picker-btn-number {
-  font-size: 16px;
-  padding: 14px 6px;
-  background: #c8d6e2;
-  color: #2d4560;
+  font-size: 20px;
+  min-height: 68px;
+  background: #c6d5e3;
+  color: #1e3249;
   aspect-ratio: 1;
   display: flex;
   align-items: center;
   justify-content: center;
   line-height: 1;
 }
-.picker-btn-number:hover { background: #b8c9d7; }
+.picker-btn-number:hover { background: #b5c8d8; }
 
-@media (max-width: 480px) {
-  .picker-grid-books  { grid-template-columns: repeat(6, 1fr); gap: 5px; }
-  .picker-grid-numbers { grid-template-columns: repeat(6, 1fr); gap: 5px; }
-  .picker-btn-book  { font-size: 11px; padding: 9px 3px; }
-  .picker-btn-number { font-size: 15px; padding: 12px 4px; }
-  .picker-book-title { font-size: 22px; }
+/* Collapsible free reference */
+.picker-free-row {
+  margin-top: 22px;
+  display: flex;
+  align-items: center;
 }
+.picker-free-toggle {
+  background: transparent;
+  border: none;
+  padding: 0;
+  font-size: 14px;
+  color: var(--ink-soft);
+  cursor: pointer;
+  font-family: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.picker-free-toggle:hover { color: var(--ink); }
+
+/* Tablet — iPad mini / standard (≥ 600px) */
 @media (min-width: 600px) {
-  .picker-grid-books  { grid-template-columns: repeat(8, 1fr); }
-  .picker-grid-numbers { grid-template-columns: repeat(9, 1fr); }
+  .picker-grid-books   { grid-template-columns: repeat(7, 1fr); gap: 8px; }
+  .picker-grid-numbers { grid-template-columns: repeat(5, 1fr); gap: 8px; }
+  .picker-btn-book   { font-size: 14px; min-height: 54px; }
+  .picker-btn-number { font-size: 22px; min-height: 76px; }
+  .picker-section-header { font-size: 13px; }
 }
-@media (min-width: 900px) {
-  .picker-grid-books  { grid-template-columns: repeat(10, 1fr); }
-  .picker-grid-numbers { grid-template-columns: repeat(11, 1fr); }
+
+/* iPad Pro / large tablet (≥ 768px) */
+@media (min-width: 768px) {
+  .picker-grid-books   { grid-template-columns: repeat(8, 1fr); gap: 9px; }
+  .picker-grid-numbers { grid-template-columns: repeat(6, 1fr); gap: 9px; }
+  .picker-btn-book   { font-size: 15px; min-height: 58px; }
+  .picker-btn-number { font-size: 24px; min-height: 82px; }
+  .picker-book-title { font-size: 34px; }
+}
+
+/* Desktop (≥ 1024px) */
+@media (min-width: 1024px) {
+  .picker-grid-books   { grid-template-columns: repeat(9, 1fr); }
+  .picker-grid-numbers { grid-template-columns: repeat(8, 1fr); }
 }
 
 /* Extra analysis blocks */

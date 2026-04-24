@@ -37,6 +37,7 @@ export function VersePicker({ lang }: { lang: Lang }) {
   const [step, setStep] = useState<Step>("book");
   const [book, setBook] = useState<Book | null>(null);
   const [chapter, setChapter] = useState<number | null>(null);
+  const [freeOpen, setFreeOpen] = useState(false);
   const [free, setFree] = useState("");
 
   function go(ref: string) {
@@ -129,7 +130,7 @@ export function VersePicker({ lang }: { lang: Lang }) {
         ))}
       </div>
 
-      <div className="picker-section-header" style={{ marginTop: 20 }}>
+      <div className="picker-section-header" style={{ marginTop: 22 }}>
         Christian Greek Scriptures
       </div>
       <div className="picker-grid picker-grid-books">
@@ -144,17 +145,28 @@ export function VersePicker({ lang }: { lang: Lang }) {
         ))}
       </div>
 
-      <div className="divider" style={{ margin: "20px 0 12px" }} />
-      <form onSubmit={onFree} className="row" style={{ gap: 8 }}>
-        <input
-          className="input"
-          placeholder={t.enterReference}
-          value={free}
-          onChange={(e) => setFree(e.target.value)}
-          style={{ flex: 1 }}
-        />
-        <button type="submit" className="btn">{t.go}</button>
-      </form>
+      <div className="picker-free-row">
+        {!freeOpen ? (
+          <button
+            className="picker-free-toggle"
+            onClick={() => setFreeOpen(true)}
+          >
+            {t.enterReference}
+          </button>
+        ) : (
+          <form onSubmit={onFree} className="row" style={{ gap: 8, width: "100%" }}>
+            <input
+              className="input"
+              placeholder={t.enterReference}
+              value={free}
+              onChange={(e) => setFree(e.target.value)}
+              style={{ flex: 1 }}
+              autoFocus
+            />
+            <button type="submit" className="btn">{t.go}</button>
+          </form>
+        )}
+      </div>
     </div>
   );
 }

@@ -1,13 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Header } from "@/components/Header";
-import { LanguageProviderSelector } from "@/components/LanguageProviderSelector";
 import { VersePicker } from "@/components/VersePicker";
-import { dictionary, type Lang } from "@/lib/i18n/dictionary";
+import { LANGS, type Lang } from "@/lib/i18n/dictionary";
 import {
   defaultProvider,
   isProvider,
+  PROVIDERS,
   type Provider,
 } from "@/lib/ai/providers";
 
@@ -16,12 +15,10 @@ export default function Home() {
   const [provider, setProvider] = useState<Provider>(defaultProvider());
 
   useEffect(() => {
-    const storedLang = localStorage.getItem("scriptura.lang");
-    if (storedLang === "en" || storedLang === "ru" || storedLang === "es") {
-      setLang(storedLang);
-    }
-    const storedProvider = localStorage.getItem("scriptura.provider");
-    if (isProvider(storedProvider)) setProvider(storedProvider);
+    const sl = localStorage.getItem("scriptura.lang");
+    if (sl === "en" || sl === "ru" || sl === "es") setLang(sl as Lang);
+    const sp = localStorage.getItem("scriptura.provider");
+    if (isProvider(sp)) setProvider(sp);
   }, []);
 
   function onLang(l: Lang) {
@@ -33,20 +30,34 @@ export default function Home() {
     localStorage.setItem("scriptura.provider", p);
   }
 
-  const t = dictionary[lang];
   return (
-    <main className="container">
-      <Header lang={lang} />
-      <h1 className="h1">{t.appName}</h1>
-      <p className="muted" style={{ marginTop: 0 }}>{t.tagline}</p>
-      <div className="spacer" />
-      <LanguageProviderSelector
-        lang={lang}
-        provider={provider}
-        onLang={onLang}
-        onProvider={onProvider}
-      />
-      <div className="spacer" />
+    <main className="home-main">
+      <div className="home-topbar">
+        <span className="home-brand">📜 Scriptura AI</span>
+        <div className="home-controls">
+          <select
+            className="home-select"
+            value={lang}
+            onChange={(e) => onLang(e.target.value as Lang)}
+            aria-label="Language"
+          >
+            {LANGS.map((l) => (
+              <option key={l.id} value={l.id}>{l.label}</option>
+            ))}
+          </select>
+          <select
+            className="home-select"
+            value={provider}
+            onChange={(e) => onProvider(e.target.value as Provider)}
+            aria-label="AI provider"
+          >
+            {PROVIDERS.map((p) => (
+              <option key={p.id} value={p.id}>{p.label}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
       <VersePicker lang={lang} />
     </main>
   );
