@@ -105,9 +105,11 @@ async function runGemini(prompt: string, lang: Lang, expectJSON = false): Promis
       "No explanation before or after. The first character must be { or [. The last character must be } or ]."
     : prompt;
 
+  // Structured JSON lenses need more room — angles alone can be ~1500 tokens of JSON.
+  const maxOutputTokens = expectJSON ? 8000 : 3000;
   const generationConfig: Record<string, unknown> = {
     temperature: 0.7,
-    maxOutputTokens: 3000,
+    maxOutputTokens,
     // NOTE: responseMimeType "application/json" is intentionally NOT used here.
     // Gemini 2.5-flash in JSON mode with complex multi-step prompts often returns
     // empty parts. We rely on the CRITICAL prompt suffix + fence stripping instead.
