@@ -302,11 +302,21 @@ export function buildLensPrompt(args: {
         `    {\n` +
         `      "title": "sharp statement of what diverges, max 10 words, in ${langName}",\n` +
         `      "quotes": [\n` +
-        `        {"label": "translation name", "text": "the specific phrase from that translation"},\n` +
-        `        {"label": "translation name", "text": "the specific phrase from that translation"},\n` +
-        `        {"label": "translation name", "text": "the specific phrase from that translation"}\n` +
+        `        {"label": "LITERAL", "text": "the specific phrase from the literal rendering"},\n` +
+        (args.lang === "ru"
+          ? `        {"label": "SYNODAL", "text": "the specific phrase from Synodal"},\n` +
+            `        {"label": "RBO", "text": "the specific phrase from RBO"},\n` +
+            `        {"label": "NWT", "text": "the specific phrase from NWT"}\n`
+          : `        {"label": "ESV", "text": "the specific phrase from ESV"},\n` +
+            `        {"label": "NLT", "text": "the specific phrase from NLT"},\n` +
+            `        {"label": "NWT", "text": "the specific phrase from NWT"}\n`
+        ) +
         `      ],\n` +
-        `      "analysis": "one dense paragraph — journal style — what each choice does and what is at stake, in ${langName}"\n` +
+        `      "analysis": [\n` +
+        `        "Short paragraph 1 — what one or two translations do and why it matters (2–4 lines max).",\n` +
+        `        "Short paragraph 2 — what the other versions do, any contrast (2–4 lines max).",\n` +
+        `        "Short paragraph 3 — what is at stake theologically, logically, or rhetorically (1–3 lines max)."\n` +
+        `      ]\n` +
         `    }\n` +
         `  ],\n` +
         `  "verdict": "one sentence — diagnostic conclusion only, in ${langName}. ` +
@@ -317,6 +327,8 @@ export function buildLensPrompt(args: {
         `DO NOT name a winning translation. DO NOT say one is better, more accurate, or preferred. Diagnose; do not rank."\n` +
         `}\n\n` +
 
+        `ANALYSIS RULE: "analysis" must be an array of 2–3 short paragraphs. ` +
+        `No paragraph longer than 4 lines. No single-block wall of text. ` +
         `JSON only. No markdown fences. No prose before or after. All string values in ${langName} except translation labels.`
       );
   }

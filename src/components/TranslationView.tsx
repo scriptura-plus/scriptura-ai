@@ -6,12 +6,26 @@ import type { Provider } from "@/lib/ai/providers";
 import { extractJSONObject } from "@/lib/ai/parseJSON";
 
 type Quote = { label: string; text: string };
-type Divergence = { title: string; quotes: Quote[]; analysis: string };
+type Divergence = {
+  title: string;
+  quotes: Quote[];
+  analysis: string | string[];
+};
 type TranslationData = {
   versions: Record<string, string>;
   divergences: Divergence[];
   verdict: string;
 };
+
+/** Normalize analysis to always be an array of paragraph strings */
+function toParas(analysis: string | string[]): string[] {
+  if (Array.isArray(analysis)) return analysis.filter(Boolean);
+  // Legacy string: split on double-newline or sentence-boundary heuristic
+  const byNewline = analysis.split(/\n\n+/).map((s) => s.trim()).filter(Boolean);
+  if (byNewline.length > 1) return byNewline;
+  // Single block — return as-is (better than nothing)
+  return [analysis];
+}
 
 function extractData(raw: string): TranslationData | null {
   const parsed = extractJSONObject<TranslationData>(raw);
@@ -88,20 +102,28 @@ export function TranslationView({
   return (
     <div style={{ display: "grid", gap: 20 }}>
 
-      {/* Divergence blocks */}
+      {/* Divergence cards */}
       {data.divergences.map((div, i) => (
         <div key={i} className="translation-block">
           <div className="translation-block-title">{div.title}</div>
           <div className="angle-card-divider" />
-          <div className="translation-quotes">
+
+          {/* Translation rows */}
+          <div className="translation-lines">
             {div.quotes.map((q, j) => (
-              <div key={j} className="translation-quote-row">
-                <span className="translation-quote-label">{q.label}</span>
-                <span className="translation-quote-text">"{q.text}"</span>
+              <div key={j} className="translation-line">
+                <span className="translation-label">{q.label}</span>
+                <span className="translation-text">"{q.text}"</span>
               </div>
             ))}
           </div>
-          <p className="translation-analysis">{div.analysis}</p>
+
+          {/* Analysis — one <p> per paragraph */}
+          <div className="translation-analysis">
+            {toParas(div.analysis).map((para, k) => (
+              <p key={k}>{para}</p>
+            ))}
+          </div>
         </div>
       ))}
 
