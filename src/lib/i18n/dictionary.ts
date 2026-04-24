@@ -45,6 +45,8 @@ export const dictionary = {
     shareFrom: "Shared from Scriptura AI",
     anchor: "Anchor",
     whyItMatters: "Why it matters",
+    original: "Original",
+    gap: "What is lost",
   },
   ru: {
     appName: "Scriptura AI",
@@ -84,6 +86,8 @@ export const dictionary = {
     shareFrom: "Поделились из Scriptura AI",
     anchor: "Опора",
     whyItMatters: "Почему это важно",
+    original: "Оригинал",
+    gap: "Что теряется",
   },
   es: {
     appName: "Scriptura AI",
@@ -123,5 +127,7 @@ export const dictionary = {
     shareFrom: "Compartido desde Scriptura AI",
     anchor: "Ancla",
     whyItMatters: "Por qué importa",
+    original: "Original",
+    gap: "Lo que se pierde",
   },
 } as const;

@@ -154,19 +154,77 @@ export function buildLensPrompt(args: {
     // ─── WORD ─────────────────────────────────────────────────────────────────
     case "word":
       return (
-        header() +
-        `${OUTPUT_STRUCTURE}\n\n` +
-        `Task: Hunt for 2–3 words or short phrases in this verse where the original language — Greek or Hebrew — ` +
-        `does something the translation cannot quite capture, or quietly chooses not to.\n\n` +
-        `For each word:\n` +
-        `1. Quote the original word with transliteration.\n` +
-        `2. Show what it literally carries — its physical force, its range of meaning, its tone in the original.\n` +
-        `3. Show exactly where the translation smooths it over, domesticates it, softens it, or accidentally flattens it.\n` +
-        `4. Show what that gap costs the reader — what they miss about the verse because of the translation choice.\n\n` +
-        `This is not a lexicon. Do not write dictionary entries. Write discoveries.\n` +
-        `Every word chosen must make the reader think: "That word does far more than I realized."\n` +
-        `Hook with the most surprising word. Open the analysis with the observation, not with "The Greek word X means..."` +
-        tail
+        `${fence}\n\n` +
+        `Verse: ${args.reference}\n"${args.verseText}"\n\n` +
+        `All string values must be written in ${langName}.\n\n` +
+        `${EDITORIAL_VOICE(langName)}\n\n` +
+        `${JARGON_BAN}\n\n` +
+
+        `STEP 1 — HUNT FOR WORD-LEVEL DISCOVERIES:\n` +
+        `Read the verse. Scan for 2–4 words or short phrases where the original Greek or Hebrew ` +
+        `does something the translation cannot capture or quietly chooses not to.\n\n` +
+        `Hunt in these categories:\n\n` +
+        `Category A — SEMANTIC RANGE:\n` +
+        `Does the original word carry a wider, stranger, or more physical range of meaning ` +
+        `than the translation suggests? What does the single translated word collapse?\n` +
+        `Example: σπλάγχνα (splanchna) covers gut, womb, bowels — translated "compassion" loses every organ.\n\n` +
+        `Category B — ROOT METAPHOR:\n` +
+        `Is there a buried physical image inside an abstract word? ` +
+        `What did the original speakers picture when they used this word?\n` +
+        `Example: χαρίζομαι (to forgive) comes from χάρις (gift, favor) — the root is giving, not releasing.\n\n` +
+        `Category C — WORD CHOICE VS ALTERNATIVE:\n` +
+        `What word did the author use, and what near-synonym could they have chosen instead? ` +
+        `Why does the actual choice matter?\n` +
+        `Example: Paul chose χαρίζομαι, not ἀφίημι — gift-giving logic, not debt-cancelling logic.\n\n` +
+        `Category D — TRANSLATION GAP:\n` +
+        `What does the ${langName} translation smooth over, flatten, or accidentally normalize? ` +
+        `What sounds ordinary in ${langName} but was strange in the original?\n\n` +
+        `Category E — TENSE, VOICE, OR MOOD:\n` +
+        `Does a grammatical form — aorist, passive, imperative, participle — carry meaning ` +
+        `that the translation paraphrases away?\n\n` +
+
+        `STEP 2 — REJECTION TEST:\n` +
+        `For each candidate, ask: "Could this be written without knowing the original word, ` +
+        `its root, its tense, or its translation gap?"\n` +
+        `If YES — reject. Only discoveries rooted in specific textual evidence survive.\n\n` +
+
+        `STEP 3 — BUILD 3 STRONGEST WORD CARDS:\n` +
+        `Choose the 3 discoveries that survived. Prefer cards from different categories.\n\n` +
+
+        `TITLE STANDARD:\n` +
+        `A sharp statement of the discovery — not a label, not a topic.\n` +
+        `BAD: "The Word for Compassion", "Greek Vocabulary", "Key Terms"\n` +
+        `GOOD: "The Organ That Got Replaced by a Feeling", "The Verb That Was Always a Gift, Never a Receipt"\n\n` +
+
+        `TEASER STANDARD:\n` +
+        `2–3 sentences. Begin with the discovery, not "The Greek word X means…". ` +
+        `Show what the original does that the translation cannot.\n\n` +
+
+        `ORIGINAL STANDARD:\n` +
+        `The original word in its script plus transliteration. Format: "word (transliteration)". ` +
+        `Example: "εὔσπλαγχνοι (eusplanchnoi)"\n\n` +
+
+        `GAP STANDARD:\n` +
+        `One sentence. Precisely what the ${langName} translation loses or flattens.\n\n` +
+
+        `WHY_IT_MATTERS STANDARD:\n` +
+        `One sentence. How the verse reads differently after seeing this word clearly.\n\n` +
+
+        `Task: Return a JSON array of exactly 3 word-card objects. ` +
+        `Output JSON only — no markdown fences, no prose before or after.\n\n` +
+
+        `Each object has exactly these keys:\n` +
+        `- "title": discovery-driven statement, max 12 words, in ${langName}\n` +
+        `- "teaser": 2–3 sentences, begins with the discovery, in ${langName}\n` +
+        `- "original": original word with transliteration, in original language script\n` +
+        `- "gap": 1 sentence — what ${langName} translation loses, in ${langName}\n` +
+        `- "why_it_matters": 1 sentence, perceptual shift, in ${langName}\n\n` +
+
+        `Output — valid JSON array only:\n` +
+        `[{"title":"...","teaser":"...","original":"...","gap":"...","why_it_matters":"..."},` +
+        `{"title":"...","teaser":"...","original":"...","gap":"...","why_it_matters":"..."},` +
+        `{"title":"...","teaser":"...","original":"...","gap":"...","why_it_matters":"..."}]` +
+        `\n\nREMINDER: JSON only. All string values except "original" in ${langName}. Every card must survive the rejection test.`
       );
 
     // ─── CONTEXT ──────────────────────────────────────────────────────────────

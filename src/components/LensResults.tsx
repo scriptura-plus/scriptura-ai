@@ -6,6 +6,7 @@ import type { LensId } from "@/lib/prompts/buildLensPrompt";
 import type { Provider } from "@/lib/ai/providers";
 import { MarkdownText } from "./MarkdownText";
 import { AngleCards } from "./AngleCards";
+import { WordCards } from "./WordCards";
 
 export function LensResults({
   lens,
@@ -79,6 +80,19 @@ export function LensResults({
   if (lens === "angles") {
     return (
       <AngleCards
+        rawText={text}
+        reference={reference}
+        verseText={verseText}
+        lang={lang}
+        provider={provider}
+      />
+    );
+  }
+
+  // Word lens renders as structured word cards
+  if (lens === "word") {
+    return (
+      <WordCards
         rawText={text}
         reference={reference}
         verseText={verseText}
