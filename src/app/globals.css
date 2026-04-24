@@ -7,6 +7,9 @@
   --accent: #8a5a2b;
   --accent-deep: #6f4720;
   --accent-soft: #c89766;
+  --ui-active: #5f7890;
+  --ui-active-deep: #4d6478;
+  --ui-focus: rgba(95, 120, 144, 0.32);
   --line: #d8c9a8;
   --shadow: 0 1px 2px rgba(60, 40, 20, 0.06), 0 8px 24px rgba(60, 40, 20, 0.08);
   --radius: 14px;
@@ -62,11 +65,11 @@ a:hover { text-decoration: underline; }
 .btn:hover { background: var(--bg-alt); border-color: var(--accent-soft); }
 .btn:active { transform: scale(.98); }
 .btn-primary {
-  background: var(--accent);
-  color: #fbf6ea;
-  border-color: var(--accent);
+  background: var(--ui-active);
+  color: #f0f4f8;
+  border-color: var(--ui-active);
 }
-.btn-primary:hover { background: var(--accent-deep); border-color: var(--accent-deep); }
+.btn-primary:hover { background: var(--ui-active-deep); border-color: var(--ui-active-deep); }
 .btn-ghost { background: transparent; }
 
 .input, .select {
@@ -81,8 +84,8 @@ a:hover { text-decoration: underline; }
 }
 .input:focus, .select:focus {
   outline: none;
-  border-color: var(--accent-soft);
-  box-shadow: 0 0 0 3px rgba(200,151,102,0.25);
+  border-color: var(--ui-active);
+  box-shadow: 0 0 0 3px var(--ui-focus);
 }
 
 .h1 { font-family: var(--serif); font-size: 30px; line-height: 1.15; margin: 0 0 4px; letter-spacing: -0.01em; }
@@ -110,7 +113,7 @@ a:hover { text-decoration: underline; }
   transition: background .12s ease, color .12s ease, border-color .12s ease;
 }
 .tab:hover { background: var(--bg-alt); }
-.tab.active { background: var(--accent); color: #fbf6ea; border-color: var(--accent); }
+.tab.active { background: var(--ui-active); color: #f0f4f8; border-color: var(--ui-active); }
 
 .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
 .spacer { height: 16px; }
