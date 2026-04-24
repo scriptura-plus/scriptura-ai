@@ -26,64 +26,75 @@ export function buildExpandPrompt(args: {
     `${EDITORIAL_VOICE(langName)}\n\n` +
     `${JARGON_BAN}\n\n` +
 
-    `PURPOSE OF THIS ARTICLE:\n` +
-    `The user has already seen a short card teaser for this angle. ` +
-    `Your job is NOT to repeat or pad that teaser. ` +
-    `Your job is to go deeper — to explain the hidden mechanism fully, ` +
-    `add at least one new concrete detail the teaser did not contain, ` +
-    `and leave the reader with a real understanding of why this detail matters in the verse.\n\n` +
+    `GOAL OF THIS ARTICLE:\n` +
+    `The user already saw a short card teaser. Do not repeat it. ` +
+    `Your job is to make the reader feel: ` +
+    `"I see the evidence. This is not just an AI making a beautiful claim." ` +
+    `The article must be evidence-based, not merely eloquent. ` +
+    `Shorter and denser is better than longer and padded. ` +
+    `Write in ${langName}. Target: 450–700 words, 4–6 tight sections.\n\n` +
 
     `OPENING RULE — mandatory:\n` +
-    `Your first sentence must engage the anchor directly: "${args.anchor}". ` +
-    `Quote it or point at it immediately. ` +
-    `Banned openings (do not use any of these patterns):\n` +
-    `- Any general statement about life, humanity, or the world\n` +
-    `- Any moral or inspirational claim\n` +
-    `- Any devotional opener ("This verse teaches…", "God reminds us…")\n` +
-    `- Any paraphrase of the whole verse\n` +
-    `- Any rhetorical question about broad human experience\n` +
-    `The first sentence must be specific, grounded, and immediately surprising.\n\n` +
+    `Your first sentence must name the claim directly, rooted in the anchor: "${args.anchor}". ` +
+    `Do not open with: a general life statement, a moral claim, a devotional opener, ` +
+    `a paraphrase of the whole verse, or a rhetorical question about humanity.\n\n` +
 
-    `MANDATORY DEPTH REQUIREMENT:\n` +
-    `The article must include at least one of the following concrete supporting details — ` +
-    `something not present in the card teaser:\n` +
-    `a) Original-language contrast: name the Greek or Hebrew word, give transliteration, ` +
-    `show what the common translation says vs what the word actually carries ` +
-    `(e.g., χαρίζομαι "to give as a gift" vs ἀφίημι "to release a debt")\n` +
-    `b) Translation comparison: show how 2-3 different translations render the anchor phrase, ` +
-    `and what each choice reveals or conceals\n` +
-    `c) Rhetorical or structural observation: show how the sentence's structure, ` +
-    `word order, or use/absence of conjunctions creates the effect\n` +
-    `d) Immediate context: show how the verse immediately before or after changes ` +
-    `the pressure or meaning of the anchor phrase\n` +
-    `e) Short comparison table if it clarifies a translation gap (use markdown)\n\n` +
-    `If you cannot include any of these, do not pad with generic observations. ` +
-    `Use whatever concrete detail is available and be precise about what you know vs infer.\n\n` +
+    `MANDATORY STRUCTURE — follow this in order:\n\n` +
 
-    `STRUCTURE:\n` +
-    `1. HOOK — engage the anchor phrase immediately. ` +
-    `State the observation. 1-2 sentences. "I never read it that way." effect.\n\n` +
-    `2. WHAT THE USUAL READING MISSES — show what a first-pass reader assumes, ` +
-    `and what that assumption causes them to overlook. Be specific. ` +
-    `Do not say "most readers miss this" — show them skipping past it.\n\n` +
-    `3. THE MECHANISM — explain in full what the text is actually doing. ` +
-    `This is where the mandatory concrete detail goes. ` +
-    `Work through it methodically: what does the original language/structure/context reveal? ` +
-    `Why did the author make this choice? What changes in the verse once you see it?\n\n` +
-    `4. COMPACT CLOSE — 1-2 sentences. ` +
-    `Not a summary. Not a moral. A reframing, a reversal, or a line that opens the thought wider. ` +
-    `The reader should sit with it.\n\n` +
+    `**1. CLAIM**\n` +
+    `State the observation from the angle clearly and narrowly. ` +
+    `One tight paragraph. What specifically is happening in the anchor? ` +
+    `Do not editorialize yet — just state the claim precisely.\n\n` +
+
+    `**2. EVIDENCE**\n` +
+    `Show why the claim is credible. Use the most relevant evidence available. ` +
+    `Pick from what actually applies to this angle:\n` +
+    `- Original-language word: give the word in its original script, transliteration, ` +
+    `plain-language meaning, and why that meaning is supported\n` +
+    `- Word contrast: show what alternative word the author could have chosen ` +
+    `and what that word would have meant differently\n` +
+    `- Translation handling: how do 2–3 major translations render this word or phrase? ` +
+    `What does each choice reveal or compress?\n` +
+    `- Rhetorical or structural feature: how does word order, asyndeton, ` +
+    `parallelism, or compression create the effect?\n` +
+    `- Immediate context: does the verse before or after change the pressure of this phrase?\n\n` +
+    `If the angle involves a Greek or Hebrew word, a compact comparison table is encouraged:\n` +
+    `| Element | What it says | What it hides or compresses |\n` +
+    `|---|---|---|\n` +
+    `or:\n` +
+    `| Word | Basic force | What gets lost in translation |\n` +
+    `|---|---|---|\n\n` +
+
+    `**3. REASONING**\n` +
+    `Connect the evidence to the conclusion step by step. ` +
+    `Do not jump from "Greek word X exists" to "therefore the whole verse means Y." ` +
+    `Show the logical bridge: what does the evidence make more likely? ` +
+    `What does it rule out? What does it leave open?\n\n` +
+
+    `**4. LIMITATION**\n` +
+    `If the claim is interpretive or rests on probabilistic lexical evidence, say so. ` +
+    `Use precise limiting language, for example:\n` +
+    `- "This does not mean the common translation is wrong; it compresses two distinct models into one word."\n` +
+    `- "The point is not that this word always carries this force, but that here the context supports it."\n` +
+    `- "This is a strong lexical clue, not a license to build a doctrine from one word."\n` +
+    `A limitation does not weaken the article. It makes the reasoning trustworthy.\n\n` +
+
+    `**5. PAYOFF**\n` +
+    `Explain how the verse reads differently after the evidence is considered. ` +
+    `One short paragraph. Not a moral appeal. Not a question. ` +
+    `A compact editorial insight — the last line of a good essay, not a school report.\n\n` +
 
     `HARD RULES:\n` +
-    `- Stay inside the angle. Every sentence must serve the observation in "${args.angleTitle}".\n` +
-    `- Deepen, do not repeat. Add real value beyond the teaser.\n` +
-    `- No sermon language: no "we should", "we must", "let us", "God calls us to".\n` +
-    `- No motivational filler: no "this reminds us", "this encourages us", "what a beautiful truth".\n` +
-    `- No banned jargon. If a religious term appears in the verse, translate it immediately.\n` +
-    `- If uncertain about an original-language claim, phrase it carefully ("the Greek suggests…", ` +
-    `"one reading of this construction is…"). Do not fabricate. Do not avoid depth.\n` +
-    `- Length: 350–500 words.\n` +
-    `- Markdown allowed: **bold** for emphasis, tables for comparisons. No h1 headings.` +
+    `- Do not repeat the same claim across multiple paragraphs in different words.\n` +
+    `- Do not use: "scholars say", "many experts believe" without a real basis.\n` +
+    `- Do not use: "this proves", "this clearly shows", "without a doubt".\n` +
+    `- Do not fabricate lexicon references or citations.\n` +
+    `- Do not pad. Every sentence must add to the argument, not ornament it.\n` +
+    `- No sermon endings, no motivational endings, no "this opens new horizons".\n` +
+    `- No churchy language, no banned jargon. If a religious term appears in the verse, translate it immediately.\n` +
+    `- If uncertain about an original-language claim, phrase it carefully: ` +
+    `"the Greek suggests…", "one reading of this construction is…", "the root points toward…"\n` +
+    `- Markdown allowed: **bold** for key terms, tables for comparisons. No h1 headings.` +
     tail
   );
 }
