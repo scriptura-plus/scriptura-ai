@@ -283,6 +283,118 @@ a:hover { text-decoration: underline; }
   margin: 0;
 }
 
+/* ─── Stepped Verse Picker ────────────────────────────────────────────────── */
+.picker-root {
+  display: grid;
+  gap: 0;
+}
+.picker-section-header {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  margin-bottom: 10px;
+}
+.picker-step-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  margin-bottom: 6px;
+}
+.picker-book-title {
+  font-family: var(--serif);
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--ink);
+  margin-bottom: 16px;
+  line-height: 1.2;
+}
+.picker-back {
+  background: transparent;
+  border: none;
+  padding: 0 0 16px;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--ink-soft);
+  text-align: left;
+  font-family: inherit;
+  transition: color 0.15s;
+}
+.picker-back:hover { color: var(--ink); }
+
+.picker-grid {
+  display: grid;
+  gap: 6px;
+}
+.picker-grid-books {
+  grid-template-columns: repeat(7, 1fr);
+}
+.picker-grid-numbers {
+  grid-template-columns: repeat(7, 1fr);
+}
+
+.picker-btn {
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: inherit;
+  font-weight: 600;
+  transition: transform 0.1s ease, box-shadow 0.1s ease, background 0.1s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.picker-btn:active {
+  transform: scale(0.93);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+
+.picker-btn-book {
+  font-size: 12px;
+  padding: 8px 4px;
+  line-height: 1;
+  color: #2d4560;
+}
+.picker-btn-ot {
+  background: #c8d6e2;
+}
+.picker-btn-ot:hover { background: #b8c9d7; }
+
+.picker-btn-nt {
+  background: #bfcfde;
+}
+.picker-btn-nt:hover { background: #afc1d2; }
+
+.picker-btn-number {
+  font-size: 16px;
+  padding: 14px 6px;
+  background: #c8d6e2;
+  color: #2d4560;
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+.picker-btn-number:hover { background: #b8c9d7; }
+
+@media (max-width: 480px) {
+  .picker-grid-books  { grid-template-columns: repeat(6, 1fr); gap: 5px; }
+  .picker-grid-numbers { grid-template-columns: repeat(6, 1fr); gap: 5px; }
+  .picker-btn-book  { font-size: 11px; padding: 9px 3px; }
+  .picker-btn-number { font-size: 15px; padding: 12px 4px; }
+  .picker-book-title { font-size: 22px; }
+}
+@media (min-width: 600px) {
+  .picker-grid-books  { grid-template-columns: repeat(8, 1fr); }
+  .picker-grid-numbers { grid-template-columns: repeat(9, 1fr); }
+}
+@media (min-width: 900px) {
+  .picker-grid-books  { grid-template-columns: repeat(10, 1fr); }
+  .picker-grid-numbers { grid-template-columns: repeat(11, 1fr); }
+}
+
 /* Extra analysis blocks */
 .extra-block-title {
   font-family: var(--serif);
