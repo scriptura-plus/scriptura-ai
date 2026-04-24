@@ -1,16 +1,38 @@
 import type { Provider } from "./providers";
+import type { Lang } from "../i18n/dictionary";
 
 const MISSING_KEY = (envName: string) =>
   `${envName} is not set on the server. Add it to your environment (e.g. .env.local or your Vercel project settings) and restart.`;
 
-export async function runAI(provider: Provider, prompt: string): Promise<string> {
-  if (provider === "openai") return runOpenAI(prompt);
-  if (provider === "claude") return runClaude(prompt);
-  if (provider === "gemini") return runGemini(prompt);
+const LANG_NAME: Record<Lang, string> = {
+  en: "English",
+  ru: "Russian",
+  es: "Spanish",
+};
+
+function systemInstruction(lang: Lang): string {
+  const name = LANG_NAME[lang];
+  return (
+    `You are a biblical scholar assistant. ` +
+    `You MUST respond ONLY in ${name}. ` +
+    `Do not write a single word in any other language. ` +
+    `Every sentence of your response must be in ${name}. ` +
+    `This rule overrides everything else.`
+  );
+}
+
+export async function runAI(
+  provider: Provider,
+  prompt: string,
+  lang: Lang = "en",
+): Promise<string> {
+  if (provider === "openai") return runOpenAI(prompt, lang);
+  if (provider === "claude") return runClaude(prompt, lang);
+  if (provider === "gemini") return runGemini(prompt, lang);
   throw new Error(`Unknown provider: ${provider}`);
 }
 
-async function runOpenAI(prompt: string): Promise<string> {
+async function runOpenAI(prompt: string, lang: Lang): Promise<string> {
   const key = process.env.OPENAI_API_KEY;
   if (!key) throw new Error(MISSING_KEY("OPENAI_API_KEY"));
 
@@ -22,7 +44,10 @@ async function runOpenAI(prompt: string): Promise<string> {
     },
     body: JSON.stringify({
       model: "gpt-4o-mini",
-      messages: [{ role: "user", content: prompt }],
+      messages: [
+        { role: "system", content: systemInstruction(lang) },
+        { role: "user", content: prompt },
+      ],
       temperature: 0.7,
     }),
   });
@@ -36,7 +61,7 @@ async function runOpenAI(prompt: string): Promise<string> {
   return text.trim();
 }
 
-async function runClaude(prompt: string): Promise<string> {
+async function runClaude(prompt: string, lang: Lang): Promise<string> {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) throw new Error(MISSING_KEY("ANTHROPIC_API_KEY"));
 
@@ -50,6 +75,7 @@ async function runClaude(prompt: string): Promise<string> {
     body: JSON.stringify({
       model: "claude-3-5-sonnet-latest",
       max_tokens: 1500,
+      system: systemInstruction(lang),
       messages: [{ role: "user", content: prompt }],
     }),
   });
@@ -64,7 +90,7 @@ async function runClaude(prompt: string): Promise<string> {
   return text;
 }
 
-async function runGemini(prompt: string): Promise<string> {
+async function runGemini(prompt: string, lang: Lang): Promise<string> {
   const key = process.env.GOOGLE_API_KEY;
   if (!key) throw new Error(MISSING_KEY("GOOGLE_API_KEY"));
 
@@ -73,6 +99,7 @@ async function runGemini(prompt: string): Promise<string> {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
+      system_instruction: { parts: [{ text: systemInstruction(lang) }] },
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: { temperature: 0.7, maxOutputTokens: 1500 },
     }),

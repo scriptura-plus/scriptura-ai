@@ -51,7 +51,8 @@ export async function POST(req: Request) {
       );
     }
 
-    const text = await runAI(provider, prompt);
+    // Pass lang to runAI so it can enforce the language at the system-prompt level
+    const text = await runAI(provider, prompt, lang);
     return NextResponse.json({ text });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : "Analysis failed";

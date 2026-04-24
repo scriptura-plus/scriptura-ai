@@ -23,6 +23,11 @@ const LANG_NAME: Record<Lang, string> = {
   es: "Spanish",
 };
 
+const LANG_FENCE = (langName: string) =>
+  `LANGUAGE RULE: Your ENTIRE response must be written in ${langName}. ` +
+  `Do not use English or any other language. Not a single word. ` +
+  `If you are unsure of a term, use the ${langName} equivalent.`;
+
 const VOICE = (langName: string) =>
   `Write in ${langName}. Editorial voice: long-form magazine — hook first, story-driven, ` +
   `scientifically rigorous, never preachy. No moralizing. No academic throat-clearing. ` +
@@ -60,8 +65,12 @@ export function buildExtraPrompt(args: {
   lang: Lang;
 }): string {
   const langName = LANG_NAME[args.lang];
+  const fence = LANG_FENCE(langName);
+  const tail = `\n\nREMINDER: Respond ONLY in ${langName}. Do not use English unless ${langName} is English.`;
   return (
+    `${fence}\n\n` +
     `Verse: ${args.reference}\n"${args.verseText}"\n\n${VOICE(langName)}\n\n` +
-    `Task: ${TASKS[args.id]}`
+    `Task: ${TASKS[args.id]}` +
+    tail
   );
 }

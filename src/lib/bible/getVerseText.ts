@@ -6,7 +6,7 @@ export type VerseResult = { reference: string; text: string };
 
 const TRANSLATION_LABEL: Record<Lang, string> = {
   en: "English Standard Version (ESV)",
-  ru: "Russian Synodal translation",
+  ru: "Russian Synodal translation (Синодальный перевод)",
   es: "Reina-Valera 1960",
 };
 
@@ -25,11 +25,12 @@ export async function getVerseText(
 ): Promise<VerseResult> {
   const translation = TRANSLATION_LABEL[lang];
   const prompt =
-    `Return the exact biblical text of "${reference}" in ${translation}. ` +
+    `Return the exact biblical text of "${reference}" from the ${translation}. ` +
+    `The verse text MUST be in the language of that translation. ` +
     `Output JSON only, with this exact shape: {"reference": string, "text": string}. ` +
     `No commentary. No markdown. No extra keys. No prose around the JSON.`;
 
-  const raw = await runAI(provider, prompt);
+  const raw = await runAI(provider, prompt, lang);
   const parsed = extractJson(raw);
   if (parsed && typeof parsed.text === "string" && parsed.text.trim().length > 0) {
     return {
