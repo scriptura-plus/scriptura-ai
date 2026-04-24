@@ -40,23 +40,62 @@ export function buildLensPrompt(args: {
       return (
         `${fence}\n\n` +
         `Verse: ${args.reference}\n"${args.verseText}"\n\n` +
-        `Language for all text values: ${langName}. Write every string value in ${langName}.\n\n` +
-        `Task: Return a JSON array of exactly 4 angle objects. Output JSON only — no markdown fences, no prose, no explanation.\n\n` +
+        `All string values must be written in ${langName}.\n\n` +
+
+        `WHAT AN ANGLE IS:\n` +
+        `An angle is a precise observation about how this verse is constructed — how it works mechanically. ` +
+        `It is NOT a theme, a topic, a moral lesson, or a broad subject area.\n\n` +
+
+        `WHAT AN ANGLE IS NOT — reject these immediately:\n` +
+        `- Abstract noun phrases: "Compassion as the basis of kindness", "Forgiveness as a divine gift"\n` +
+        `- Academic topics: "Psychology of forgiveness", "Social dynamics of kindness", "Historical context"\n` +
+        `- Moral summaries: "The obligation to forgive", "Ethical dilemmas"\n` +
+        `- Anything that could appear as a sermon point, essay title, or textbook chapter heading\n\n` +
+
+        `THE 7 VALID ANGLE TYPES — each angle must belong to one of these:\n` +
+        `1. SEQUENCE — the verse presents ideas in a specific order; the order is the argument\n` +
+        `2. CONTRAST — the verse sets two things against each other explicitly or implicitly\n` +
+        `3. WORD WEIGHT — a single word carries more force than its translation suggests\n` +
+        `4. STRUCTURE — the verse has a repeated, chiastic, or ladder-like pattern\n` +
+        `5. CAUSE/MEASURE — one clause sets the standard or measure for another\n` +
+        `6. INCLUSION/OMISSION — the verse includes or leaves out something a reader expects\n` +
+        `7. PHRASE FORCE — a small phrase (often overlooked) changes the entire meaning of the sentence\n\n` +
+
+        `EXAMPLES OF GOOD ANGLES (for Ephesians 4:32 as reference):\n` +
+        `- "Paul opens with tenderness, not forgiveness — the sequence is deliberate" (SEQUENCE)\n` +
+        `- "Three actions form a ladder, not a list" (STRUCTURE)\n` +
+        `- "Forgiveness is calibrated not by the offense received but by grace already given" (CAUSE/MEASURE)\n` +
+        `- "The phrase 'one another' makes this verse mutual, not individual" (PHRASE FORCE)\n\n` +
+
+        `EXAMPLES OF BAD ANGLES (never return these):\n` +
+        `- "Compassion as the foundation of kindness"\n` +
+        `- "Forgiveness as a divine gift"\n` +
+        `- "The importance of being kind to others"\n` +
+        `- "Psychological dimensions of forgiveness"\n` +
+        `- "Socio-historical setting of Ephesus"\n\n` +
+
+        `TITLE FORMAT RULE:\n` +
+        `The title must describe what the verse DOES, not what it is ABOUT. ` +
+        `It must read like a specific observation, not a noun phrase or topic. ` +
+        `A good title could begin: "Paul leads with...", "The verse omits...", "Three words form...", "The phrase X forces...", "The order here is reversed..." ` +
+        `Write titles in ${langName}.\n\n` +
+
+        `Task: Return a JSON array of exactly 4 angle objects. Output JSON only — no markdown fences, no prose, no explanation before or after.\n\n` +
+
         `Each object must have exactly these keys:\n` +
-        `- "title": short, concrete, intriguing — max 10 words — in ${langName}\n` +
-        `- "teaser": 2-3 sentences explaining the insight, rooted in the verse wording — in ${langName}\n` +
-        `- "anchor": the exact word, phrase, or structural feature in the verse that grounds this angle — in ${langName}\n` +
-        `- "why_it_matters": 1 sentence — in ${langName}\n\n` +
-        `Rules for the 4 angles:\n` +
-        `- Each angle must come from a concrete detail in this specific verse: a word, a sequence, a contrast, a tension, a structural pattern, or the verse's inner logic\n` +
-        `- No generic academic directions (psychology, sociology, cultural-comparison essays)\n` +
-        `- Do not simply repeat what a Word Study, Context, or Translations lens would cover\n` +
-        `- No moral summaries, no sermon topics, no "this teaches us that..."\n` +
-        `- Each angle should make a careful reader think: "I never noticed this detail before"\n` +
-        `- The 4 angles must be genuinely different from each other\n\n` +
-        `Output format — valid JSON array only:\n` +
-        `[{"title":"...","teaser":"...","anchor":"...","why_it_matters":"..."},...]` +
-        `\n\nREMINDER: All string values must be in ${langName}. Return JSON only.`
+        `- "title": concrete observation as a statement (not a topic), max 12 words, in ${langName}\n` +
+        `- "teaser": 2-3 sentences — explain what the reader probably missed, starting from the specific textual detail, in ${langName}\n` +
+        `- "anchor": exact word, phrase, or structural pattern quoted from the verse that grounds this angle, in ${langName}\n` +
+        `- "why_it_matters": 1 sentence — how noticing this changes how the verse reads, in ${langName}\n\n` +
+
+        `Additional rules:\n` +
+        `- The 4 angles must belong to 4 different angle types from the list above\n` +
+        `- Each angle must be grounded in a specific textual detail, not derived from the verse's general subject\n` +
+        `- No two angles may make the same basic point in different words\n\n` +
+
+        `Output format — valid JSON array only, nothing else:\n` +
+        `[{"title":"...","teaser":"...","anchor":"...","why_it_matters":"..."},{"title":"...","teaser":"...","anchor":"...","why_it_matters":"..."},{"title":"...","teaser":"...","anchor":"...","why_it_matters":"..."},{"title":"...","teaser":"...","anchor":"...","why_it_matters":"..."}]` +
+        `\n\nREMINDER: Return JSON only. All string values in ${langName}.`
       );
 
     case "word":
