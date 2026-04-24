@@ -15,7 +15,9 @@ export const LANG_NAME: Record<Lang, string> = {
 export const LANG_FENCE = (langName: string): string =>
   `LANGUAGE RULE: Your ENTIRE response must be written in ${langName}. ` +
   `Every word — including section labels, parentheticals, and examples — must be in ${langName}. ` +
-  `If you are unsure of a term, use the ${langName} equivalent. Never switch languages mid-response.`;
+  `If you are unsure of a term, use the ${langName} equivalent. Never switch languages mid-response. ` +
+  `EXCEPTION: JSON property/key names must ALWAYS remain in English exactly as specified — never translate or localize key names. ` +
+  `Only JSON string values should be in ${langName}.`;
 
 export const LANG_TAIL = (langName: string): string =>
   `\n\nFINAL REMINDER: Your entire response must be in ${langName} only. ` +

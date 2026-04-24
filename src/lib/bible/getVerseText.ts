@@ -26,12 +26,13 @@ export async function getVerseText(
   const translation = TRANSLATION_LABEL[lang];
   const prompt =
     `Return the exact biblical text of "${reference}" from the ${translation}. ` +
-    `The verse text MUST be in the language of that translation. ` +
-    `Output JSON only, with this exact shape: {"reference": string, "text": string}. ` +
+    `The verse text content MUST be in the language of that translation. ` +
+    `JSON key names must ALWAYS be in English — do not translate key names. ` +
+    `Output JSON only, with this exact shape: {"reference": "...", "text": "..."}. ` +
     `No commentary. No markdown. No extra keys. No prose around the JSON.`;
 
-  const raw = await runAI(provider, prompt, lang);
-  const parsed = extractJson(raw);
+  const raw = await runAI(provider, prompt, lang, true);
+  const parsed = extractVerseJson(raw);
   if (parsed && typeof parsed.text === "string" && parsed.text.trim().length > 0) {
     return {
       reference: typeof parsed.reference === "string" && parsed.reference.trim()
@@ -40,16 +41,56 @@ export async function getVerseText(
       text: parsed.text.trim(),
     };
   }
-  // Fallback: treat the raw response as the verse text.
-  return { reference, text: raw.trim() };
+  // Last-resort fallback: if raw looks like JSON, don't display it as verse text
+  const trimmed = raw.trim();
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    throw new Error(`Could not extract verse text from AI response. Raw: ${trimmed.slice(0, 120)}`);
+  }
+  return { reference, text: trimmed };
 }
 
-function extractJson(s: string): { reference?: unknown; text?: unknown } | null {
-  const match = s.match(/\{[\s\S]*\}/);
-  if (!match) return null;
+function extractVerseJson(s: string): { reference?: string; text?: string } | null {
+  // Strip markdown fences
+  const cleaned = s
+    .replace(/^```(?:json)?\s*/im, "")
+    .replace(/\s*```\s*$/m, "")
+    .trim();
+
+  // Try to parse as JSON object
+  let obj: Record<string, unknown> | null = null;
   try {
-    return JSON.parse(match[0]);
+    const val = JSON.parse(cleaned);
+    if (val && typeof val === "object" && !Array.isArray(val)) obj = val as Record<string, unknown>;
   } catch {
-    return null;
+    const m = cleaned.match(/\{[\s\S]*\}/);
+    if (m) {
+      try {
+        const val = JSON.parse(m[0]);
+        if (val && typeof val === "object") obj = val as Record<string, unknown>;
+      } catch { /* ignore */ }
+    }
   }
+
+  if (!obj) return null;
+
+  // Support both English keys and localized Russian/Spanish keys Gemini may produce
+  const text =
+    (typeof obj.text === "string" ? obj.text : null) ??
+    (typeof obj["текст"] === "string" ? obj["текст"] : null) ??
+    (typeof obj.verseText === "string" ? obj.verseText : null) ??
+    (typeof obj.verse === "string" ? obj.verse : null) ??
+    (typeof obj.content === "string" ? obj.content : null) ??
+    // Pick the longest string value as a last resort
+    Object.values(obj)
+      .filter((v): v is string => typeof v === "string" && v.length > 20)
+      .sort((a, b) => b.length - a.length)[0] ??
+    null;
+
+  const reference =
+    (typeof obj.reference === "string" ? obj.reference : null) ??
+    (typeof obj["ссылка"] === "string" ? obj["ссылка"] : null) ??
+    (typeof obj.ref === "string" ? obj.ref : null) ??
+    null;
+
+  return { text: text ?? undefined, reference: reference ?? undefined };
 }

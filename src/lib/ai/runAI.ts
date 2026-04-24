@@ -128,8 +128,10 @@ async function runGemini(prompt: string, lang: Lang, expectJSON = false): Promis
     throw new Error(`Gemini error ${res.status}: ${body.slice(0, 400)}`);
   }
   const data = await res.json();
-  const parts: Array<{ text?: string }> = data?.candidates?.[0]?.content?.parts ?? [];
-  let text = parts.map((p) => p.text ?? "").join("").trim();
+  // Filter out Gemini 2.5 thinking parts (thought:true) — only keep actual output parts
+  const parts: Array<{ text?: string; thought?: boolean }> =
+    data?.candidates?.[0]?.content?.parts ?? [];
+  let text = parts.filter((p) => !p.thought).map((p) => p.text ?? "").join("").trim();
 
   // Strip any markdown fences Gemini may still include (belt-and-suspenders)
   if (expectJSON) {
