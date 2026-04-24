@@ -1,44 +1,17 @@
-import type { Lang } from "../i18n/dictionary";
+import {
+  LANG_NAME,
+  LANG_FENCE,
+  LANG_TAIL,
+  EDITORIAL_VOICE,
+  JARGON_BAN,
+  OUTPUT_STRUCTURE,
+  CARD_TITLE_STANDARD,
+} from "./editorial";
+import type { Lang } from "./editorial";
 
+export type { Lang };
 export type LensId = "angles" | "word" | "context" | "translations";
-
 export const LENS_ORDER: LensId[] = ["angles", "word", "context", "translations"];
-
-const LANG_NAME: Record<Lang, string> = {
-  en: "English",
-  ru: "Russian",
-  es: "Spanish",
-};
-
-const LANG_FENCE = (langName: string) =>
-  `LANGUAGE RULE: Your ENTIRE response must be written in ${langName}. ` +
-  `Do not use English or any other language. Not a single word. ` +
-  `If you are unsure of a term, use the ${langName} equivalent.`;
-
-const VOICE = (langName: string) =>
-  `Write in ${langName}. Editorial voice: long-form magazine — New Yorker meets Arzamas. ` +
-  `Hook first. Story-driven. Scientifically rigorous, never preachy. ` +
-  `No moralizing, no theology lecture, no "in conclusion", no academic throat-clearing. ` +
-  `Find the surprising structure, tension, wording, or context most readers miss. ` +
-  `Markdown allowed for short headings and bullets. Stay tight: 300–450 words.`;
-
-const JARGON_BAN = `VOICE RULE — MANDATORY:
-Write as a premium intellectual magazine explaining an ancient text to an educated secular reader.
-The reader is intelligent, curious, and non-devotional. They have not been to church.
-Your tone is: calm, precise, warm, intellectually generous. Never devotional, never churchy.
-
-BANNED WORDS — do not use these. If a concept requires one, restate it in plain modern language immediately:
-In Russian: благодать, духовный обмен, духовная глубина, духовный рост, божественная практика, моральная обязанность, добродетель, греховность, назидание, назидательный, духовный, благочестие, благочестивый, поучительный, проповеднический, дидактический, сакральный, пастырский
-In English: grace (when used as theological jargon), virtue, spiritual depth, spiritual growth, divine practice, moral obligation, sanctification, edifying, piety, pious, didactic, sermonic, sacred (as a dismissive label), pastoral
-In Spanish: gracia (teológica), virtud, profundidad espiritual, práctica divina, obligación moral, santificación, edificante, piedad, piadoso, didáctico
-
-SUBSTITUTE PLAIN LANGUAGE:
-Instead of "благодать" → "незаслуженная доброта", "уже полученное прощение", "Божьё уже проявленное прощение" (depending on context)
-Instead of "grace" → "unearned kindness", "forgiveness already given", "mercy that preceded the request"
-Instead of "virtue" → "a way of behaving", "a quality the verse is pointing to"
-Instead of "духовный" → "внутренний", "личный", "касающийся отношения человека к миру"
-
-RELIGIOUS TERM RULE: If a term from the original text is genuinely religious and cannot be avoided, name it and then immediately explain it in one plain-language phrase. Do not let religious language pass without translation into normal human speech.`;
 
 export function buildLensPrompt(args: {
   lens: LensId;
@@ -48,116 +21,135 @@ export function buildLensPrompt(args: {
 }): string {
   const langName = LANG_NAME[args.lang];
   const fence = LANG_FENCE(langName);
-  const head =
+  const tail = LANG_TAIL(langName);
+
+  const header = (extra = "") =>
     `${fence}\n\n` +
-    `Verse: ${args.reference}\n"${args.verseText}"\n\n${VOICE(langName)}\n\n` +
-    `${JARGON_BAN}\n\n`;
-  const tail = `\n\nREMINDER: Respond ONLY in ${langName}. Do not use English unless ${langName} is English.`;
+    `Verse: ${args.reference}\n"${args.verseText}"\n\n` +
+    `${EDITORIAL_VOICE(langName)}\n\n` +
+    `${JARGON_BAN}\n\n` +
+    (extra ? `${extra}\n\n` : "");
 
   switch (args.lens) {
+
+    // ─── ANGLES ──────────────────────────────────────────────────────────────
     case "angles":
       return (
         `${fence}\n\n` +
         `Verse: ${args.reference}\n"${args.verseText}"\n\n` +
         `All string values must be written in ${langName}.\n\n` +
-
+        `${EDITORIAL_VOICE(langName)}\n\n` +
         `${JARGON_BAN}\n\n` +
+        `${CARD_TITLE_STANDARD}\n\n` +
 
         `WHAT AN ANGLE IS:\n` +
-        `An angle is a precise observation about how this verse is constructed — how it works mechanically. ` +
-        `It is NOT a theme, a topic, a moral lesson, or a broad subject area.\n\n` +
+        `An angle is a precise observation about how this specific verse is constructed — its mechanics, ` +
+        `its logic, its wording choices, its structure. It is NOT a theme, a topic, a moral lesson, or a general idea derived from the subject matter.\n\n` +
 
         `WHAT AN ANGLE IS NOT — reject these immediately:\n` +
-        `- Abstract noun phrases: "Compassion as the basis of kindness", "Forgiveness as a divine gift"\n` +
-        `- Academic topics: "Psychology of forgiveness", "Social dynamics of kindness", "Historical context"\n` +
-        `- Moral summaries: "The obligation to forgive", "Ethical dilemmas"\n` +
-        `- Religious platitudes: anything that sounds like a sermon point or a devotional thought\n` +
-        `- Anything that could appear as a textbook chapter heading\n\n` +
+        `- Any abstract noun phrase: "Compassion as the basis of kindness", "Forgiveness as a gift"\n` +
+        `- Any academic category: "Psychology of forgiveness", "Socio-historical dynamics"\n` +
+        `- Any moral claim: "The obligation to forgive", "Why kindness matters"\n` +
+        `- Anything that could be a sermon point, essay title, or textbook chapter\n\n` +
 
-        `THE 7 VALID ANGLE TYPES — each angle must belong to one of these:\n` +
-        `1. SEQUENCE — the verse presents ideas in a specific order; the order is the argument\n` +
-        `2. CONTRAST — the verse sets two things against each other explicitly or implicitly\n` +
-        `3. WORD WEIGHT — a single word carries more force than its plain reading suggests\n` +
-        `4. STRUCTURE — the verse has a repeated, chiastic, or ladder-like pattern\n` +
-        `5. CAUSE/MEASURE — one clause sets the standard or measure for another\n` +
-        `6. INCLUSION/OMISSION — the verse includes or leaves out something a reader expects\n` +
-        `7. PHRASE FORCE — a small phrase (often overlooked) changes the emotional pressure of the whole sentence\n\n` +
+        `THE 7 VALID ANGLE TYPES — each of the 4 angles must belong to a different type:\n` +
+        `1. SEQUENCE — the verse presents ideas in a deliberate order; the order is the argument\n` +
+        `2. CONTRAST — the verse sets two things against each other, explicitly or by implication\n` +
+        `3. WORD WEIGHT — a single word carries more force, physicality, or strangeness than its translation suggests\n` +
+        `4. STRUCTURE — the verse has a ladder-like, chiastic, or repeated pattern that creates meaning\n` +
+        `5. CAUSE/MEASURE — one clause sets the exact standard or logic for another\n` +
+        `6. INCLUSION/OMISSION — the verse includes or conspicuously leaves out something a reader expects\n` +
+        `7. PHRASE FORCE — a small phrase (easily skipped) changes the entire emotional pressure of the sentence\n\n` +
 
-        `EXAMPLES OF GOOD ANGLES (for Ephesians 4:32 as reference):\n` +
-        `- "Paul opens with tenderness, not forgiveness — the sequence is deliberate" (SEQUENCE)\n` +
-        `- "Three actions form a ladder, not a list" (STRUCTURE)\n` +
-        `- "Forgiveness is measured not by the offense but by mercy already received" (CAUSE/MEASURE)\n` +
-        `- "The phrase 'one another' makes this verse mutual, not individual" (PHRASE FORCE)\n` +
-        `- "Compassion here is not politeness but an inner response" (WORD WEIGHT)\n\n` +
+        `EXAMPLE ANGLES (for Ephesians 4:32 — for calibration only, adapt for the actual verse):\n` +
+        `- "Paul Starts Earlier Than You Think" → the sequence opens with emotional climate, not forgiveness (SEQUENCE)\n` +
+        `- "Three Actions That Form a Ladder, Not a List" → the structure escalates, each step requiring the last (STRUCTURE)\n` +
+        `- "The Standard for Forgiveness Is Not the Offense" → forgiveness is measured by mercy already received, not harm done (CAUSE/MEASURE)\n` +
+        `- "A Single Phrase Makes the Whole Verse Mutual" → 'one another' is not decoration; it reverses the grammar of the sentence (PHRASE FORCE)\n` +
+        `- "Compassion Does Not Live in the Heart Here" → the Greek word for compassion is anatomical, not psychological (WORD WEIGHT)\n\n` +
 
-        `EXAMPLES OF BAD ANGLES (never return these):\n` +
-        `- "Compassion as the foundation of kindness"\n` +
-        `- "Forgiveness as a divine gift"\n` +
-        `- "The importance of being kind to others"\n` +
-        `- "Psychological dimensions of forgiveness"\n` +
-        `- "Socio-historical setting of Ephesus"\n` +
-        `- "God's grace as the model for human behavior" ← uses banned framing\n\n` +
+        `TEASER STANDARD:\n` +
+        `Each teaser must begin with tension or surprise. It must make one real claim about what the reader missed. ` +
+        `It must stay compact and make the user want to expand the card. ` +
+        `Do not open with "This verse…" or "Paul says…". Open with the observation.\n\n` +
 
-        `TITLE FORMAT RULE:\n` +
-        `The title must describe what the verse DOES, not what it is ABOUT. ` +
-        `It must read like a specific observation, not a noun phrase or topic. ` +
-        `Valid opening patterns: "Paul leads with...", "The verse omits...", "Three words form...", "The phrase X shifts...", "The order here is not what it seems..."\n` +
-        `Write titles in ${langName}. Do not use any banned words in titles.\n\n` +
+        `WHY_IT_MATTERS STANDARD:\n` +
+        `One sentence. Show how this specific observation changes how the whole verse reads. ` +
+        `Not a moral lesson. A perceptual shift.\n\n` +
 
-        `Task: Return a JSON array of exactly 4 angle objects. Output JSON only — no markdown fences, no prose, no explanation before or after.\n\n` +
+        `Task: Return a JSON array of exactly 4 angle objects. ` +
+        `Output JSON only — no markdown fences, no prose, no explanation before or after.\n\n` +
 
-        `Each object must have exactly these keys:\n` +
-        `- "title": concrete observation as a statement (not a topic), max 12 words, in ${langName}, no banned words\n` +
-        `- "teaser": 2-3 sentences — explain what the reader probably missed, starting from the specific textual detail, plain modern language, in ${langName}\n` +
-        `- "anchor": exact word, phrase, or structural pattern quoted from the verse that grounds this angle, in ${langName}\n` +
-        `- "why_it_matters": 1 sentence — how noticing this changes how the verse reads, in plain language, in ${langName}\n\n` +
+        `Each object has exactly these keys:\n` +
+        `- "title": sharp, concrete observation-as-statement, max 12 words, in ${langName}\n` +
+        `- "teaser": 2-3 sentences, begins with tension or surprise, one real claim, in ${langName}\n` +
+        `- "anchor": the exact word, phrase, or structural feature from the verse, in ${langName}\n` +
+        `- "why_it_matters": 1 sentence, perceptual shift not moral lesson, in ${langName}\n\n` +
 
-        `Additional rules:\n` +
-        `- The 4 angles must belong to 4 different angle types from the list above\n` +
-        `- Each angle must be grounded in a specific textual detail, not the verse's general subject\n` +
-        `- No two angles may make the same basic point in different words\n` +
-        `- No banned jargon in any field\n\n` +
+        `The 4 angles must belong to 4 different angle types. No two angles may make the same point. No banned words.\n\n` +
 
-        `Output format — valid JSON array only, nothing else:\n` +
+        `Output — valid JSON array only:\n` +
         `[{"title":"...","teaser":"...","anchor":"...","why_it_matters":"..."},{"title":"...","teaser":"...","anchor":"...","why_it_matters":"..."},{"title":"...","teaser":"...","anchor":"...","why_it_matters":"..."},{"title":"...","teaser":"...","anchor":"...","why_it_matters":"..."}]` +
-        `\n\nREMINDER: Return JSON only. All string values in ${langName}. No banned words.`
+        `\n\nREMINDER: JSON only. All strings in ${langName}. No banned words. No generic angles.`
       );
 
+    // ─── WORD ─────────────────────────────────────────────────────────────────
     case "word":
       return (
-        head +
-        `Task: Pick 2–3 individual words or short phrases in this verse whose original-language meaning, etymology, ` +
-        `or usage elsewhere in scripture changes how the verse lands. ` +
-        `For each: the original word (Hebrew or Greek, with transliteration), what it normally means, what it does here, ` +
-        `and where else it shows up that's worth knowing. Be precise. No hand-waving.` +
+        header() +
+        `${OUTPUT_STRUCTURE}\n\n` +
+        `Task: Hunt for 2–3 words or short phrases in this verse where the original language — Greek or Hebrew — ` +
+        `does something the translation cannot quite capture, or quietly chooses not to.\n\n` +
+        `For each word:\n` +
+        `1. Quote the original word with transliteration.\n` +
+        `2. Show what it literally carries — its physical force, its range of meaning, its tone in the original.\n` +
+        `3. Show exactly where the translation smooths it over, domesticates it, softens it, or accidentally flattens it.\n` +
+        `4. Show what that gap costs the reader — what they miss about the verse because of the translation choice.\n\n` +
+        `This is not a lexicon. Do not write dictionary entries. Write discoveries.\n` +
+        `Every word chosen must make the reader think: "That word does far more than I realized."\n` +
+        `Hook with the most surprising word. Open the analysis with the observation, not with "The Greek word X means..."` +
         tail
       );
 
+    // ─── CONTEXT ──────────────────────────────────────────────────────────────
     case "context":
       return (
-        head +
-        `Task: Build the context around this verse in three layers, then close with one short payoff. ` +
-        `Use these section headings exactly (written in ${langName}):\n\n` +
-        `**Narrow context** — what comes in the few verses immediately before and after, ` +
-        `and how that frame changes the way this verse reads. Quote a short connecting phrase or two.\n\n` +
-        `**Wider context** — where this verse sits inside the chapter, the book's overall arc, ` +
-        `and the historical moment the book belongs to. What is the writer building toward at this point?\n\n` +
-        `**What only context reveals** — name 1–2 things in the verse that look ordinary on their own ` +
-        `but become surprising, ironic, urgent, or pointed once the surrounding material is in view. ` +
-        `Be specific; cite the line that does the revealing.\n\n` +
-        `**Payoff** — one sentence that lands the insight.\n\n` +
-        `Avoid devotional throat-clearing, generic commentary, and textbook recap. ` +
-        `Lead the Narrow context paragraph with the most under-appreciated detail, not chronology.` +
+        header() +
+        `${OUTPUT_STRUCTURE}\n\n` +
+        `Task: Build context in two layers, then land one payoff.\n\n` +
+        `**Narrow context** — Read the 3–5 verses immediately before and after. ` +
+        `Ask: what changes when this verse is read inside that movement? ` +
+        `Is this line an answer to something? A climax? A pivot? A correction? A reversal? ` +
+        `Lead with the detail that most readers miss because they extracted the verse from its local argument. ` +
+        `Make this feel like: "On its own the verse looks simple. In context, it is the hinge of a sharper argument." ` +
+        `Do not summarize the surrounding verses. Show what they do to this one.\n\n` +
+        `**Wide context** — Step back to the chapter, the book, and the moment of writing. ` +
+        `Where is the author driving? Is this verse doing local work or carrying a whole-book argument? ` +
+        `What was at stake politically, emotionally, or rhetorically in this moment? ` +
+        `Every background fact must earn its place by changing how a line reads. ` +
+        `Avoid generic historical overview. Background must feel revelatory.\n\n` +
+        `**Payoff** — One precise sentence. Not a summary. A reframing that makes the verse look different than it did before.\n\n` +
+        `Lead with the most under-appreciated detail. Do not begin with "The surrounding verses discuss…"` +
         tail
       );
 
+    // ─── TRANSLATIONS ─────────────────────────────────────────────────────────
     case "translations":
       return (
-        head +
-        `Task: Compare 3–4 notable translations of this verse (across English, Russian, and Spanish traditions as relevant) ` +
-        `and surface the places where they diverge. For each divergence: which word or phrase, how the translations differ, ` +
-        `and what is actually at stake in that choice. ` +
-        `End with a one-sentence verdict on which choice you find most defensible and why.` +
+        header() +
+        `${OUTPUT_STRUCTURE}\n\n` +
+        `Task: Find 3–4 translations that diverge at a meaningful point in this verse. ` +
+        `Focus on the places where the versions quietly split.\n\n` +
+        `For each divergence:\n` +
+        `1. Name the exact word or phrase where the translations differ.\n` +
+        `2. Show how each choice changes the temperature, texture, or logic of the sentence. ` +
+        `Is one version harsher, softer, more legal, more intimate, more physical, more abstract?\n` +
+        `3. Ask: is one translation hiding the strangeness of the original? Is one sharpening it? ` +
+        `Is one accidentally changing who is responsible for what?\n\n` +
+        `Do not merely list synonyms. Show what is actually at stake in each choice — ` +
+        `what a reader understands differently depending on which version they hold.\n\n` +
+        `End with one sentence: your verdict on which choice is most honest to the original, and why. ` +
+        `Be willing to have an opinion. The ending should feel like a conclusion, not a hedge.` +
         tail
       );
   }
