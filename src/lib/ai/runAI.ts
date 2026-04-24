@@ -91,10 +91,11 @@ async function runClaude(prompt: string, lang: Lang): Promise<string> {
 }
 
 async function runGemini(prompt: string, lang: Lang): Promise<string> {
-  const key = process.env.GOOGLE_API_KEY;
-  if (!key) throw new Error(MISSING_KEY("GOOGLE_API_KEY"));
+  const key = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+  if (!key) throw new Error(MISSING_KEY("GEMINI_API_KEY / GOOGLE_API_KEY"));
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${encodeURIComponent(key)}`;
+  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`;
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
