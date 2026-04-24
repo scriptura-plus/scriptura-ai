@@ -11,6 +11,7 @@ import {
   type ExtraId,
   EXTRA_ORDER,
 } from "@/lib/prompts/buildExtraPrompt";
+import { buildExpandPrompt } from "@/lib/prompts/buildExpandPrompt";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,18 +41,28 @@ export async function POST(req: Request) {
     }
 
     let prompt: string;
+
     if (kind === "lens" && isLensId(id)) {
       prompt = buildLensPrompt({ lens: id, reference, verseText, lang });
+
     } else if (kind === "extra" && isExtraId(id)) {
       prompt = buildExtraPrompt({ id, reference, verseText, lang });
+
+    } else if (kind === "expand-angle") {
+      const angleTitle = typeof body?.angleTitle === "string" ? body.angleTitle.trim() : "";
+      const anchor = typeof body?.anchor === "string" ? body.anchor.trim() : "";
+      if (!angleTitle) {
+        return NextResponse.json({ error: "angleTitle is required for expand-angle" }, { status: 400 });
+      }
+      prompt = buildExpandPrompt({ angleTitle, anchor, reference, verseText, lang });
+
     } else {
       return NextResponse.json(
-        { error: "kind must be 'lens' or 'extra' with a valid id" },
+        { error: "kind must be 'lens', 'extra', or 'expand-angle' with a valid id" },
         { status: 400 },
       );
     }
 
-    // Pass lang to runAI so it can enforce the language at the system-prompt level
     const text = await runAI(provider, prompt, lang);
     return NextResponse.json({ text });
   } catch (e: unknown) {

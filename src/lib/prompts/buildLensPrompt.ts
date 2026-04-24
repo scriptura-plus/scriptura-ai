@@ -38,14 +38,25 @@ export function buildLensPrompt(args: {
   switch (args.lens) {
     case "angles":
       return (
-        head +
-        `Task: Propose 4 NON-OBVIOUS research angles through which a serious reader could study this verse more deeply. ` +
-        `These are not summaries or moral lessons — they are doorways. ` +
-        `Each angle must (a) name a specific tension, gap, or hidden structure in or around the verse, ` +
-        `(b) state in one sentence why it matters, ` +
-        `(c) suggest one concrete next move (e.g. compare with passage X, look up the Hebrew/Greek of word Y, read alongside text Z). ` +
-        `Format as four short numbered sections, each opening with a magazine-style headline.` +
-        tail
+        `${fence}\n\n` +
+        `Verse: ${args.reference}\n"${args.verseText}"\n\n` +
+        `Language for all text values: ${langName}. Write every string value in ${langName}.\n\n` +
+        `Task: Return a JSON array of exactly 4 angle objects. Output JSON only — no markdown fences, no prose, no explanation.\n\n` +
+        `Each object must have exactly these keys:\n` +
+        `- "title": short, concrete, intriguing — max 10 words — in ${langName}\n` +
+        `- "teaser": 2-3 sentences explaining the insight, rooted in the verse wording — in ${langName}\n` +
+        `- "anchor": the exact word, phrase, or structural feature in the verse that grounds this angle — in ${langName}\n` +
+        `- "why_it_matters": 1 sentence — in ${langName}\n\n` +
+        `Rules for the 4 angles:\n` +
+        `- Each angle must come from a concrete detail in this specific verse: a word, a sequence, a contrast, a tension, a structural pattern, or the verse's inner logic\n` +
+        `- No generic academic directions (psychology, sociology, cultural-comparison essays)\n` +
+        `- Do not simply repeat what a Word Study, Context, or Translations lens would cover\n` +
+        `- No moral summaries, no sermon topics, no "this teaches us that..."\n` +
+        `- Each angle should make a careful reader think: "I never noticed this detail before"\n` +
+        `- The 4 angles must be genuinely different from each other\n\n` +
+        `Output format — valid JSON array only:\n` +
+        `[{"title":"...","teaser":"...","anchor":"...","why_it_matters":"..."},...]` +
+        `\n\nREMINDER: All string values must be in ${langName}. Return JSON only.`
       );
 
     case "word":

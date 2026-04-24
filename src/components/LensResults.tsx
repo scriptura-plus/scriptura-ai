@@ -5,6 +5,7 @@ import { dictionary, type Lang } from "@/lib/i18n/dictionary";
 import type { LensId } from "@/lib/prompts/buildLensPrompt";
 import type { Provider } from "@/lib/ai/providers";
 import { MarkdownText } from "./MarkdownText";
+import { AngleCards } from "./AngleCards";
 
 export function LensResults({
   lens,
@@ -73,6 +74,20 @@ export function LensResults({
     );
   }
   if (error) return <div className="card error">{error}</div>;
+
+  // Angles renders as structured cards
+  if (lens === "angles") {
+    return (
+      <AngleCards
+        rawText={text}
+        reference={reference}
+        verseText={verseText}
+        lang={lang}
+        provider={provider}
+      />
+    );
+  }
+
   return (
     <div className="card prose">
       <MarkdownText text={text} />
