@@ -5,7 +5,6 @@ import {
   EDITORIAL_VOICE,
   JARGON_BAN,
   OUTPUT_STRUCTURE,
-  CARD_TITLE_STANDARD,
 } from "./editorial";
 import type { Lang } from "./editorial";
 
@@ -40,57 +39,116 @@ export function buildLensPrompt(args: {
         `All string values must be written in ${langName}.\n\n` +
         `${EDITORIAL_VOICE(langName)}\n\n` +
         `${JARGON_BAN}\n\n` +
-        `${CARD_TITLE_STANDARD}\n\n` +
 
-        `WHAT AN ANGLE IS:\n` +
-        `An angle is a precise observation about how this specific verse is constructed — its mechanics, ` +
-        `its logic, its wording choices, its structure. It is NOT a theme, a topic, a moral lesson, or a general idea derived from the subject matter.\n\n` +
+        // ── STEP 1: DISCOVERY HUNT ─────────────────────────────────────────
+        `STEP 1 — SILENT DISCOVERY HUNT (do this before writing anything):\n` +
+        `Read the verse closely. Scan for candidate discoveries in each of these 7 categories. ` +
+        `Generate at least one candidate per category before moving to Step 2.\n\n` +
 
-        `WHAT AN ANGLE IS NOT — reject these immediately:\n` +
-        `- Any abstract noun phrase: "Compassion as the basis of kindness", "Forgiveness as a gift"\n` +
-        `- Any academic category: "Psychology of forgiveness", "Socio-historical dynamics"\n` +
-        `- Any moral claim: "The obligation to forgive", "Why kindness matters"\n` +
-        `- Anything that could be a sermon point, essay title, or textbook chapter\n\n` +
+        `Category 1 — LEXICAL SURPRISE:\n` +
+        `Is there a word in the original Greek or Hebrew whose force, range of meaning, or root metaphor ` +
+        `is stronger, stranger, or more physical than the translation suggests? ` +
+        `What does the translation flatten or domesticate?\n` +
+        `Example: Greek εὔσπλαγχνοι (compassion) literally means "good intestines" — the seat of emotion ` +
+        `was the gut, not the heart. Most translations erase this bodily force entirely.\n\n` +
 
-        `THE 7 VALID ANGLE TYPES — each of the 4 angles must belong to a different type:\n` +
-        `1. SEQUENCE — the verse presents ideas in a deliberate order; the order is the argument\n` +
-        `2. CONTRAST — the verse sets two things against each other, explicitly or by implication\n` +
-        `3. WORD WEIGHT — a single word carries more force, physicality, or strangeness than its translation suggests\n` +
-        `4. STRUCTURE — the verse has a ladder-like, chiastic, or repeated pattern that creates meaning\n` +
-        `5. CAUSE/MEASURE — one clause sets the exact standard or logic for another\n` +
-        `6. INCLUSION/OMISSION — the verse includes or conspicuously leaves out something a reader expects\n` +
-        `7. PHRASE FORCE — a small phrase (easily skipped) changes the entire emotional pressure of the sentence\n\n` +
+        `Category 2 — CHOSEN-WORD CONTRAST:\n` +
+        `What word did the author use, and what word could they have used instead? ` +
+        `Is there a near-synonym that would have been more expected or more conventional? ` +
+        `What does the actual choice reveal about the meaning?\n` +
+        `Example: Paul chose χαρίζομαι (to give as a gift) for "forgive," not ἀφίημι (to release a debt). ` +
+        `The difference turns forgiveness from legal cancellation into an act of generosity.\n\n` +
 
-        `EXAMPLE ANGLES (for Ephesians 4:32 — for calibration only, adapt for the actual verse):\n` +
-        `- "Paul Starts Earlier Than You Think" → the sequence opens with emotional climate, not forgiveness (SEQUENCE)\n` +
-        `- "Three Actions That Form a Ladder, Not a List" → the structure escalates, each step requiring the last (STRUCTURE)\n` +
-        `- "The Standard for Forgiveness Is Not the Offense" → forgiveness is measured by mercy already received, not harm done (CAUSE/MEASURE)\n` +
-        `- "A Single Phrase Makes the Whole Verse Mutual" → 'one another' is not decoration; it reverses the grammar of the sentence (PHRASE FORCE)\n` +
-        `- "Compassion Does Not Live in the Heart Here" → the Greek word for compassion is anatomical, not psychological (WORD WEIGHT)\n\n` +
+        `Category 3 — BODY OR SPATIAL METAPHOR:\n` +
+        `Is there a physical image, body-language metaphor, or spatial concept hiding under an abstract ` +
+        `translation? Something that involves anatomy, movement, distance, weight, debt, gift?\n` +
+        `Example: "heart" in many verses translates words that originally meant liver, gut, or chest cavity — ` +
+        `organs understood as the seat of emotion in antiquity.\n\n` +
+
+        `Category 4 — SYNTAX OR PREPOSITION:\n` +
+        `Does a preposition, particle, or word-order choice change the agency, location, or direction ` +
+        `of the action? What shifts if you read the structure precisely rather than paraphrastically?\n` +
+        `Example: "in Christ" as a location rather than an instrument — forgiving because you are inside ` +
+        `something, not merely pointing to someone else's example.\n\n` +
+
+        `Category 5 — STRUCTURE OR RHETORIC:\n` +
+        `Does the verse have a ladder structure, asyndeton (no conjunctions between items), parallelism, ` +
+        `compression, reversal, or chiasm? Does the sequence escalate or create surprise? ` +
+        `What would be lost if the verse were reordered?\n` +
+        `Example: "Be kind — compassionate — forgiving" without conjunctions in Greek makes the three ` +
+        `actions rush together, each one presupposing the last.\n\n` +
+
+        `Category 6 — TRANSLATION LOSS:\n` +
+        `What does the most common translation smooth over, omit, or accidentally normalize? ` +
+        `What sounds ordinary in ${langName} but was strange or sharp in the original language?\n` +
+        `Example: Russian "простите" (forgive) hides the gift-giving etymology entirely.\n\n` +
+
+        `Category 7 — CONTEXT-TRIGGERED TWIST:\n` +
+        `Is there a verse just before or after that changes the force of this one? ` +
+        `An argument that makes this line pivot or land differently than it does in isolation?\n\n` +
+
+        // ── STEP 2: REJECTION TEST ─────────────────────────────────────────
+        `STEP 2 — REJECTION TEST (apply to every candidate from Step 1):\n` +
+        `For each candidate, ask this single question:\n` +
+        `"Could this angle be written without knowing anything specific about the wording, ` +
+        `original language, structure, or context of this verse?"\n\n` +
+        `If the answer is YES — reject immediately. ` +
+        `Angles that survive rejection must be rooted in something that exists only in this specific verse.\n\n` +
+
+        `REJECTED immediately (examples of what fails the test):\n` +
+        `- "Forgiveness depends on receiving mercy" — this is a theological claim, not a textual observation\n` +
+        `- "Kindness comes before forgiveness" — barely requires reading the verse\n` +
+        `- "Compassion is important in relationships" — requires no knowledge of the verse at all\n` +
+        `- "The verse has three parts" — true of countless verses; says nothing specific\n` +
+        `- "Mutuality matters" — could be said about almost any verse on relationships\n\n` +
+
+        `PASS the test (examples of what survives):\n` +
+        `- "The verb Paul chose for 'forgive' means to give as a gift, not to cancel a debt" — specific to the Greek word choice\n` +
+        `- "Compassion does not live in the heart here — it lives in the gut" — specific to εὔσπλαγχνοι\n` +
+        `- "Paul lists three actions without conjunctions — the sentence accelerates rather than enumerates" — specific to Greek syntax\n` +
+        `- "The phrase 'in Christ' makes forgiveness a location, not an instrument" — specific to this preposition\n` +
+        `- "Russian 'простите' may hide the fact that Paul did not choose the debt-cancelling verb" — specific to translation gap\n\n` +
+
+        // ── STEP 3: BUILD CARDS ────────────────────────────────────────────
+        `STEP 3 — BUILD THE 4 STRONGEST DISCOVERIES INTO CARDS:\n` +
+        `Choose the 4 candidates that survived the rejection test and feel most illuminating. ` +
+        `Prefer discoveries from different categories. No two cards may make the same basic point.\n\n` +
+
+        `TITLE STANDARD:\n` +
+        `The title must be a sharp, concrete statement of the discovery — not a topic, not a theme. ` +
+        `It should make the reader immediately think: "What do you mean? Show me."\n\n` +
+        `BAD: "The Importance of Compassion", "Forgiveness in Context", "Paul's Teaching on Kindness"\n` +
+        `GOOD: "The Verb That Turns Forgiveness from Bookkeeping into a Gift", ` +
+        `"Compassion Does Not Live in the Heart Here", ` +
+        `"Paul Uses Three Words Without Conjunctions — and the Sentence Accelerates", ` +
+        `"The Phrase 'In Christ' Makes Forgiveness a Location, Not an Instrument"\n\n` +
 
         `TEASER STANDARD:\n` +
-        `Each teaser must begin with tension or surprise. It must make one real claim about what the reader missed. ` +
-        `It must stay compact and make the user want to expand the card. ` +
-        `Do not open with "This verse…" or "Paul says…". Open with the observation.\n\n` +
+        `2-3 sentences. Begin with the discovery, not with "This verse…" or "Paul says…". ` +
+        `Explain the hidden mechanism. Make the reader want to expand the card.\n\n` +
+
+        `ANCHOR STANDARD:\n` +
+        `The exact word, phrase, or structural feature from the verse that the angle is grounded in. ` +
+        `If the discovery involves original language, quote the original word alongside the translation.\n\n` +
 
         `WHY_IT_MATTERS STANDARD:\n` +
-        `One sentence. Show how this specific observation changes how the whole verse reads. ` +
-        `Not a moral lesson. A perceptual shift.\n\n` +
+        `One sentence. A perceptual shift — how the verse reads differently after seeing this. ` +
+        `Not a moral lesson.\n\n` +
 
         `Task: Return a JSON array of exactly 4 angle objects. ` +
-        `Output JSON only — no markdown fences, no prose, no explanation before or after.\n\n` +
+        `Output JSON only — no markdown fences, no prose before or after.\n\n` +
 
         `Each object has exactly these keys:\n` +
-        `- "title": sharp, concrete observation-as-statement, max 12 words, in ${langName}\n` +
-        `- "teaser": 2-3 sentences, begins with tension or surprise, one real claim, in ${langName}\n` +
-        `- "anchor": the exact word, phrase, or structural feature from the verse, in ${langName}\n` +
-        `- "why_it_matters": 1 sentence, perceptual shift not moral lesson, in ${langName}\n\n` +
+        `- "title": discovery-driven statement, max 14 words, in ${langName}\n` +
+        `- "teaser": 2-3 sentences, starts with the discovery not a summary, in ${langName}\n` +
+        `- "anchor": exact word/phrase/structure from the verse (include original-language form if relevant), in ${langName}\n` +
+        `- "why_it_matters": 1 sentence, perceptual shift, in ${langName}\n\n` +
 
-        `The 4 angles must belong to 4 different angle types. No two angles may make the same point. No banned words.\n\n` +
+        `No banned words. No generic angles. No angle that fails the rejection test.\n\n` +
 
         `Output — valid JSON array only:\n` +
         `[{"title":"...","teaser":"...","anchor":"...","why_it_matters":"..."},{"title":"...","teaser":"...","anchor":"...","why_it_matters":"..."},{"title":"...","teaser":"...","anchor":"...","why_it_matters":"..."},{"title":"...","teaser":"...","anchor":"...","why_it_matters":"..."}]` +
-        `\n\nREMINDER: JSON only. All strings in ${langName}. No banned words. No generic angles.`
+        `\n\nREMINDER: JSON only. All strings in ${langName}. Every angle must survive the rejection test.`
       );
 
     // ─── WORD ─────────────────────────────────────────────────────────────────
