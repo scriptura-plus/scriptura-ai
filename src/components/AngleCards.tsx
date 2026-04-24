@@ -4,6 +4,7 @@ import { useState } from "react";
 import { dictionary, type Lang } from "@/lib/i18n/dictionary";
 import type { Provider } from "@/lib/ai/providers";
 import { MarkdownText } from "./MarkdownText";
+import { extractJSONArray } from "@/lib/ai/parseJSON";
 
 export type AngleCard = {
   title: string;
@@ -13,22 +14,16 @@ export type AngleCard = {
 };
 
 function extractCards(raw: string): AngleCard[] | null {
-  const match = raw.match(/\[[\s\S]*\]/);
-  if (!match) return null;
-  try {
-    const parsed = JSON.parse(match[0]);
-    if (!Array.isArray(parsed)) return null;
-    return parsed.filter(
-      (c) =>
-        typeof c === "object" &&
-        typeof c.title === "string" &&
-        typeof c.teaser === "string" &&
-        typeof c.anchor === "string" &&
-        typeof c.why_it_matters === "string",
-    );
-  } catch {
-    return null;
-  }
+  const parsed = extractJSONArray<AngleCard>(raw);
+  if (!parsed) return null;
+  return parsed.filter(
+    (c) =>
+      typeof c === "object" &&
+      typeof c.title === "string" &&
+      typeof c.teaser === "string" &&
+      typeof c.anchor === "string" &&
+      typeof c.why_it_matters === "string",
+  );
 }
 
 export function AngleCards({

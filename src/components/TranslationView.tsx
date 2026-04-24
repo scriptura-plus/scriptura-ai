@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { dictionary, type Lang } from "@/lib/i18n/dictionary";
 import type { Provider } from "@/lib/ai/providers";
+import { extractJSONObject } from "@/lib/ai/parseJSON";
 
 type Quote = { label: string; text: string };
 type Divergence = { title: string; quotes: Quote[]; analysis: string };
@@ -13,15 +14,9 @@ type TranslationData = {
 };
 
 function extractData(raw: string): TranslationData | null {
-  const match = raw.match(/\{[\s\S]*\}/);
-  if (!match) return null;
-  try {
-    const parsed = JSON.parse(match[0]);
-    if (!parsed.versions || !parsed.divergences || !parsed.verdict) return null;
-    return parsed as TranslationData;
-  } catch {
-    return null;
-  }
+  const parsed = extractJSONObject<TranslationData>(raw);
+  if (!parsed || !parsed.versions || !parsed.divergences || !parsed.verdict) return null;
+  return parsed;
 }
 
 export function TranslationView({

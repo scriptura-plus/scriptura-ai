@@ -4,6 +4,7 @@ import { useState } from "react";
 import { dictionary, type Lang } from "@/lib/i18n/dictionary";
 import type { Provider } from "@/lib/ai/providers";
 import { MarkdownText } from "./MarkdownText";
+import { extractJSONArray } from "@/lib/ai/parseJSON";
 
 export type WordCard = {
   title: string;
@@ -14,23 +15,17 @@ export type WordCard = {
 };
 
 function extractCards(raw: string): WordCard[] | null {
-  const match = raw.match(/\[[\s\S]*\]/);
-  if (!match) return null;
-  try {
-    const parsed = JSON.parse(match[0]);
-    if (!Array.isArray(parsed)) return null;
-    return parsed.filter(
-      (c) =>
-        typeof c === "object" &&
-        typeof c.title === "string" &&
-        typeof c.teaser === "string" &&
-        typeof c.original === "string" &&
-        typeof c.gap === "string" &&
-        typeof c.why_it_matters === "string",
-    );
-  } catch {
-    return null;
-  }
+  const parsed = extractJSONArray<WordCard>(raw);
+  if (!parsed) return null;
+  return parsed.filter(
+    (c) =>
+      typeof c === "object" &&
+      typeof c.title === "string" &&
+      typeof c.teaser === "string" &&
+      typeof c.original === "string" &&
+      typeof c.gap === "string" &&
+      typeof c.why_it_matters === "string",
+  );
 }
 
 export function WordCards({

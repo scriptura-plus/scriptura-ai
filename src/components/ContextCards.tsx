@@ -3,8 +3,8 @@
 import { useState } from "react";
 import { dictionary, type Lang } from "@/lib/i18n/dictionary";
 import type { Provider } from "@/lib/ai/providers";
-
 import { MarkdownText } from "./MarkdownText";
+import { extractJSONObject, extractJSONArray } from "@/lib/ai/parseJSON";
 
 export type ContextLevel = "narrow" | "wide";
 
@@ -21,48 +21,32 @@ type NarrowPayload = {
 };
 
 function extractNarrow(raw: string): NarrowPayload | null {
-  const match = raw.match(/\{[\s\S]*\}/);
-  if (!match) return null;
-  try {
-    const parsed = JSON.parse(match[0]);
-    if (
-      typeof parsed !== "object" ||
-      typeof parsed.thesis !== "string" ||
-      !Array.isArray(parsed.cards)
-    ) return null;
-    const cards = parsed.cards.filter(
-      (c: unknown) =>
-        typeof c === "object" &&
-        c !== null &&
-        typeof (c as Record<string, unknown>).title === "string" &&
-        typeof (c as Record<string, unknown>).teaser === "string" &&
-        typeof (c as Record<string, unknown>).shift === "string" &&
-        typeof (c as Record<string, unknown>).why_it_matters === "string",
-    ) as ContextCard[];
-    return { thesis: parsed.thesis, cards };
-  } catch {
-    return null;
-  }
+  const parsed = extractJSONObject<NarrowPayload>(raw);
+  if (!parsed || typeof parsed.thesis !== "string" || !Array.isArray(parsed.cards)) return null;
+  const cards = parsed.cards.filter(
+    (c: unknown) =>
+      typeof c === "object" &&
+      c !== null &&
+      typeof (c as Record<string, unknown>).title === "string" &&
+      typeof (c as Record<string, unknown>).teaser === "string" &&
+      typeof (c as Record<string, unknown>).shift === "string" &&
+      typeof (c as Record<string, unknown>).why_it_matters === "string",
+  ) as ContextCard[];
+  return { thesis: parsed.thesis, cards };
 }
 
 function extractWide(raw: string): ContextCard[] | null {
-  const match = raw.match(/\[[\s\S]*\]/);
-  if (!match) return null;
-  try {
-    const parsed = JSON.parse(match[0]);
-    if (!Array.isArray(parsed)) return null;
-    return parsed.filter(
-      (c: unknown) =>
-        typeof c === "object" &&
-        c !== null &&
-        typeof (c as Record<string, unknown>).title === "string" &&
-        typeof (c as Record<string, unknown>).teaser === "string" &&
-        typeof (c as Record<string, unknown>).shift === "string" &&
-        typeof (c as Record<string, unknown>).why_it_matters === "string",
-    ) as ContextCard[];
-  } catch {
-    return null;
-  }
+  const parsed = extractJSONArray<ContextCard>(raw);
+  if (!parsed) return null;
+  return parsed.filter(
+    (c: unknown) =>
+      typeof c === "object" &&
+      c !== null &&
+      typeof (c as Record<string, unknown>).title === "string" &&
+      typeof (c as Record<string, unknown>).teaser === "string" &&
+      typeof (c as Record<string, unknown>).shift === "string" &&
+      typeof (c as Record<string, unknown>).why_it_matters === "string",
+  ) as ContextCard[];
 }
 
 export function ContextCards({

@@ -41,16 +41,20 @@ export async function POST(req: Request) {
     }
 
     let prompt: string;
+    let expectJSON = false;
 
     if (kind === "lens" && isLensId(id)) {
       prompt = buildLensPrompt({ lens: id, reference, verseText, lang });
+      expectJSON = true;
 
     } else if (kind === "extra" && isExtraId(id)) {
       prompt = buildExtraPrompt({ id, reference, verseText, lang });
+      expectJSON = true;
 
     } else if (kind === "context") {
       const { buildContextPrompt } = await import("@/lib/prompts/buildContextPrompt");
       prompt = buildContextPrompt({ reference, verseText, lang });
+      expectJSON = true;
 
     } else if (kind === "expand-angle") {
       const angleTitle = typeof body?.angleTitle === "string" ? body.angleTitle.trim() : "";
@@ -59,6 +63,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "angleTitle is required for expand-angle" }, { status: 400 });
       }
       prompt = buildExpandPrompt({ angleTitle, anchor, reference, verseText, lang });
+      // expand-angle returns prose markdown, not JSON
 
     } else {
       return NextResponse.json(
@@ -67,7 +72,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const text = await runAI(provider, prompt, lang);
+    const text = await runAI(provider, prompt, lang, expectJSON);
     return NextResponse.json({ text });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : "Analysis failed";

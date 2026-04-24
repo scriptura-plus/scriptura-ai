@@ -5,6 +5,7 @@ import { dictionary, type Lang } from "@/lib/i18n/dictionary";
 import type { Provider } from "@/lib/ai/providers";
 import { EXTRA_ORDER, type ExtraId } from "@/lib/prompts/buildExtraPrompt";
 import { MarkdownText } from "./MarkdownText";
+import { extractJSONObject } from "@/lib/ai/parseJSON";
 
 export function ExtraAnalysis({
   reference,
@@ -62,21 +63,15 @@ function ExtraItem({
   type ExtraBlock = { title: string; body: string };
 
   function extractBlocks(raw: string): ExtraBlock[] | null {
-    const match = raw.match(/\{[\s\S]*\}/);
-    if (!match) return null;
-    try {
-      const parsed = JSON.parse(match[0]);
-      if (!Array.isArray(parsed?.blocks)) return null;
-      return parsed.blocks.filter(
-        (b: unknown) =>
-          typeof b === "object" &&
-          b !== null &&
-          typeof (b as ExtraBlock).title === "string" &&
-          typeof (b as ExtraBlock).body === "string"
-      );
-    } catch {
-      return null;
-    }
+    const parsed = extractJSONObject<{ blocks: ExtraBlock[] }>(raw);
+    if (!parsed || !Array.isArray(parsed.blocks)) return null;
+    return parsed.blocks.filter(
+      (b: unknown) =>
+        typeof b === "object" &&
+        b !== null &&
+        typeof (b as ExtraBlock).title === "string" &&
+        typeof (b as ExtraBlock).body === "string"
+    );
   }
 
   async function load() {
