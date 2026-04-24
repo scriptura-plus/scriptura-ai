@@ -283,6 +283,22 @@ a:hover { text-decoration: underline; }
   margin: 0;
 }
 
+/* Extra analysis blocks */
+.extra-block-title {
+  font-family: var(--serif);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.3;
+  margin-bottom: 8px;
+}
+.extra-block-body {
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--ink);
+  margin: 0;
+}
+
 @media (max-width: 480px) {
   .h1 { font-size: 26px; }
   .verse-text { font-size: 19px; }

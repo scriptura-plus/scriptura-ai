@@ -59,6 +59,26 @@ function ExtraItem({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  type ExtraBlock = { title: string; body: string };
+
+  function extractBlocks(raw: string): ExtraBlock[] | null {
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) return null;
+    try {
+      const parsed = JSON.parse(match[0]);
+      if (!Array.isArray(parsed?.blocks)) return null;
+      return parsed.blocks.filter(
+        (b: unknown) =>
+          typeof b === "object" &&
+          b !== null &&
+          typeof (b as ExtraBlock).title === "string" &&
+          typeof (b as ExtraBlock).body === "string"
+      );
+    } catch {
+      return null;
+    }
+  }
+
   async function load() {
     if (text || loading) return;
     setLoading(true);
@@ -124,11 +144,27 @@ function ExtraItem({
             </>
           )}
           {error && <div className="error">{error}</div>}
-          {!loading && !error && text && (
-            <div className="prose">
-              <MarkdownText text={text} />
-            </div>
-          )}
+          {!loading && !error && text && (() => {
+            const blocks = extractBlocks(text);
+            if (!blocks) {
+              return (
+                <div className="prose">
+                  <MarkdownText text={text} />
+                </div>
+              );
+            }
+            return (
+              <div style={{ display: "grid", gap: 0 }}>
+                {blocks.map((block, i) => (
+                  <div key={i}>
+                    {i > 0 && <div className="angle-card-divider" style={{ margin: "16px 0" }} />}
+                    <div className="extra-block-title">{block.title}</div>
+                    <p className="extra-block-body">{block.body}</p>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
         </div>
       )}
     </div>
