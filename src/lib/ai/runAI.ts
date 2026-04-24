@@ -108,10 +108,10 @@ async function runGemini(prompt: string, lang: Lang, expectJSON = false): Promis
   const generationConfig: Record<string, unknown> = {
     temperature: 0.7,
     maxOutputTokens: 3000,
+    // NOTE: responseMimeType "application/json" is intentionally NOT used here.
+    // Gemini 2.5-flash in JSON mode with complex multi-step prompts often returns
+    // empty parts. We rely on the CRITICAL prompt suffix + fence stripping instead.
   };
-  if (expectJSON) {
-    generationConfig.responseMimeType = "application/json";
-  }
 
   const res = await fetch(url, {
     method: "POST",
@@ -128,19 +128,34 @@ async function runGemini(prompt: string, lang: Lang, expectJSON = false): Promis
     throw new Error(`Gemini error ${res.status}: ${body.slice(0, 400)}`);
   }
   const data = await res.json();
+
+  // Log full response shape for debugging
+  const finishReason = data?.candidates?.[0]?.finishReason;
+  const blockReason = data?.promptFeedback?.blockReason;
+  if (finishReason && finishReason !== "STOP") {
+    console.error("[Gemini] Non-STOP finishReason:", finishReason, "blockReason:", blockReason);
+  }
+
   // Filter out Gemini 2.5 thinking parts (thought:true) — only keep actual output parts
   const parts: Array<{ text?: string; thought?: boolean }> =
     data?.candidates?.[0]?.content?.parts ?? [];
   let text = parts.filter((p) => !p.thought).map((p) => p.text ?? "").join("").trim();
 
-  // Strip any markdown fences Gemini may still include (belt-and-suspenders)
+  if (!text) {
+    console.error("[Gemini] Empty text. finishReason:", finishReason,
+      "blockReason:", blockReason,
+      "candidates:", JSON.stringify(data?.candidates?.slice(0, 1)).slice(0, 400));
+  }
+
+  // Strip any markdown fences Gemini may still include
   if (expectJSON) {
     text = text
       .replace(/^```(?:json)?\s*/im, "")
       .replace(/\s*```\s*$/m, "")
       .trim();
     if (text && text[0] !== "{" && text[0] !== "[") {
-      console.error("[Gemini] Expected JSON but got unexpected start. Preview:", text.slice(0, 200));
+      console.error("[Gemini] Expected JSON, unexpected start char:", JSON.stringify(text[0]),
+        "preview:", text.slice(0, 300));
     }
   }
 

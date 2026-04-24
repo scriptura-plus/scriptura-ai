@@ -13,17 +13,41 @@ export type AngleCard = {
   why_it_matters: string;
 };
 
+function normalizeCard(c: unknown): AngleCard | null {
+  if (!c || typeof c !== "object") return null;
+  const o = c as Record<string, unknown>;
+  const title = String(
+    o.title ?? o["заголовок"] ?? o.heading ?? o.name ?? o.discovery ?? ""
+  ).trim();
+  const teaser = String(
+    o.teaser ?? o["кратко"] ?? o.description ?? o.summary ?? o.body ?? o.text ?? ""
+  ).trim();
+  const anchor = String(
+    o.anchor ?? o["опора"] ?? o.keyword ?? o.key_phrase ?? o.quote ?? o.reference ?? ""
+  ).trim();
+  const why_it_matters = String(
+    o.why_it_matters ?? o.whyItMatters ?? o["почему_важно"] ??
+    o["почему это важно"] ?? o.significance ?? o.insight ?? o.conclusion ?? ""
+  ).trim();
+  if (!title || !teaser || !anchor || !why_it_matters) return null;
+  return { title, teaser, anchor, why_it_matters };
+}
+
 function extractCards(raw: string): AngleCard[] | null {
-  const parsed = extractJSONArray<AngleCard>(raw);
-  if (!parsed) return null;
-  return parsed.filter(
-    (c) =>
-      typeof c === "object" &&
-      typeof c.title === "string" &&
-      typeof c.teaser === "string" &&
-      typeof c.anchor === "string" &&
-      typeof c.why_it_matters === "string",
-  );
+  if (!raw || !raw.trim()) {
+    console.error("[AngleCards] rawText is empty");
+    return null;
+  }
+  const parsed = extractJSONArray<unknown>(raw);
+  if (!parsed) {
+    console.error("[AngleCards] extractJSONArray returned null. Raw preview:", raw.slice(0, 500));
+    return null;
+  }
+  const cards = parsed.map(normalizeCard).filter((c): c is AngleCard => c !== null);
+  if (cards.length === 0) {
+    console.error("[AngleCards] All cards filtered out. Parsed sample:", JSON.stringify(parsed[0]));
+  }
+  return cards;
 }
 
 export function AngleCards({
