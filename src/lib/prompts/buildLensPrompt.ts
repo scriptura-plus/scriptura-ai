@@ -252,21 +252,63 @@ export function buildLensPrompt(args: {
     // ─── TRANSLATIONS ─────────────────────────────────────────────────────────
     case "translations":
       return (
-        header() +
-        `${OUTPUT_STRUCTURE}\n\n` +
-        `Task: Find 3–4 translations that diverge at a meaningful point in this verse. ` +
-        `Focus on the places where the versions quietly split.\n\n` +
-        `For each divergence:\n` +
-        `1. Name the exact word or phrase where the translations differ.\n` +
-        `2. Show how each choice changes the temperature, texture, or logic of the sentence. ` +
-        `Is one version harsher, softer, more legal, more intimate, more physical, more abstract?\n` +
-        `3. Ask: is one translation hiding the strangeness of the original? Is one sharpening it? ` +
-        `Is one accidentally changing who is responsible for what?\n\n` +
-        `Do not merely list synonyms. Show what is actually at stake in each choice — ` +
-        `what a reader understands differently depending on which version they hold.\n\n` +
-        `End with one sentence: your verdict on which choice is most honest to the original, and why. ` +
-        `Be willing to have an opinion. The ending should feel like a conclusion, not a hedge.` +
-        tail
+        `${fence}\n\n` +
+        `Verse: ${args.reference}\n"${args.verseText}"\n\n` +
+        `All string values must be written in ${langName}.\n\n` +
+        `${EDITORIAL_VOICE(langName)}\n\n` +
+        `${JARGON_BAN}\n\n` +
+
+        `STEP 1 — GENERATE FOUR TRANSLATION VERSIONS OF THIS VERSE:\n` +
+        `Produce the verse text in these four versions. Be as accurate as possible to each translation's known style and terminology.\n\n` +
+        (args.lang === "ru"
+          ? `- "literal": word-for-word interlinear rendering from Greek/Hebrew — show the force of each word\n` +
+            `- "synodal": Синодальный перевод (1876) — formal, classical Russian\n` +
+            `- "rbo": Перевод РБО — modern meaning-based Russian\n` +
+            `- "nwt": Перевод Нового Мира (2007) — literal with distinctive terminology\n\n`
+          : `- "literal": word-for-word interlinear rendering from Greek/Hebrew — show the force of each word\n` +
+            `- "esv": English Standard Version — formal equivalence\n` +
+            `- "nlt": New Living Translation — meaning-based, contemporary\n` +
+            `- "nwt": New World Translation (2013) — literal with distinctive terminology\n\n`
+        ) +
+
+        `STEP 2 — FIND 3 POINTS OF MEANINGFUL DIVERGENCE:\n` +
+        `Compare the four versions. Find exactly 3 places where the translations make genuinely different choices — ` +
+        `not just synonym swaps, but differences that change the temperature, logic, agency, or theology of the sentence.\n\n` +
+        `For each divergence ask:\n` +
+        `- What does each version do with this word or phrase?\n` +
+        `- Is one version more legal, more physical, more intimate, more abstract?\n` +
+        `- Is one translation hiding the strangeness of the original? Is one sharpening it?\n` +
+        `- What does a reader understand differently depending on which version they hold?\n\n` +
+
+        `STEP 3 — REJECTION TEST:\n` +
+        `Reject any divergence that is merely a synonym swap with no meaningful difference in meaning. ` +
+        `Only keep divergences where the choice actually changes what the reader understands.\n\n` +
+
+        `STEP 4 — BUILD OUTPUT:\n` +
+        `Return a JSON object with this exact shape:\n\n` +
+        `{\n` +
+        `  "versions": {\n` +
+        `    "literal": "...",\n` +
+        (args.lang === "ru"
+          ? `    "synodal": "...",\n    "rbo": "...",\n    "nwt": "..."\n`
+          : `    "esv": "...",\n    "nlt": "...",\n    "nwt": "..."\n`
+        ) +
+        `  },\n` +
+        `  "divergences": [\n` +
+        `    {\n` +
+        `      "title": "sharp statement of what diverges, max 10 words, in ${langName}",\n` +
+        `      "quotes": [\n` +
+        `        {"label": "translation name", "text": "the specific phrase from that translation"},\n` +
+        `        {"label": "translation name", "text": "the specific phrase from that translation"},\n` +
+        `        {"label": "translation name", "text": "the specific phrase from that translation"}\n` +
+        `      ],\n` +
+        `      "analysis": "one dense paragraph — journal style — what each choice does and what is at stake, in ${langName}"\n` +
+        `    }\n` +
+        `  ],\n` +
+        `  "verdict": "one sentence — which translation is most honest to the original and why, in ${langName}"\n` +
+        `}\n\n` +
+
+        `JSON only. No markdown fences. No prose before or after. All string values in ${langName} except translation labels.`
       );
   }
 }

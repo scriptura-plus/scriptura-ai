@@ -222,6 +222,67 @@ a:hover { text-decoration: underline; }
   border-radius: 8px;
 }
 
+/* Translation blocks */
+.translation-block {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  box-shadow: var(--shadow);
+}
+.translation-block-title {
+  font-family: var(--serif);
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.3;
+  margin-bottom: 8px;
+}
+.translation-quotes {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.translation-quote-row {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 10px;
+  align-items: baseline;
+  font-size: 14px;
+}
+.translation-quote-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent-soft);
+  font-weight: 600;
+  padding-top: 2px;
+}
+.translation-quote-text {
+  font-style: italic;
+  color: var(--ink-soft);
+  line-height: 1.5;
+}
+.translation-analysis {
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--ink);
+  margin: 0;
+}
+.translation-verdict {
+  font-size: 14px;
+  color: var(--ink-soft);
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+.translation-disclaimer {
+  font-size: 12px;
+  color: var(--ink-soft);
+  opacity: 0.7;
+  text-align: center;
+  margin: 0;
+}
+
 @media (max-width: 480px) {
   .h1 { font-size: 26px; }
   .verse-text { font-size: 19px; }

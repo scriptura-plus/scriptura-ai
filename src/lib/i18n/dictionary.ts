@@ -48,6 +48,8 @@ export const dictionary = {
     original: "Original",
     gap: "What is lost",
     shift: "What changes",
+    verdict: "Verdict",
+    translationDisclaimer: "Translation texts are AI-generated — we recommend verifying against a printed Bible.",
   },
   ru: {
     appName: "Scriptura AI",
@@ -90,6 +92,8 @@ export const dictionary = {
     original: "Оригинал",
     gap: "Что теряется",
     shift: "Что меняется",
+    verdict: "Вывод",
+    translationDisclaimer: "Тексты переводов сгенерированы AI — рекомендуем сверить с печатным изданием.",
   },
   es: {
     appName: "Scriptura AI",
@@ -132,5 +136,7 @@ export const dictionary = {
     original: "Original",
     gap: "Lo que se pierde",
     shift: "Qué cambia",
+    verdict: "Veredicto",
+    translationDisclaimer: "Los textos de las traducciones son generados por IA — recomendamos verificar con una Biblia impresa.",
   },
 } as const;

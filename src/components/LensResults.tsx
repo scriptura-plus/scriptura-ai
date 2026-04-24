@@ -8,6 +8,7 @@ import { MarkdownText } from "./MarkdownText";
 import { AngleCards } from "./AngleCards";
 import { WordCards } from "./WordCards";
 import { ContextLens } from "./ContextLens";
+import { TranslationView } from "./TranslationView";
 
 export function LensResults({
   lens,
@@ -28,8 +29,8 @@ export function LensResults({
   const [error, setError] = useState("");
 
   useEffect(() => {
-    // Context owns its own fetching — skip
-    if (lens === "context") return;
+    // Context and Translations own their own fetching — skip
+    if (lens === "context" || lens === "translations") return;
     if (!verseText) return;
     let cancelled = false;
     setLoading(true);
@@ -71,6 +72,18 @@ export function LensResults({
   if (lens === "context") {
     return (
       <ContextLens
+        reference={reference}
+        verseText={verseText}
+        lang={lang}
+        provider={provider}
+      />
+    );
+  }
+
+  // Translations lens — owns its own fetching via TranslationView
+  if (lens === "translations") {
+    return (
+      <TranslationView
         reference={reference}
         verseText={verseText}
         lang={lang}
