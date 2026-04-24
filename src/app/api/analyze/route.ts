@@ -48,6 +48,11 @@ export async function POST(req: Request) {
     } else if (kind === "extra" && isExtraId(id)) {
       prompt = buildExtraPrompt({ id, reference, verseText, lang });
 
+    } else if (kind === "context") {
+      const level = body?.level === "wide" ? "wide" : "narrow";
+      const { buildContextPrompt } = await import("@/lib/prompts/buildContextPrompt");
+      prompt = buildContextPrompt({ level, reference, verseText, lang });
+
     } else if (kind === "expand-angle") {
       const angleTitle = typeof body?.angleTitle === "string" ? body.angleTitle.trim() : "";
       const anchor = typeof body?.anchor === "string" ? body.anchor.trim() : "";

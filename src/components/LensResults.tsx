@@ -7,6 +7,7 @@ import type { Provider } from "@/lib/ai/providers";
 import { MarkdownText } from "./MarkdownText";
 import { AngleCards } from "./AngleCards";
 import { WordCards } from "./WordCards";
+import { ContextLens } from "./ContextLens";
 
 export function LensResults({
   lens,
@@ -27,6 +28,8 @@ export function LensResults({
   const [error, setError] = useState("");
 
   useEffect(() => {
+    // Context owns its own fetching — skip
+    if (lens === "context") return;
     if (!verseText) return;
     let cancelled = false;
     setLoading(true);
@@ -63,6 +66,18 @@ export function LensResults({
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lens, reference, verseText, lang, provider]);
+
+  // Context lens — owns its own fetching via ContextLens
+  if (lens === "context") {
+    return (
+      <ContextLens
+        reference={reference}
+        verseText={verseText}
+        lang={lang}
+        provider={provider}
+      />
+    );
+  }
 
   if (loading) {
     return (

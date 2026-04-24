@@ -47,6 +47,8 @@ export const dictionary = {
     whyItMatters: "Why it matters",
     original: "Original",
     gap: "What is lost",
+    shift: "What changes",
+    showWideContext: "Show broader context",
   },
   ru: {
     appName: "Scriptura AI",
@@ -88,6 +90,8 @@ export const dictionary = {
     whyItMatters: "Почему это важно",
     original: "Оригинал",
     gap: "Что теряется",
+    shift: "Что меняется",
+    showWideContext: "Показать широкий контекст",
   },
   es: {
     appName: "Scriptura AI",
@@ -129,5 +133,7 @@ export const dictionary = {
     whyItMatters: "Por qué importa",
     original: "Original",
     gap: "Lo que se pierde",
+    shift: "Qué cambia",
+    showWideContext: "Mostrar contexto amplio",
   },
 } as const;
