@@ -22,10 +22,12 @@ export function VersePicker({ lang }: { lang: Lang }) {
     () => Array.from({ length: book.chapters }, (_, i) => i + 1),
     [book],
   );
-  // Up to 50 verse choices — the AI gracefully handles real chapter bounds.
   const verses = useMemo(
-    () => Array.from({ length: 50 }, (_, i) => i + 1),
-    [],
+    () => {
+      const count = book.versesPerChapter[chapter - 1] ?? 30;
+      return Array.from({ length: count }, (_, i) => i + 1);
+    },
+    [book, chapter],
   );
 
   function go(ref: string) {
