@@ -148,6 +148,7 @@ function AngleCardItem({
       <div className="angle-card-header">
         <div>
           <div className="angle-card-title">{card.title}</div>
+          <div className="angle-card-divider" />
           <div className="angle-card-anchor">
             <span className="angle-anchor-label">{t.anchor}: </span>
             <span className="angle-anchor-text">"{card.anchor}"</span>

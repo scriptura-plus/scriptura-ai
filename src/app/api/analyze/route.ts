@@ -49,9 +49,8 @@ export async function POST(req: Request) {
       prompt = buildExtraPrompt({ id, reference, verseText, lang });
 
     } else if (kind === "context") {
-      const level = body?.level === "wide" ? "wide" : "narrow";
       const { buildContextPrompt } = await import("@/lib/prompts/buildContextPrompt");
-      prompt = buildContextPrompt({ level, reference, verseText, lang });
+      prompt = buildContextPrompt({ reference, verseText, lang });
 
     } else if (kind === "expand-angle") {
       const angleTitle = typeof body?.angleTitle === "string" ? body.angleTitle.trim() : "";

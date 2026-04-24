@@ -3,8 +3,10 @@
 import { useState } from "react";
 import { dictionary, type Lang } from "@/lib/i18n/dictionary";
 import type { Provider } from "@/lib/ai/providers";
-import type { ContextLevel } from "@/lib/prompts/buildContextPrompt";
+
 import { MarkdownText } from "./MarkdownText";
+
+export type ContextLevel = "narrow" | "wide";
 
 export type ContextCard = {
   title: string;
@@ -211,6 +213,7 @@ function ContextCardItem({
       <div className="angle-card-header">
         <div>
           <div className="angle-card-title">{card.title}</div>
+          <div className="angle-card-divider" />
           <div className="angle-card-anchor">
             <span className="angle-anchor-label">{t.shift}: </span>
             <span className="angle-anchor-text">"{card.shift}"</span>

@@ -48,7 +48,6 @@ export const dictionary = {
     original: "Original",
     gap: "What is lost",
     shift: "What changes",
-    showWideContext: "Show broader context",
   },
   ru: {
     appName: "Scriptura AI",
@@ -91,7 +90,6 @@ export const dictionary = {
     original: "Оригинал",
     gap: "Что теряется",
     shift: "Что меняется",
-    showWideContext: "Показать широкий контекст",
   },
   es: {
     appName: "Scriptura AI",
@@ -134,6 +132,5 @@ export const dictionary = {
     original: "Original",
     gap: "Lo que se pierde",
     shift: "Qué cambia",
-    showWideContext: "Mostrar contexto amplio",
   },
 } as const;
