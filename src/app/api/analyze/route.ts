@@ -73,6 +73,19 @@ export async function POST(req: Request) {
     }
 
     const text = await runAI(provider, prompt, lang, expectJSON);
+
+    // DEBUG: log raw Gemini output for structured lenses
+    if (provider === "gemini" && expectJSON) {
+      console.log("[DEBUG gemini raw]", {
+        kind,
+        id: id ?? null,
+        len: text.length,
+        first: text[0] ?? "(empty)",
+        last: text[text.length - 1] ?? "(empty)",
+        preview: text.slice(0, 2000),
+      });
+    }
+
     return NextResponse.json({ text });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : "Analysis failed";
