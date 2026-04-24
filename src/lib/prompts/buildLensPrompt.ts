@@ -279,6 +279,10 @@ export function buildLensPrompt(args: {
         `- Is one version more legal, more physical, more intimate, more abstract?\n` +
         `- Is one translation hiding the strangeness of the original? Is one sharpening it?\n` +
         `- What does a reader understand differently depending on which version they hold?\n\n` +
+        `IMPORTANT — DO NOT RANK TRANSLATIONS:\n` +
+        `Never say one translation is better, more accurate, more faithful, preferred, or recommended. ` +
+        `Describe what each version does and what it changes, emphasizes, hides, compresses, or makes explicit. ` +
+        `Your role is diagnostic, not evaluative.\n\n` +
 
         `STEP 3 — REJECTION TEST:\n` +
         `Reject any divergence that is merely a synonym swap with no meaningful difference in meaning. ` +
@@ -305,7 +309,12 @@ export function buildLensPrompt(args: {
         `      "analysis": "one dense paragraph — journal style — what each choice does and what is at stake, in ${langName}"\n` +
         `    }\n` +
         `  ],\n` +
-        `  "verdict": "one sentence — which translation is most honest to the original and why, in ${langName}"\n` +
+        `  "verdict": "one sentence — diagnostic conclusion only, in ${langName}. ` +
+        `Choose ONE of these three patterns based on what you found:\\n` +
+        `• If differences are SUBSTANTIAL (different meaning): state that the versions diverge at key points and the chosen version changes the meaning.\\n` +
+        `• If differences are STYLISTIC (same meaning, different register): state that the versions mostly agree and the differences are stylistic, not semantic.\\n` +
+        `• If differences are MIXED: state that some differences are stylistic while others change the logic of the phrase.\\n` +
+        `DO NOT name a winning translation. DO NOT say one is better, more accurate, or preferred. Diagnose; do not rank."\n` +
         `}\n\n` +
 
         `JSON only. No markdown fences. No prose before or after. All string values in ${langName} except translation labels.`
