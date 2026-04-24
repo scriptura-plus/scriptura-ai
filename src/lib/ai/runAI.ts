@@ -73,7 +73,7 @@ async function runClaude(prompt: string, lang: Lang): Promise<string> {
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
-      model: "claude-3-5-sonnet-latest",
+      model: process.env.ANTHROPIC_MODEL || "claude-sonnet-4-5-20250929",
       max_tokens: 1500,
       system: systemInstruction(lang),
       messages: [{ role: "user", content: prompt }],
