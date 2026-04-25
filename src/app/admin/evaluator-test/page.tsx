@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-const DEFAULT_REQUEST = {
+const DUPLICATE_ANGLE_REQUEST = {
   reference: "Ефесянам 4:32",
   verseText:
     "А вы будьте добры друг к другу, сострадательны, великодушно прощайте друг друга, как и Бог через Христа великодушно простил вас.",
@@ -10,7 +10,7 @@ const DEFAULT_REQUEST = {
   provider: "openai",
   targetFeaturedCount: 12,
   candidate: {
-    id: "candidate_1",
+    id: "candidate_duplicate_angle",
     title: "Прощение здесь не бухгалтерия, а подарочная грамматика",
     anchor: "«великодушно прощайте»",
     teaser:
@@ -48,13 +48,41 @@ const DEFAULT_REQUEST = {
   sourceArticle: "",
 };
 
+const NEW_ANGLE_REQUEST = {
+  ...DUPLICATE_ANGLE_REQUEST,
+  candidate: {
+    id: "candidate_new_angle",
+    title: "«Во Христе» звучит как место, а не как инструмент",
+    anchor: "«как и Бог через Христа простил вас»",
+    teaser:
+      "Фраза не просто говорит, что Бог простил через Христа как через средство. Она помещает Божий акт прощения внутрь определённой сферы: прощение имеет пространство, в котором оно стало возможным и образцовым.",
+    why_it_matters:
+      "Так сравнение работает не как голый пример для копирования, а как указание на уже заданную реальность, внутри которой люди обращаются друг с другом.",
+  },
+};
+
+const WEAK_GENERIC_REQUEST = {
+  ...DUPLICATE_ANGLE_REQUEST,
+  candidate: {
+    id: "candidate_weak_generic",
+    title: "Нужно быть добрыми и прощать других",
+    anchor: "«будьте добры»",
+    teaser:
+      "Этот стих показывает, что христиане должны быть добрыми, сострадательными и прощать других людей.",
+    why_it_matters:
+      "Это важно, потому что доброта и прощение помогают сохранять мирные отношения.",
+  },
+};
+
 function formatJson(value: unknown): string {
   return JSON.stringify(value, null, 2);
 }
 
 export default function EvaluatorTestPage() {
   const [adminSecret, setAdminSecret] = useState("");
-  const [requestText, setRequestText] = useState(formatJson(DEFAULT_REQUEST));
+  const [requestText, setRequestText] = useState(
+    formatJson(DUPLICATE_ANGLE_REQUEST),
+  );
   const [resultText, setResultText] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -74,6 +102,11 @@ export default function EvaluatorTestPage() {
   function saveSecret(value: string) {
     setAdminSecret(value);
     window.localStorage.setItem("scriptura_admin_secret", value);
+  }
+
+  function loadPreset(value: unknown) {
+    setRequestText(formatJson(value));
+    setResultText("");
   }
 
   async function runTest() {
@@ -124,12 +157,7 @@ export default function EvaluatorTestPage() {
           'ui-serif, Georgia, Cambria, "Times New Roman", Times, serif',
       }}
     >
-      <div
-        style={{
-          maxWidth: 980,
-          margin: "0 auto",
-        }}
-      >
+      <div style={{ maxWidth: 980, margin: "0 auto" }}>
         <h1
           style={{
             fontSize: 32,
@@ -140,13 +168,7 @@ export default function EvaluatorTestPage() {
           Scriptura AI Evaluator Test
         </h1>
 
-        <p
-          style={{
-            marginBottom: 24,
-            color: "#6f604a",
-            lineHeight: 1.5,
-          }}
-        >
+        <p style={{ marginBottom: 24, color: "#6f604a", lineHeight: 1.5 }}>
           Temporary internal test page for the angle-card evaluator. This page
           does not change Supabase and does not modify Featured/Reserve yet.
         </p>
@@ -193,6 +215,76 @@ export default function EvaluatorTestPage() {
 
         <section
           style={{
+            border: "1px solid rgba(80, 58, 32, 0.18)",
+            borderRadius: 18,
+            padding: 18,
+            background: "rgba(255, 252, 245, 0.72)",
+            marginBottom: 18,
+          }}
+        >
+          <h2 style={{ fontSize: 18, marginTop: 0, marginBottom: 12 }}>
+            Preset Tests
+          </h2>
+
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 10,
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => loadPreset(DUPLICATE_ANGLE_REQUEST)}
+              style={{
+                border: "1px solid rgba(80, 58, 32, 0.18)",
+                borderRadius: 999,
+                background: "#e8dcc5",
+                padding: "10px 14px",
+                color: "#3b3021",
+                cursor: "pointer",
+                fontWeight: 600,
+              }}
+            >
+              Test duplicate angle
+            </button>
+
+            <button
+              type="button"
+              onClick={() => loadPreset(NEW_ANGLE_REQUEST)}
+              style={{
+                border: "1px solid rgba(80, 58, 32, 0.18)",
+                borderRadius: 999,
+                background: "#e8dcc5",
+                padding: "10px 14px",
+                color: "#3b3021",
+                cursor: "pointer",
+                fontWeight: 600,
+              }}
+            >
+              Test new angle
+            </button>
+
+            <button
+              type="button"
+              onClick={() => loadPreset(WEAK_GENERIC_REQUEST)}
+              style={{
+                border: "1px solid rgba(80, 58, 32, 0.18)",
+                borderRadius: 999,
+                background: "#e8dcc5",
+                padding: "10px 14px",
+                color: "#3b3021",
+                cursor: "pointer",
+                fontWeight: 600,
+              }}
+            >
+              Test weak generic card
+            </button>
+          </div>
+        </section>
+
+        <section
+          style={{
             display: "grid",
             gridTemplateColumns: "1fr",
             gap: 18,
@@ -215,18 +307,11 @@ export default function EvaluatorTestPage() {
                 marginBottom: 10,
               }}
             >
-              <h2
-                style={{
-                  fontSize: 18,
-                  margin: 0,
-                }}
-              >
-                Request JSON
-              </h2>
+              <h2 style={{ fontSize: 18, margin: 0 }}>Request JSON</h2>
 
               <button
                 type="button"
-                onClick={() => setRequestText(formatJson(DEFAULT_REQUEST))}
+                onClick={() => loadPreset(DUPLICATE_ANGLE_REQUEST)}
                 style={{
                   border: "1px solid rgba(80, 58, 32, 0.18)",
                   borderRadius: 999,
@@ -300,13 +385,7 @@ export default function EvaluatorTestPage() {
               background: "rgba(255, 252, 245, 0.72)",
             }}
           >
-            <h2
-              style={{
-                fontSize: 18,
-                marginTop: 0,
-                marginBottom: 10,
-              }}
-            >
+            <h2 style={{ fontSize: 18, marginTop: 0, marginBottom: 10 }}>
               Result
             </h2>
 
