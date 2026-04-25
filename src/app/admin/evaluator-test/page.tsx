@@ -74,8 +74,46 @@ const WEAK_GENERIC_REQUEST = {
   },
 };
 
+type RequestShape = typeof DUPLICATE_ANGLE_REQUEST;
+
+type EvaluationResponse = {
+  status: number;
+  ok: boolean;
+  data?: {
+    evaluation?: unknown;
+    raw?: string;
+    error?: string;
+  };
+};
+
+type RewriteResponse = {
+  status: number;
+  ok: boolean;
+  data?: {
+    rewritten?: {
+      card?: unknown;
+      rewrite_notes?: string;
+    };
+    raw?: string;
+    error?: string;
+  };
+};
+
 function formatJson(value: unknown): string {
   return JSON.stringify(value, null, 2);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function getNestedRecord(
+  value: unknown,
+  key: string,
+): Record<string, unknown> | null {
+  if (!isRecord(value)) return null;
+  const child = value[key];
+  return isRecord(child) ? child : null;
 }
 
 export default function EvaluatorTestPage() {
@@ -84,15 +122,43 @@ export default function EvaluatorTestPage() {
     formatJson(DUPLICATE_ANGLE_REQUEST),
   );
   const [resultText, setResultText] = useState("");
+  const [rewriteText, setRewriteText] = useState("");
+  const [reevaluationText, setReevaluationText] = useState("");
   const [loading, setLoading] = useState(false);
+  const [rewriting, setRewriting] = useState(false);
+  const [reevaluating, setReevaluating] = useState(false);
 
   const parsedRequest = useMemo(() => {
     try {
-      return JSON.parse(requestText);
+      return JSON.parse(requestText) as RequestShape;
     } catch {
       return null;
     }
   }, [requestText]);
+
+  const parsedEvaluationResult = useMemo(() => {
+    if (!resultText) return null;
+
+    try {
+      return JSON.parse(resultText) as EvaluationResponse;
+    } catch {
+      return null;
+    }
+  }, [resultText]);
+
+  const parsedRewriteResult = useMemo(() => {
+    if (!rewriteText) return null;
+
+    try {
+      return JSON.parse(rewriteText) as RewriteResponse;
+    } catch {
+      return null;
+    }
+  }, [rewriteText]);
+
+  const lastEvaluation = parsedEvaluationResult?.data?.evaluation ?? null;
+  const lastRewrittenCard =
+    getNestedRecord(parsedRewriteResult?.data?.rewritten, "card") ?? null;
 
   useEffect(() => {
     const saved = window.localStorage.getItem("scriptura_admin_secret");
@@ -107,9 +173,11 @@ export default function EvaluatorTestPage() {
   function loadPreset(value: unknown) {
     setRequestText(formatJson(value));
     setResultText("");
+    setRewriteText("");
+    setReevaluationText("");
   }
 
-  async function runTest() {
+  async function runEvaluator() {
     if (!parsedRequest) {
       setResultText("Invalid JSON request.");
       return;
@@ -117,6 +185,8 @@ export default function EvaluatorTestPage() {
 
     setLoading(true);
     setResultText("");
+    setRewriteText("");
+    setReevaluationText("");
 
     try {
       const response = await fetch("/api/evaluate-angle", {
@@ -146,6 +216,124 @@ export default function EvaluatorTestPage() {
     }
   }
 
+  async function runRewrite() {
+    if (!parsedRequest || !lastEvaluation) {
+      setRewriteText("Run evaluator first. Rewrite needs evaluation output.");
+      return;
+    }
+
+    setRewriting(true);
+    setRewriteText("");
+    setReevaluationText("");
+
+    try {
+      const response = await fetch("/api/rewrite-angle-card", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-secret": adminSecret,
+        },
+        body: JSON.stringify({
+          reference: parsedRequest.reference,
+          verseText: parsedRequest.verseText,
+          lang: parsedRequest.lang,
+          provider: parsedRequest.provider,
+          candidate: parsedRequest.candidate,
+          evaluation: lastEvaluation,
+          sourceArticle: parsedRequest.sourceArticle ?? "",
+        }),
+      });
+
+      const data = await response.json();
+
+      setRewriteText(
+        formatJson({
+          status: response.status,
+          ok: response.ok,
+          data,
+        }),
+      );
+    } catch (error) {
+      setRewriteText(
+        error instanceof Error ? error.message : "Rewrite request failed.",
+      );
+    } finally {
+      setRewriting(false);
+    }
+  }
+
+  async function runReevaluateRewritten() {
+    if (!parsedRequest || !lastRewrittenCard) {
+      setReevaluationText("Run rewrite first. Re-evaluation needs rewritten card.");
+      return;
+    }
+
+    setReevaluating(true);
+    setReevaluationText("");
+
+    try {
+      const response = await fetch("/api/evaluate-angle", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-secret": adminSecret,
+        },
+        body: JSON.stringify({
+          ...parsedRequest,
+          candidate: {
+            ...lastRewrittenCard,
+            id: "rewritten_candidate",
+          },
+        }),
+      });
+
+      const data = await response.json();
+
+      setReevaluationText(
+        formatJson({
+          status: response.status,
+          ok: response.ok,
+          data,
+        }),
+      );
+    } catch (error) {
+      setReevaluationText(
+        error instanceof Error
+          ? error.message
+          : "Re-evaluation request failed.",
+      );
+    } finally {
+      setReevaluating(false);
+    }
+  }
+
+  const buttonBaseStyle = {
+    border: "1px solid rgba(80, 58, 32, 0.18)",
+    borderRadius: 999,
+    background: "#e8dcc5",
+    padding: "10px 14px",
+    color: "#3b3021",
+    cursor: "pointer",
+    fontWeight: 600,
+  } as const;
+
+  const primaryButtonStyle = {
+    border: "none",
+    borderRadius: 999,
+    background: "#5f7890",
+    color: "#fff",
+    padding: "12px 18px",
+    cursor: "pointer",
+    fontSize: 15,
+    fontWeight: 600,
+  } as const;
+
+  const disabledButtonStyle = {
+    ...primaryButtonStyle,
+    background: "#c7bda9",
+    cursor: "not-allowed",
+  } as const;
+
   return (
     <main
       style={{
@@ -169,8 +357,8 @@ export default function EvaluatorTestPage() {
         </h1>
 
         <p style={{ marginBottom: 24, color: "#6f604a", lineHeight: 1.5 }}>
-          Temporary internal test page for the angle-card evaluator. This page
-          does not change Supabase and does not modify Featured/Reserve yet.
+          Temporary internal test page for evaluator and rewrite workflow. It
+          does not save to Supabase and does not modify Featured/Reserve yet.
         </p>
 
         <section
@@ -236,15 +424,7 @@ export default function EvaluatorTestPage() {
             <button
               type="button"
               onClick={() => loadPreset(DUPLICATE_ANGLE_REQUEST)}
-              style={{
-                border: "1px solid rgba(80, 58, 32, 0.18)",
-                borderRadius: 999,
-                background: "#e8dcc5",
-                padding: "10px 14px",
-                color: "#3b3021",
-                cursor: "pointer",
-                fontWeight: 600,
-              }}
+              style={buttonBaseStyle}
             >
               Test duplicate angle
             </button>
@@ -252,15 +432,7 @@ export default function EvaluatorTestPage() {
             <button
               type="button"
               onClick={() => loadPreset(NEW_ANGLE_REQUEST)}
-              style={{
-                border: "1px solid rgba(80, 58, 32, 0.18)",
-                borderRadius: 999,
-                background: "#e8dcc5",
-                padding: "10px 14px",
-                color: "#3b3021",
-                cursor: "pointer",
-                fontWeight: 600,
-              }}
+              style={buttonBaseStyle}
             >
               Test new angle
             </button>
@@ -268,15 +440,7 @@ export default function EvaluatorTestPage() {
             <button
               type="button"
               onClick={() => loadPreset(WEAK_GENERIC_REQUEST)}
-              style={{
-                border: "1px solid rgba(80, 58, 32, 0.18)",
-                borderRadius: 999,
-                background: "#e8dcc5",
-                padding: "10px 14px",
-                color: "#3b3021",
-                cursor: "pointer",
-                fontWeight: 600,
-              }}
+              style={buttonBaseStyle}
             >
               Test weak generic card
             </button>
@@ -351,65 +515,103 @@ export default function EvaluatorTestPage() {
               </p>
             ) : null}
 
-            <button
-              type="button"
-              disabled={loading || !adminSecret || !parsedRequest}
-              onClick={runTest}
+            <div
               style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 10,
                 marginTop: 14,
-                border: "none",
-                borderRadius: 999,
-                background:
-                  loading || !adminSecret || !parsedRequest
-                    ? "#c7bda9"
-                    : "#5f7890",
-                color: "#fff",
-                padding: "12px 18px",
-                cursor:
-                  loading || !adminSecret || !parsedRequest
-                    ? "not-allowed"
-                    : "pointer",
-                fontSize: 15,
-                fontWeight: 600,
               }}
             >
-              {loading ? "Evaluating..." : "Run Evaluator"}
-            </button>
+              <button
+                type="button"
+                disabled={loading || !adminSecret || !parsedRequest}
+                onClick={runEvaluator}
+                style={
+                  loading || !adminSecret || !parsedRequest
+                    ? disabledButtonStyle
+                    : primaryButtonStyle
+                }
+              >
+                {loading ? "Evaluating..." : "1. Run Evaluator"}
+              </button>
+
+              <button
+                type="button"
+                disabled={rewriting || !adminSecret || !lastEvaluation}
+                onClick={runRewrite}
+                style={
+                  rewriting || !adminSecret || !lastEvaluation
+                    ? disabledButtonStyle
+                    : primaryButtonStyle
+                }
+              >
+                {rewriting ? "Rewriting..." : "2. Rewrite Last Candidate"}
+              </button>
+
+              <button
+                type="button"
+                disabled={
+                  reevaluating || !adminSecret || !lastRewrittenCard
+                }
+                onClick={runReevaluateRewritten}
+                style={
+                  reevaluating || !adminSecret || !lastRewrittenCard
+                    ? disabledButtonStyle
+                    : primaryButtonStyle
+                }
+              >
+                {reevaluating
+                  ? "Re-evaluating..."
+                  : "3. Evaluate Rewritten Card"}
+              </button>
+            </div>
           </div>
 
-          <div
-            style={{
-              border: "1px solid rgba(80, 58, 32, 0.18)",
-              borderRadius: 18,
-              padding: 18,
-              background: "rgba(255, 252, 245, 0.72)",
-            }}
-          >
-            <h2 style={{ fontSize: 18, marginTop: 0, marginBottom: 10 }}>
-              Result
-            </h2>
+          <ResultBlock title="Evaluation Result" text={resultText} />
 
-            <pre
-              style={{
-                minHeight: 260,
-                whiteSpace: "pre-wrap",
-                overflowX: "auto",
-                border: "1px solid rgba(80, 58, 32, 0.18)",
-                borderRadius: 14,
-                padding: 14,
-                background: "#fffaf0",
-                color: "#2c2418",
-                fontFamily:
-                  'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
-                fontSize: 13,
-                lineHeight: 1.45,
-              }}
-            >
-              {resultText || "No evaluation yet."}
-            </pre>
-          </div>
+          <ResultBlock title="Rewrite Result" text={rewriteText} />
+
+          <ResultBlock
+            title="Re-evaluation Result"
+            text={reevaluationText}
+          />
         </section>
       </div>
     </main>
+  );
+}
+
+function ResultBlock({ title, text }: { title: string; text: string }) {
+  return (
+    <div
+      style={{
+        border: "1px solid rgba(80, 58, 32, 0.18)",
+        borderRadius: 18,
+        padding: 18,
+        background: "rgba(255, 252, 245, 0.72)",
+      }}
+    >
+      <h2 style={{ fontSize: 18, marginTop: 0, marginBottom: 10 }}>{title}</h2>
+
+      <pre
+        style={{
+          minHeight: 220,
+          whiteSpace: "pre-wrap",
+          overflowX: "auto",
+          border: "1px solid rgba(80, 58, 32, 0.18)",
+          borderRadius: 14,
+          padding: 14,
+          background: "#fffaf0",
+          color: "#2c2418",
+          fontFamily:
+            'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
+          fontSize: 13,
+          lineHeight: 1.45,
+        }}
+      >
+        {text || "No result yet."}
+      </pre>
+    </div>
   );
 }
