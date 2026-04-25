@@ -127,12 +127,14 @@ export default function EvaluatorTestPage() {
   const [reevaluationText, setReevaluationText] = useState("");
   const [saveText, setSaveText] = useState("");
   const [readText, setReadText] = useState("");
+  const [processText, setProcessText] = useState("");
 
   const [loading, setLoading] = useState(false);
   const [rewriting, setRewriting] = useState(false);
   const [reevaluating, setReevaluating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [reading, setReading] = useState(false);
+  const [processing, setProcessing] = useState(false);
 
   const parsedRequest = useMemo(() => {
     try {
@@ -194,6 +196,7 @@ export default function EvaluatorTestPage() {
     setReevaluationText("");
     setSaveText("");
     setReadText("");
+    setProcessText("");
   }
 
   async function runEvaluator() {
@@ -208,6 +211,7 @@ export default function EvaluatorTestPage() {
     setReevaluationText("");
     setSaveText("");
     setReadText("");
+    setProcessText("");
 
     try {
       const response = await fetch("/api/evaluate-angle", {
@@ -239,7 +243,7 @@ export default function EvaluatorTestPage() {
 
   async function runRewrite() {
     if (!parsedRequest || !lastEvaluation) {
-      setRewriteText("Run evaluator first. Rewrite needs evaluation output.");
+      setRewriteText("Сначала нажми «1. Оценить кандидата».");
       return;
     }
 
@@ -248,6 +252,7 @@ export default function EvaluatorTestPage() {
     setReevaluationText("");
     setSaveText("");
     setReadText("");
+    setProcessText("");
 
     try {
       const response = await fetch("/api/rewrite-angle-card", {
@@ -287,9 +292,7 @@ export default function EvaluatorTestPage() {
 
   async function runReevaluateRewritten() {
     if (!parsedRequest || !lastRewrittenCard) {
-      setReevaluationText(
-        "Run rewrite first. Re-evaluation needs rewritten card.",
-      );
+      setReevaluationText("Сначала нажми «2. Переписать кандидата».");
       return;
     }
 
@@ -297,6 +300,7 @@ export default function EvaluatorTestPage() {
     setReevaluationText("");
     setSaveText("");
     setReadText("");
+    setProcessText("");
 
     try {
       const response = await fetch("/api/evaluate-angle", {
@@ -337,7 +341,7 @@ export default function EvaluatorTestPage() {
   async function runSaveRewrittenCard() {
     if (!parsedRequest || !lastRewrittenCard || !lastReevaluation) {
       setSaveText(
-        "Run evaluator, rewrite, and re-evaluate first. Save needs rewritten card + final evaluation.",
+        "Сначала нужно пройти: оценить → переписать → повторно оценить.",
       );
       return;
     }
@@ -345,6 +349,7 @@ export default function EvaluatorTestPage() {
     setSaving(true);
     setSaveText("");
     setReadText("");
+    setProcessText("");
 
     try {
       const response = await fetch("/api/admin/save-angle-card", {
@@ -425,6 +430,53 @@ export default function EvaluatorTestPage() {
     }
   }
 
+  async function runProcessCandidate() {
+    if (!parsedRequest) {
+      setProcessText("Invalid JSON request.");
+      return;
+    }
+
+    setProcessing(true);
+    setProcessText("");
+
+    try {
+      const response = await fetch("/api/admin/process-angle-candidate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-secret": adminSecret,
+        },
+        body: JSON.stringify({
+          reference: parsedRequest.reference,
+          verseText: parsedRequest.verseText,
+          lang: parsedRequest.lang,
+          provider: parsedRequest.provider,
+          source_provider: parsedRequest.provider,
+          source_model: "manual_test",
+          candidate: parsedRequest.candidate,
+          sourceArticle: parsedRequest.sourceArticle ?? "",
+          targetFeaturedCount: parsedRequest.targetFeaturedCount ?? 12,
+        }),
+      });
+
+      const data = await response.json();
+
+      setProcessText(
+        formatJson({
+          status: response.status,
+          ok: response.ok,
+          data,
+        }),
+      );
+    } catch (error) {
+      setProcessText(
+        error instanceof Error ? error.message : "Process request failed.",
+      );
+    } finally {
+      setProcessing(false);
+    }
+  }
+
   const buttonBaseStyle = {
     border: "1px solid rgba(80, 58, 32, 0.18)",
     borderRadius: 999,
@@ -471,12 +523,12 @@ export default function EvaluatorTestPage() {
             letterSpacing: "-0.03em",
           }}
         >
-          Scriptura AI Evaluator Test
+          Scriptura AI — тест редактора
         </h1>
 
         <p style={{ marginBottom: 24, color: "#6f604a", lineHeight: 1.5 }}>
-          Temporary internal test page for evaluator, rewrite, re-evaluation,
-          saving, and reading angle cards from Supabase.
+          Внутренняя тестовая страница: оценка карточки, автоматическая
+          перепись, повторная оценка, сохранение и чтение из Supabase.
         </p>
 
         <section
@@ -504,7 +556,7 @@ export default function EvaluatorTestPage() {
           <input
             value={adminSecret}
             onChange={(event) => saveSecret(event.target.value)}
-            placeholder="Enter ADMIN_SECRET"
+            placeholder="Вставь ADMIN_SECRET"
             type="password"
             style={{
               width: "100%",
@@ -529,7 +581,7 @@ export default function EvaluatorTestPage() {
           }}
         >
           <h2 style={{ fontSize: 18, marginTop: 0, marginBottom: 12 }}>
-            Preset Tests
+            Готовые тесты
           </h2>
 
           <div
@@ -544,7 +596,7 @@ export default function EvaluatorTestPage() {
               onClick={() => loadPreset(DUPLICATE_ANGLE_REQUEST)}
               style={buttonBaseStyle}
             >
-              Test duplicate angle
+              Тест: дубль угла
             </button>
 
             <button
@@ -552,7 +604,7 @@ export default function EvaluatorTestPage() {
               onClick={() => loadPreset(NEW_ANGLE_REQUEST)}
               style={buttonBaseStyle}
             >
-              Test new angle
+              Тест: новый угол
             </button>
 
             <button
@@ -560,7 +612,7 @@ export default function EvaluatorTestPage() {
               onClick={() => loadPreset(WEAK_GENERIC_REQUEST)}
               style={buttonBaseStyle}
             >
-              Test weak generic card
+              Тест: слабая карточка
             </button>
           </div>
         </section>
@@ -603,7 +655,7 @@ export default function EvaluatorTestPage() {
                   cursor: "pointer",
                 }}
               >
-                Reset sample
+                Сбросить пример
               </button>
             </div>
 
@@ -629,7 +681,7 @@ export default function EvaluatorTestPage() {
 
             {!parsedRequest ? (
               <p style={{ color: "#9b3b2f", marginTop: 10 }}>
-                Request JSON is invalid.
+                JSON запроса повреждён.
               </p>
             ) : null}
 
@@ -651,7 +703,7 @@ export default function EvaluatorTestPage() {
                     : primaryButtonStyle
                 }
               >
-                {loading ? "Evaluating..." : "1. Run Evaluator"}
+                {loading ? "Оцениваем..." : "1. Оценить кандидата"}
               </button>
 
               <button
@@ -664,7 +716,7 @@ export default function EvaluatorTestPage() {
                     : primaryButtonStyle
                 }
               >
-                {rewriting ? "Rewriting..." : "2. Rewrite Last Candidate"}
+                {rewriting ? "Переписываем..." : "2. Переписать кандидата"}
               </button>
 
               <button
@@ -678,8 +730,8 @@ export default function EvaluatorTestPage() {
                 }
               >
                 {reevaluating
-                  ? "Re-evaluating..."
-                  : "3. Evaluate Rewritten Card"}
+                  ? "Повторно оцениваем..."
+                  : "3. Оценить переписанную"}
               </button>
 
               <button
@@ -700,7 +752,7 @@ export default function EvaluatorTestPage() {
                     : primaryButtonStyle
                 }
               >
-                {saving ? "Saving..." : "4. Save Rewritten Card"}
+                {saving ? "Сохраняем..." : "4. Сохранить переписанную"}
               </button>
 
               <button
@@ -713,23 +765,43 @@ export default function EvaluatorTestPage() {
                     : primaryButtonStyle
                 }
               >
-                {reading ? "Reading..." : "5. Read Saved Cards"}
+                {reading ? "Читаем..." : "5. Прочитать сохранённые"}
+              </button>
+
+              <button
+                type="button"
+                disabled={processing || !adminSecret || !parsedRequest}
+                onClick={runProcessCandidate}
+                style={
+                  processing || !adminSecret || !parsedRequest
+                    ? disabledButtonStyle
+                    : {
+                        ...primaryButtonStyle,
+                        background: "#7b5f8f",
+                      }
+                }
+              >
+                {processing
+                  ? "Обрабатываем..."
+                  : "6. Автоцикл: оценить → исправить → сохранить"}
               </button>
             </div>
           </div>
 
-          <ResultBlock title="Evaluation Result" text={resultText} />
+          <ResultBlock title="1. Результат оценки" text={resultText} />
 
-          <ResultBlock title="Rewrite Result" text={rewriteText} />
+          <ResultBlock title="2. Результат переписывания" text={rewriteText} />
 
           <ResultBlock
-            title="Re-evaluation Result"
+            title="3. Результат повторной оценки"
             text={reevaluationText}
           />
 
-          <ResultBlock title="Save Result" text={saveText} />
+          <ResultBlock title="4. Результат сохранения" text={saveText} />
 
-          <ResultBlock title="Saved Cards Result" text={readText} />
+          <ResultBlock title="5. Сохранённые карточки" text={readText} />
+
+          <ResultBlock title="6. Результат автоцикла" text={processText} />
         </section>
       </div>
     </main>
@@ -764,7 +836,7 @@ function ResultBlock({ title, text }: { title: string; text: string }) {
           lineHeight: 1.45,
         }}
       >
-        {text || "No result yet."}
+        {text || "Пока нет результата."}
       </pre>
     </div>
   );
