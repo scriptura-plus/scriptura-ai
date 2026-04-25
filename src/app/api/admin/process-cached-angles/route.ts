@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { getCachedResult } from "@/lib/cache/cachedResults";
+import {
+  getAngleCards,
+  type AngleCardRow,
+} from "@/lib/cache/angleCards";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,6 +17,12 @@ type CandidateCard = {
   teaser: string;
   why_it_matters?: string | null;
   body?: string | null;
+};
+
+type ExistingSignatureSet = {
+  titles: Set<string>;
+  originalTitles: Set<string>;
+  anchors: Set<string>;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -41,6 +51,14 @@ function isAdminRequest(req: Request): boolean {
 
   const provided = req.headers.get("x-admin-secret");
   return provided === expected;
+}
+
+function normalizeText(value: string | null | undefined): string {
+  return (value ?? "")
+    .toLowerCase()
+    .replace(/[«»"“”'‘’.,;:!?()[\]{}—–-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function stripCodeFence(text: string): string {
@@ -153,6 +171,71 @@ function normalizeCachedCandidates(rawJson: unknown): CandidateCard[] {
   return [];
 }
 
+function getOriginalTitle(card: AngleCardRow): string | null {
+  if (!isRecord(card.original_card)) return null;
+  return getString(card.original_card.title);
+}
+
+function buildExistingSignatureSet(cards: AngleCardRow[]): ExistingSignatureSet {
+  const titles = new Set<string>();
+  const originalTitles = new Set<string>();
+  const anchors = new Set<string>();
+
+  for (const card of cards) {
+    const title = normalizeText(card.title);
+    if (title) titles.add(title);
+
+    const originalTitle = normalizeText(getOriginalTitle(card));
+    if (originalTitle) originalTitles.add(originalTitle);
+
+    const anchor = normalizeText(card.anchor);
+    if (anchor) anchors.add(anchor);
+  }
+
+  return {
+    titles,
+    originalTitles,
+    anchors,
+  };
+}
+
+function isAlreadyRepresented(
+  candidate: CandidateCard,
+  signatures: ExistingSignatureSet,
+): {
+  duplicate: boolean;
+  reason: string | null;
+} {
+  const title = normalizeText(candidate.title);
+  const anchor = normalizeText(candidate.anchor);
+
+  if (title && signatures.titles.has(title)) {
+    return {
+      duplicate: true,
+      reason: "existing_title",
+    };
+  }
+
+  if (title && signatures.originalTitles.has(title)) {
+    return {
+      duplicate: true,
+      reason: "existing_original_title",
+    };
+  }
+
+  if (anchor && signatures.anchors.has(anchor)) {
+    return {
+      duplicate: true,
+      reason: "existing_anchor",
+    };
+  }
+
+  return {
+    duplicate: false,
+    reason: null,
+  };
+}
+
 export async function POST(req: Request) {
   try {
     if (!isAdminRequest(req)) {
@@ -185,13 +268,57 @@ export async function POST(req: Request) {
         processed_count: 0,
         saved_count: 0,
         skipped_count: 0,
+        pre_skipped_count: 0,
         candidates: [],
         results: [],
       });
     }
 
+    const existing = await getAngleCards({
+      reference,
+      lang,
+      statuses: ["featured", "reserve"],
+      limit: 100,
+    });
+
+    if (!existing.ok) {
+      return NextResponse.json(
+        { error: existing.error ?? "Failed to read existing angle cards" },
+        { status: 500 },
+      );
+    }
+
+    const signatures = buildExistingSignatureSet(existing.cards);
+
     const candidates = normalizeCachedCandidates(cached.raw_json);
-    const selectedCandidates = candidates.slice(0, limit);
+
+    const selectedCandidates: CandidateCard[] = [];
+    const preSkippedResults = [];
+
+    for (const candidate of candidates) {
+      const duplicateCheck = isAlreadyRepresented(candidate, signatures);
+
+      if (duplicateCheck.duplicate) {
+        preSkippedResults.push({
+          candidate_title: candidate.title,
+          status: 200,
+          ok: true,
+          data: {
+            ok: true,
+            skipped: true,
+            skip_reason: "already_represented",
+            duplicate_reason: duplicateCheck.reason,
+            saved_id: null,
+            status: "skipped_existing",
+          },
+        });
+        continue;
+      }
+
+      selectedCandidates.push(candidate);
+
+      if (selectedCandidates.length >= limit) break;
+    }
 
     const processUrl = new URL(
       "/api/admin/process-angle-candidate",
@@ -200,7 +327,7 @@ export async function POST(req: Request) {
 
     const adminSecret = req.headers.get("x-admin-secret") ?? "";
 
-    const results = [];
+    const processedResults = [];
 
     for (const candidate of selectedCandidates) {
       const response = await fetch(processUrl, {
@@ -224,13 +351,15 @@ export async function POST(req: Request) {
 
       const data = await response.json();
 
-      results.push({
+      processedResults.push({
         candidate_title: candidate.title,
         status: response.status,
         ok: response.ok,
         data,
       });
     }
+
+    const results = [...preSkippedResults, ...processedResults];
 
     const savedCount = results.filter((item) => {
       return isRecord(item.data) && typeof item.data.saved_id === "string";
@@ -244,17 +373,18 @@ export async function POST(req: Request) {
       ok: true,
       cached_found: true,
       total_candidates_found: candidates.length,
-      processed_count: results.length,
+      existing_cards_checked: existing.cards.length,
+      requested_process_limit: limit,
+      pre_skipped_count: preSkippedResults.length,
+      processed_count: processedResults.length,
       saved_count: savedCount,
       skipped_count: skippedCount,
-      candidates: selectedCandidates,
+      candidates_selected_for_processing: selectedCandidates,
       results,
     });
   } catch (error: unknown) {
     const message =
-      error instanceof Error
-        ? error.message
-        : "Process cached angles failed";
+      error instanceof Error ? error.message : "Process cached angles failed";
 
     return NextResponse.json({ error: message }, { status: 500 });
   }
