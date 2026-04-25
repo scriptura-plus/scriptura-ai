@@ -24,14 +24,17 @@ export type CachedResult = {
   updated_at: string;
 };
 
-// Read from cache — public client, respects RLS.
 export async function getCachedResult(
   reference: string,
   lens: string,
   lang: string,
 ): Promise<CachedResult | null> {
   const client = createPublicClient();
-  if (!client) return null;
+
+  if (!client) {
+    console.log("[CACHE] public client unavailable");
+    return null;
+  }
 
   const { data, error } = await client
     .from("cached_results")
@@ -43,12 +46,29 @@ export async function getCachedResult(
     .limit(1)
     .maybeSingle();
 
-  if (error || !data) return null;
+  if (error) {
+    console.error("[CACHE] read error", {
+      reference,
+      lens,
+      lang,
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+      code: error.code,
+    });
+    return null;
+  }
+
+  if (!data) {
+    console.log("[CACHE] miss", { reference, lens, lang });
+    return null;
+  }
+
+  console.log("[CACHE] hit", { reference, lens, lang, id: data.id });
 
   return data as CachedResult;
 }
 
-// Write to cache — admin client, bypasses RLS.
 export async function saveCachedResult(args: {
   reference: string;
   book: string;
@@ -59,13 +79,17 @@ export async function saveCachedResult(args: {
   provider: string;
   model: string;
   raw_json: unknown;
-}): Promise<void> {
+}): Promise<boolean> {
   const client = createAdminClient();
-  if (!client) return;
+
+  if (!client) {
+    console.error("[CACHE] admin client unavailable");
+    return false;
+  }
 
   const prompt_version = PROMPT_VERSIONS[args.lens] ?? "v1";
 
-  await client.from("cached_results").upsert(
+  const { error } = await client.from("cached_results").upsert(
     {
       reference: args.reference,
       book: args.book,
@@ -84,4 +108,25 @@ export async function saveCachedResult(args: {
       onConflict: "reference,lens,lang",
     },
   );
+
+  if (error) {
+    console.error("[CACHE] save error", {
+      reference: args.reference,
+      lens: args.lens,
+      lang: args.lang,
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+      code: error.code,
+    });
+    return false;
+  }
+
+  console.log("[CACHE] saved", {
+    reference: args.reference,
+    lens: args.lens,
+    lang: args.lang,
+  });
+
+  return true;
 }
