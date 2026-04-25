@@ -113,7 +113,6 @@ function AngleCardItem({
   async function handleExpand() {
     if (expanded) {
       setExpanded(false);
-      // Clear error so re-expand can retry; keep article if it finished loading
       if (error) setError("");
       return;
     }
@@ -122,13 +121,13 @@ function AngleCardItem({
 
     setLoading(true);
     setError("");
-    setArticle("");
 
     try {
-      const r = await fetch("/api/expand", {
+      const r = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          kind: "expand-angle",
           angleTitle: card.title,
           anchor: card.anchor,
           reference,
@@ -137,33 +136,9 @@ function AngleCardItem({
           provider,
         }),
       });
-
-      // Error responses come back as JSON
-      const contentType = r.headers.get("Content-Type") ?? "";
-      if (!r.ok || contentType.includes("application/json")) {
-        const j = await r.json().catch(() => ({})) as { error?: string };
-        throw new Error(j?.error || t.error);
-      }
-
-      // Success: plain text stream
-      const body = r.body;
-      if (!body) throw new Error(t.error);
-
-      const reader = body.getReader();
-      const decoder = new TextDecoder();
-      let full = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        full += decoder.decode(value, { stream: true });
-        setArticle(full);
-      }
-
-      // Flush any remaining bytes
-      full += decoder.decode();
-      setArticle(full);
-
+      const j = await r.json() as { text?: string; error?: string };
+      if (!r.ok) throw new Error(j?.error || t.error);
+      setArticle(j.text ?? "");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : t.error);
     } finally {
