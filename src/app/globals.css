@@ -387,7 +387,7 @@ a:hover { text-decoration: underline; }
   border-radius: 10px;
   cursor: pointer;
   font-family: inherit;
-  font-weight: 700;
+  font-weight: 600;
   transition: transform 0.1s ease, box-shadow 0.1s ease, background 0.15s ease;
   -webkit-tap-highlight-color: transparent;
   user-select: none;
@@ -399,7 +399,8 @@ a:hover { text-decoration: underline; }
 
 /* Book abbreviation buttons */
 .picker-btn-book {
-  font-size: 14px;
+  font-size: 13px;
+  font-weight: 600;
   min-height: 52px;
   padding: 10px 3px;
   line-height: 1;
@@ -408,22 +409,34 @@ a:hover { text-decoration: underline; }
   align-items: center;
   justify-content: center;
 }
-.picker-btn-ot { background: #c6d5e3; }
-.picker-btn-ot:hover { background: #b5c8d8; }
-.picker-btn-nt { background: #bccde0; }
-.picker-btn-nt:hover { background: #aabfd5; }
 
-/* Chapter / verse number buttons */
+/*
+ * Canonical color-group system — three subtle semitones from the same blue-gray family.
+ *   darker  = Pentateuch · Prophets · Four Gospels · Revelation
+ *   lighter = Historical books (Josh–Esther) · Acts
+ *   mid     = Wisdom/Poetic (Job–Song) · Epistles (Rom–Jude)
+ */
+.picker-btn-group-darker  { background: #afc2d4; }
+.picker-btn-group-darker:hover  { background: #9fb5c8; }
+.picker-btn-group-lighter { background: #d5e2eb; }
+.picker-btn-group-lighter:hover { background: #c5d5e3; }
+.picker-btn-group-mid     { background: #c4d3e2; }
+.picker-btn-group-mid:hover     { background: #b5c6d5; }
+
+/* Chapter / verse number buttons — refined, lighter-weight numerals */
 .picker-btn-number {
-  font-size: 20px;
+  font-size: 18px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums lining-nums;
   min-height: 68px;
   background: #c6d5e3;
-  color: #1e3249;
+  color: #2d4a64;
   aspect-ratio: 1;
   display: flex;
   align-items: center;
   justify-content: center;
   line-height: 1;
+  letter-spacing: -0.01em;
 }
 .picker-btn-number:hover { background: #b5c8d8; }
 
@@ -451,7 +464,7 @@ a:hover { text-decoration: underline; }
   .picker-grid-books   { grid-template-columns: repeat(7, 1fr); gap: 8px; }
   .picker-grid-numbers { grid-template-columns: repeat(5, 1fr); gap: 8px; }
   .picker-btn-book   { font-size: 14px; min-height: 54px; }
-  .picker-btn-number { font-size: 22px; min-height: 76px; }
+  .picker-btn-number { font-size: 19px; min-height: 76px; }
   .picker-section-header { font-size: 13px; }
 }
 
@@ -460,7 +473,7 @@ a:hover { text-decoration: underline; }
   .picker-grid-books   { grid-template-columns: repeat(8, 1fr); gap: 9px; }
   .picker-grid-numbers { grid-template-columns: repeat(6, 1fr); gap: 9px; }
   .picker-btn-book   { font-size: 15px; min-height: 58px; }
-  .picker-btn-number { font-size: 24px; min-height: 82px; }
+  .picker-btn-number { font-size: 21px; min-height: 82px; }
   .picker-book-title { font-size: 34px; }
 }
 

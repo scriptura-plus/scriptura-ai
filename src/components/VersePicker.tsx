@@ -25,6 +25,43 @@ const ABBR: Record<string, string> = {
   "2john": "2Jo", "3john": "3Jo", jude: "Jude", revelation: "Re",
 };
 
+/**
+ * Canonical color-group system.
+ *
+ * darker  — Pentateuch · Major+Minor Prophets · Four Gospels · Revelation
+ * lighter — Historical books (Josh–Esther) · Acts
+ * mid     — Wisdom/Poetic (Job–Song) · Epistles (Rom–Jude)
+ */
+const DARKER_BOOKS = new Set([
+  // Pentateuch
+  "genesis","exodus","leviticus","numbers","deuteronomy",
+  // Major + Minor Prophets
+  "isaiah","jeremiah","lamentations","ezekiel","daniel",
+  "hosea","joel","amos","obadiah","jonah","micah","nahum",
+  "habakkuk","zephaniah","haggai","zechariah","malachi",
+  // Four Gospels
+  "matthew","mark","luke","john",
+  // Revelation
+  "revelation",
+]);
+
+const LIGHTER_BOOKS = new Set([
+  // Historical books
+  "joshua","judges","ruth",
+  "1samuel","2samuel","1kings","2kings",
+  "1chronicles","2chronicles","ezra","nehemiah","esther",
+  // Acts
+  "acts",
+]);
+
+// Mid = Wisdom/Poetic + Epistles — everything not in the above two sets
+
+function bookGroupClass(id: string): string {
+  if (DARKER_BOOKS.has(id)) return "picker-btn-group-darker";
+  if (LIGHTER_BOOKS.has(id)) return "picker-btn-group-lighter";
+  return "picker-btn-group-mid";
+}
+
 const OT = BOOKS.slice(0, 39);
 const NT = BOOKS.slice(39);
 
@@ -122,7 +159,7 @@ export function VersePicker({ lang }: { lang: Lang }) {
         {OT.map((b) => (
           <button
             key={b.id}
-            className="picker-btn picker-btn-book picker-btn-ot"
+            className={`picker-btn picker-btn-book ${bookGroupClass(b.id)}`}
             onClick={() => pickBook(b)}
           >
             {ABBR[b.id] ?? b.id}
@@ -137,7 +174,7 @@ export function VersePicker({ lang }: { lang: Lang }) {
         {NT.map((b) => (
           <button
             key={b.id}
-            className="picker-btn picker-btn-book picker-btn-nt"
+            className={`picker-btn picker-btn-book ${bookGroupClass(b.id)}`}
             onClick={() => pickBook(b)}
           >
             {ABBR[b.id] ?? b.id}
