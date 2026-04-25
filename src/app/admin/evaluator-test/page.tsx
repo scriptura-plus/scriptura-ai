@@ -124,9 +124,11 @@ export default function EvaluatorTestPage() {
   const [resultText, setResultText] = useState("");
   const [rewriteText, setRewriteText] = useState("");
   const [reevaluationText, setReevaluationText] = useState("");
+  const [saveText, setSaveText] = useState("");
   const [loading, setLoading] = useState(false);
   const [rewriting, setRewriting] = useState(false);
   const [reevaluating, setReevaluating] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const parsedRequest = useMemo(() => {
     try {
@@ -156,9 +158,21 @@ export default function EvaluatorTestPage() {
     }
   }, [rewriteText]);
 
+  const parsedReevaluationResult = useMemo(() => {
+    if (!reevaluationText) return null;
+
+    try {
+      return JSON.parse(reevaluationText) as EvaluationResponse;
+    } catch {
+      return null;
+    }
+  }, [reevaluationText]);
+
   const lastEvaluation = parsedEvaluationResult?.data?.evaluation ?? null;
   const lastRewrittenCard =
     getNestedRecord(parsedRewriteResult?.data?.rewritten, "card") ?? null;
+  const lastReevaluation =
+    parsedReevaluationResult?.data?.evaluation ?? null;
 
   useEffect(() => {
     const saved = window.localStorage.getItem("scriptura_admin_secret");
@@ -175,6 +189,7 @@ export default function EvaluatorTestPage() {
     setResultText("");
     setRewriteText("");
     setReevaluationText("");
+    setSaveText("");
   }
 
   async function runEvaluator() {
@@ -187,6 +202,7 @@ export default function EvaluatorTestPage() {
     setResultText("");
     setRewriteText("");
     setReevaluationText("");
+    setSaveText("");
 
     try {
       const response = await fetch("/api/evaluate-angle", {
@@ -225,6 +241,7 @@ export default function EvaluatorTestPage() {
     setRewriting(true);
     setRewriteText("");
     setReevaluationText("");
+    setSaveText("");
 
     try {
       const response = await fetch("/api/rewrite-angle-card", {
@@ -270,6 +287,7 @@ export default function EvaluatorTestPage() {
 
     setReevaluating(true);
     setReevaluationText("");
+    setSaveText("");
 
     try {
       const response = await fetch("/api/evaluate-angle", {
@@ -304,6 +322,54 @@ export default function EvaluatorTestPage() {
       );
     } finally {
       setReevaluating(false);
+    }
+  }
+
+  async function runSaveRewrittenCard() {
+    if (!parsedRequest || !lastRewrittenCard || !lastReevaluation) {
+      setSaveText(
+        "Run evaluator, rewrite, and re-evaluate first. Save needs rewritten card + final evaluation.",
+      );
+      return;
+    }
+
+    setSaving(true);
+    setSaveText("");
+
+    try {
+      const response = await fetch("/api/admin/save-angle-card", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-secret": adminSecret,
+        },
+        body: JSON.stringify({
+          reference: parsedRequest.reference,
+          lang: parsedRequest.lang,
+          card: lastRewrittenCard,
+          evaluation: lastReevaluation,
+          original_card: parsedRequest.candidate,
+          source_type: "manual_test_rewrite",
+          source_provider: parsedRequest.provider,
+          source_model: "unknown",
+        }),
+      });
+
+      const data = await response.json();
+
+      setSaveText(
+        formatJson({
+          status: response.status,
+          ok: response.ok,
+          data,
+        }),
+      );
+    } catch (error) {
+      setSaveText(
+        error instanceof Error ? error.message : "Save request failed.",
+      );
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -357,8 +423,8 @@ export default function EvaluatorTestPage() {
         </h1>
 
         <p style={{ marginBottom: 24, color: "#6f604a", lineHeight: 1.5 }}>
-          Temporary internal test page for evaluator and rewrite workflow. It
-          does not save to Supabase and does not modify Featured/Reserve yet.
+          Temporary internal test page for evaluator, rewrite, re-evaluation,
+          and saving one angle card into Supabase.
         </p>
 
         <section
@@ -565,6 +631,19 @@ export default function EvaluatorTestPage() {
                   ? "Re-evaluating..."
                   : "3. Evaluate Rewritten Card"}
               </button>
+
+              <button
+                type="button"
+                disabled={saving || !adminSecret || !lastRewrittenCard || !lastReevaluation}
+                onClick={runSaveRewrittenCard}
+                style={
+                  saving || !adminSecret || !lastRewrittenCard || !lastReevaluation
+                    ? disabledButtonStyle
+                    : primaryButtonStyle
+                }
+              >
+                {saving ? "Saving..." : "4. Save Rewritten Card"}
+              </button>
             </div>
           </div>
 
@@ -576,6 +655,8 @@ export default function EvaluatorTestPage() {
             title="Re-evaluation Result"
             text={reevaluationText}
           />
+
+          <ResultBlock title="Save Result" text={saveText} />
         </section>
       </div>
     </main>
