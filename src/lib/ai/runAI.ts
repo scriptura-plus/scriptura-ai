@@ -44,7 +44,7 @@ async function runOpenAI(prompt: string, lang: Lang): Promise<string> {
       Authorization: `Bearer ${key}`,
     },
     body: JSON.stringify({
-      model: "gpt-4o-mini",
+      model: process.env.OPENAI_MODEL || "gpt-5.5",
       messages: [
         { role: "system", content: systemInstruction(lang) },
         { role: "user", content: prompt },
