@@ -34,6 +34,17 @@ type PromptCard = {
   body?: string;
 };
 
+type EvaluationBattle = {
+  required?: boolean;
+  old_card_id?: string | null;
+  old_score?: number;
+  new_score?: number;
+  winner?: string | null;
+  score_delta?: number;
+  battle_action?: string | null;
+  battle_reason?: string | null;
+};
+
 type Evaluation = {
   angle_summary?: string | null;
   coverage_type?: AngleCardInput["coverage_type"];
@@ -42,7 +53,7 @@ type Evaluation = {
   similarity_confidence?: number;
   scores?: unknown;
   score_total?: number;
-  battle?: unknown;
+  battle?: EvaluationBattle | unknown;
   placement?: string;
   replace_card_id?: string | null;
   reason?: string | null;
@@ -257,6 +268,44 @@ function shouldRewrite(evaluation: Evaluation): boolean {
   );
 }
 
+function getBattle(evaluation: Evaluation): EvaluationBattle | null {
+  if (!isRecord(evaluation.battle)) return null;
+
+  return {
+    required:
+      typeof evaluation.battle.required === "boolean"
+        ? evaluation.battle.required
+        : undefined,
+    old_card_id: getString(evaluation.battle.old_card_id),
+    old_score: getNumber(evaluation.battle.old_score) ?? undefined,
+    new_score: getNumber(evaluation.battle.new_score) ?? undefined,
+    winner: getString(evaluation.battle.winner),
+    score_delta: getNumber(evaluation.battle.score_delta) ?? undefined,
+    battle_action: getString(evaluation.battle.battle_action),
+    battle_reason: getString(evaluation.battle.battle_reason),
+  };
+}
+
+function shouldSkipLosingDuplicate(evaluation: Evaluation): boolean {
+  const battle = getBattle(evaluation);
+
+  if (!battle) return false;
+
+  const isSameAngle = evaluation.same_angle === true;
+  const matchedCardWon = battle.winner === "matched";
+  const scoreDelta =
+    typeof battle.score_delta === "number" ? battle.score_delta : 0;
+
+  const action = battle.battle_action ?? "";
+
+  return (
+    isSameAngle &&
+    matchedCardWon &&
+    scoreDelta <= -6 &&
+    action.includes("keep_existing")
+  );
+}
+
 function getFinalCardForSave(card: CandidateCard): {
   title: string;
   anchor: string | null;
@@ -429,6 +478,21 @@ export async function POST(req: Request) {
       targetFeaturedCount,
     });
 
+    if (shouldSkipLosingDuplicate(firstEvaluation)) {
+      return NextResponse.json({
+        ok: true,
+        skipped: true,
+        skip_reason: "losing_duplicate",
+        saved_id: null,
+        rewritten: false,
+        status: "skipped_duplicate",
+        score_total: getNumber(firstEvaluation.score_total),
+        first_evaluation: firstEvaluation,
+        final_card: candidate,
+        final_evaluation: firstEvaluation,
+      });
+    }
+
     let finalCard: CandidateCard = candidate;
     let finalEvaluation: Evaluation = firstEvaluation;
     let rewritten = false;
@@ -457,6 +521,22 @@ export async function POST(req: Request) {
         sourceArticle,
         targetFeaturedCount,
       });
+
+      if (shouldSkipLosingDuplicate(finalEvaluation)) {
+        return NextResponse.json({
+          ok: true,
+          skipped: true,
+          skip_reason: "losing_duplicate_after_rewrite",
+          saved_id: null,
+          rewritten,
+          status: "skipped_duplicate",
+          score_total: getNumber(finalEvaluation.score_total),
+          first_evaluation: firstEvaluation,
+          rewritten_card: rewrittenCard,
+          final_card: finalCard,
+          final_evaluation: finalEvaluation,
+        });
+      }
     }
 
     const referenceParts = parseReferenceParts(reference);
@@ -513,6 +593,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       ok: true,
+      skipped: false,
       saved_id: saveResult.id,
       rewritten,
       status,
