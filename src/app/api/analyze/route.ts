@@ -13,11 +13,14 @@ import {
 } from "@/lib/prompts/buildExtraPrompt";
 import { buildExpandPrompt } from "@/lib/prompts/buildExpandPrompt";
 import { getCachedResult, saveCachedResult } from "@/lib/cache/cachedResults";
+import { getFeaturedAngleCards } from "@/lib/cache/angleCards";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type Lang = "en" | "ru" | "es";
+
+const TARGET_ANGLE_COUNT = 12;
 
 const isLang = (v: unknown): v is Lang =>
   v === "en" || v === "ru" || v === "es";
@@ -27,6 +30,19 @@ const isLensId = (v: unknown): v is LensId =>
 
 const isExtraId = (v: unknown): v is ExtraId =>
   typeof v === "string" && (EXTRA_ORDER as string[]).includes(v);
+
+type AngleCardLike = {
+  id?: string;
+  title: string;
+  anchor?: string | null;
+  teaser?: string | null;
+  why_it_matters?: string | null;
+  body?: string | null;
+  score_total?: number | null;
+  status?: string | null;
+  coverage_type?: string | null;
+  source?: string | null;
+};
 
 function stringifyCachedRawJson(rawJson: unknown): string {
   if (typeof rawJson === "string") return rawJson;
@@ -135,6 +151,120 @@ function parseCacheableJson(text: string): unknown | null {
   }
 }
 
+function normalizeCachedCards(rawJson: unknown): AngleCardLike[] {
+  const value =
+    typeof rawJson === "string" ? parseCacheableJson(rawJson) : rawJson;
+
+  if (Array.isArray(value)) {
+    return value
+      .filter((item): item is Record<string, unknown> => {
+        return typeof item === "object" && item !== null && !Array.isArray(item);
+      })
+      .map((item) => ({
+        title: typeof item.title === "string" ? item.title : "",
+        anchor:
+          typeof item.anchor === "string"
+            ? item.anchor
+            : typeof item.support === "string"
+              ? item.support
+              : null,
+        teaser:
+          typeof item.teaser === "string"
+            ? item.teaser
+            : typeof item.text === "string"
+              ? item.text
+              : typeof item.body === "string"
+                ? item.body
+                : "",
+        why_it_matters:
+          typeof item.why_it_matters === "string"
+            ? item.why_it_matters
+            : typeof item.whyItMatters === "string"
+              ? item.whyItMatters
+              : null,
+        body: typeof item.body === "string" ? item.body : null,
+        source: "cached_results",
+      }))
+      .filter((item) => item.title && item.teaser);
+  }
+
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    "cards" in value
+  ) {
+    const cards = (value as { cards?: unknown }).cards;
+    return normalizeCachedCards(cards);
+  }
+
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    "angles" in value
+  ) {
+    const angles = (value as { angles?: unknown }).angles;
+    return normalizeCachedCards(angles);
+  }
+
+  return [];
+}
+
+async function buildAnglesResponseFromCards(args: {
+  reference: string;
+  lang: Lang;
+}): Promise<string | null> {
+  const featuredResult = await getFeaturedAngleCards({
+    reference: args.reference,
+    lang: args.lang,
+    limit: TARGET_ANGLE_COUNT,
+  });
+
+  if (!featuredResult.ok || featuredResult.cards.length === 0) {
+    return null;
+  }
+
+  const featuredCards: AngleCardLike[] = featuredResult.cards.map((card) => ({
+    id: card.id,
+    title: card.title,
+    anchor: card.anchor,
+    teaser: card.teaser,
+    why_it_matters: card.why_it_matters,
+    score_total: card.score_total,
+    status: card.status,
+    coverage_type: card.coverage_type,
+    source: "angle_cards",
+  }));
+
+  if (featuredCards.length >= TARGET_ANGLE_COUNT) {
+    return JSON.stringify(featuredCards.slice(0, TARGET_ANGLE_COUNT));
+  }
+
+  const cached = await getCachedResult(args.reference, "angles", args.lang);
+  const cachedCards = cached?.raw_json
+    ? normalizeCachedCards(cached.raw_json)
+    : [];
+
+  const seenTitles = new Set(
+    featuredCards.map((card) => card.title.trim().toLowerCase()),
+  );
+
+  const fallbackCards = cachedCards.filter((card) => {
+    const titleKey = card.title.trim().toLowerCase();
+    if (!titleKey || seenTitles.has(titleKey)) return false;
+    seenTitles.add(titleKey);
+    return true;
+  });
+
+  const merged = [...featuredCards, ...fallbackCards].slice(
+    0,
+    TARGET_ANGLE_COUNT,
+  );
+
+  return JSON.stringify(merged);
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -161,11 +291,33 @@ export async function POST(req: Request) {
       kind === "lens" && id === "angles" && isLensId(id);
 
     if (shouldUseAnglesCache) {
-      console.log("[CACHE] lookup", {
+      console.log("[ANGLE_CARDS] lookup", {
         reference,
         lens: "angles",
         lang,
-        provider,
+      });
+
+      const angleCardsText = await buildAnglesResponseFromCards({
+        reference,
+        lang,
+      });
+
+      if (angleCardsText) {
+        console.log("[ANGLE_CARDS] hit", {
+          reference,
+          lang,
+        });
+
+        return NextResponse.json({
+          text: angleCardsText,
+          cached: true,
+          source: "angle_cards",
+        });
+      }
+
+      console.log("[ANGLE_CARDS] miss", {
+        reference,
+        lang,
       });
 
       const cached = await getCachedResult(reference, "angles", lang);
@@ -174,6 +326,7 @@ export async function POST(req: Request) {
         return NextResponse.json({
           text: stringifyCachedRawJson(cached.raw_json),
           cached: true,
+          source: "cached_results",
         });
       }
     }
