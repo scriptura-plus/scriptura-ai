@@ -37,20 +37,30 @@ function parseReference(reference: string): {
   book: string;
   chapter: number;
   verse: number;
-} | null {
+} {
   const match = reference.trim().match(/^(.+?)\s+(\d+):(\d+)$/);
 
-  if (!match) return null;
+  if (!match) {
+    console.warn("[CACHE] could not parse reference, using fallback", {
+      reference,
+    });
 
-  const book = match[1]?.trim();
+    return {
+      book: reference,
+      chapter: 0,
+      verse: 0,
+    };
+  }
+
+  const book = match[1]?.trim() || reference;
   const chapter = Number(match[2]);
   const verse = Number(match[3]);
 
-  if (!book || !Number.isFinite(chapter) || !Number.isFinite(verse)) {
-    return null;
-  }
-
-  return { book, chapter, verse };
+  return {
+    book,
+    chapter: Number.isFinite(chapter) ? chapter : 0,
+    verse: Number.isFinite(verse) ? verse : 0,
+  };
 }
 
 function getModelName(provider: string): string {
@@ -69,10 +79,58 @@ function getModelName(provider: string): string {
   return provider;
 }
 
+function stripCodeFence(text: string): string {
+  const trimmed = text.trim();
+
+  if (!trimmed.startsWith("```")) return trimmed;
+
+  return trimmed
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+}
+
+function extractFirstJsonBlock(text: string): string | null {
+  const stripped = stripCodeFence(text);
+
+  if (stripped.startsWith("[") || stripped.startsWith("{")) {
+    return stripped;
+  }
+
+  const arrayStart = stripped.indexOf("[");
+  const arrayEnd = stripped.lastIndexOf("]");
+
+  if (arrayStart !== -1 && arrayEnd !== -1 && arrayEnd > arrayStart) {
+    return stripped.slice(arrayStart, arrayEnd + 1);
+  }
+
+  const objectStart = stripped.indexOf("{");
+  const objectEnd = stripped.lastIndexOf("}");
+
+  if (objectStart !== -1 && objectEnd !== -1 && objectEnd > objectStart) {
+    return stripped.slice(objectStart, objectEnd + 1);
+  }
+
+  return null;
+}
+
 function parseCacheableJson(text: string): unknown | null {
+  const jsonText = extractFirstJsonBlock(text);
+
+  if (!jsonText) {
+    console.warn("[CACHE] no JSON block found", {
+      preview: text.slice(0, 500),
+    });
+    return null;
+  }
+
   try {
-    return JSON.parse(text);
-  } catch {
+    return JSON.parse(jsonText);
+  } catch (error) {
+    console.error("[CACHE] JSON parse failed", {
+      message: error instanceof Error ? error.message : String(error),
+      preview: jsonText.slice(0, 1000),
+    });
     return null;
   }
 }
@@ -103,6 +161,13 @@ export async function POST(req: Request) {
       kind === "lens" && id === "angles" && isLensId(id);
 
     if (shouldUseAnglesCache) {
+      console.log("[CACHE] lookup", {
+        reference,
+        lens: "angles",
+        lang,
+        provider,
+      });
+
       const cached = await getCachedResult(reference, "angles", lang);
 
       if (cached?.raw_json) {
@@ -147,8 +212,6 @@ export async function POST(req: Request) {
         verseText,
         lang,
       });
-
-      // expand-angle returns prose markdown, not JSON.
     } else {
       return NextResponse.json(
         {
@@ -161,7 +224,6 @@ export async function POST(req: Request) {
 
     const text = await runAI(provider, prompt, lang, expectJSON);
 
-    // DEBUG: log raw Gemini output for structured lenses.
     if (provider === "gemini" && expectJSON) {
       console.log("[DEBUG gemini raw]", {
         kind,
@@ -177,7 +239,7 @@ export async function POST(req: Request) {
       const parsedReference = parseReference(reference);
       const cacheableJson = parseCacheableJson(text);
 
-      if (parsedReference && cacheableJson) {
+      if (cacheableJson) {
         await saveCachedResult({
           reference,
           book: parsedReference.book,
@@ -188,6 +250,14 @@ export async function POST(req: Request) {
           provider,
           model: getModelName(provider),
           raw_json: cacheableJson,
+        });
+      } else {
+        console.warn("[CACHE] skipped save because response was not valid JSON", {
+          reference,
+          lens: "angles",
+          lang,
+          provider,
+          preview: text.slice(0, 1000),
         });
       }
     }
