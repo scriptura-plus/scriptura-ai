@@ -286,24 +286,12 @@ function getBattle(evaluation: Evaluation): EvaluationBattle | null {
   };
 }
 
-function shouldSkipLosingDuplicate(evaluation: Evaluation): boolean {
+function shouldSkipMatchedDuplicate(evaluation: Evaluation): boolean {
   const battle = getBattle(evaluation);
 
   if (!battle) return false;
 
-  const isSameAngle = evaluation.same_angle === true;
-  const matchedCardWon = battle.winner === "matched";
-  const scoreDelta =
-    typeof battle.score_delta === "number" ? battle.score_delta : 0;
-
-  const action = battle.battle_action ?? "";
-
-  return (
-    isSameAngle &&
-    matchedCardWon &&
-    scoreDelta <= -6 &&
-    action.includes("keep_existing")
-  );
+  return evaluation.same_angle === true && battle.winner === "matched";
 }
 
 function getFinalCardForSave(card: CandidateCard): {
@@ -450,7 +438,7 @@ export async function POST(req: Request) {
       reference,
       lang,
       statuses: ["featured", "reserve"],
-      limit: 48,
+      limit: 100,
     });
 
     if (!existing.ok) {
@@ -478,11 +466,11 @@ export async function POST(req: Request) {
       targetFeaturedCount,
     });
 
-    if (shouldSkipLosingDuplicate(firstEvaluation)) {
+    if (shouldSkipMatchedDuplicate(firstEvaluation)) {
       return NextResponse.json({
         ok: true,
         skipped: true,
-        skip_reason: "losing_duplicate",
+        skip_reason: "matched_duplicate",
         saved_id: null,
         rewritten: false,
         status: "skipped_duplicate",
@@ -522,11 +510,11 @@ export async function POST(req: Request) {
         targetFeaturedCount,
       });
 
-      if (shouldSkipLosingDuplicate(finalEvaluation)) {
+      if (shouldSkipMatchedDuplicate(finalEvaluation)) {
         return NextResponse.json({
           ok: true,
           skipped: true,
-          skip_reason: "losing_duplicate_after_rewrite",
+          skip_reason: "matched_duplicate_after_rewrite",
           saved_id: null,
           rewritten,
           status: "skipped_duplicate",
