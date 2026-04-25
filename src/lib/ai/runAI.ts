@@ -37,29 +37,58 @@ async function runOpenAI(prompt: string, lang: Lang): Promise<string> {
   const key = process.env.OPENAI_API_KEY;
   if (!key) throw new Error(MISSING_KEY("OPENAI_API_KEY"));
 
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+  const model = process.env.OPENAI_MODEL || "gpt-5.5";
+
+  // GPT-5-family models require the Responses API (/v1/responses).
+  // Chat Completions rejects temperature != 1 and other legacy params for these models.
+  const res = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${key}`,
     },
     body: JSON.stringify({
-      model: process.env.OPENAI_MODEL || "gpt-5.5",
-      messages: [
-        { role: "system", content: systemInstruction(lang) },
-        { role: "user", content: prompt },
-      ],
-      temperature: 0.7,
+      model,
+      instructions: systemInstruction(lang),
+      input: prompt,
     }),
   });
 
   if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`OpenAI error ${res.status}: ${body.slice(0, 400)}`);
+    const errBody = await res.text();
+    let parsed: Record<string, unknown> = {};
+    try { parsed = JSON.parse(errBody); } catch { /* ignore */ }
+    const err = (parsed.error ?? {}) as Record<string, unknown>;
+    console.error("[OpenAI] API error:", {
+      model,
+      endpoint: "/v1/responses",
+      status: res.status,
+      message: err.message,
+      param: err.param,
+      code: err.code,
+      type: err.type,
+    });
+    throw new Error(`OpenAI error ${res.status}: ${errBody.slice(0, 400)}`);
   }
+
   const data = await res.json();
-  const text: string = data?.choices?.[0]?.message?.content ?? "";
-  return text.trim();
+
+  // Responses API shape: output[].content[] where type === "output_text"
+  type OutputContent = { type?: string; text?: string };
+  type OutputItem = { content?: OutputContent[] };
+  const text = ((data?.output ?? []) as OutputItem[])
+    .flatMap((item) => item?.content ?? [])
+    .filter((c) => c.type === "output_text")
+    .map((c) => c.text ?? "")
+    .join("")
+    .trim();
+
+  if (!text) {
+    console.error("[OpenAI] Empty response from Responses API. output:",
+      JSON.stringify(data?.output).slice(0, 400));
+  }
+
+  return text;
 }
 
 async function runClaude(prompt: string, lang: Lang): Promise<string> {
