@@ -219,6 +219,13 @@ a:hover { text-decoration: underline; }
   padding-top: 16px;
   border-top: 1px solid var(--line);
 }
+.expansion-writing {
+  font-size: 14px;
+  color: var(--ink-soft);
+  font-style: italic;
+  margin: 0 0 4px;
+  opacity: 0.75;
+}
 .btn-sm {
   padding: 6px 12px;
   font-size: 13px;

@@ -111,18 +111,24 @@ function AngleCardItem({
   const [shareState, setShareState] = useState<"idle" | "copied">("idle");
 
   async function handleExpand() {
-    if (expanded) { setExpanded(false); return; }
+    if (expanded) {
+      setExpanded(false);
+      // Clear error so re-expand can retry; keep article if it finished loading
+      if (error) setError("");
+      return;
+    }
     setExpanded(true);
-    if (article) return; // already loaded
+    if (article) return; // already fully loaded
 
     setLoading(true);
     setError("");
+    setArticle("");
+
     try {
-      const r = await fetch("/api/analyze", {
+      const r = await fetch("/api/expand", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          kind: "expand-angle",
           angleTitle: card.title,
           anchor: card.anchor,
           reference,
@@ -131,9 +137,33 @@ function AngleCardItem({
           provider,
         }),
       });
-      const j = await r.json();
-      if (!r.ok) throw new Error(j?.error || t.error);
-      setArticle(j.text ?? "");
+
+      // Error responses come back as JSON
+      const contentType = r.headers.get("Content-Type") ?? "";
+      if (!r.ok || contentType.includes("application/json")) {
+        const j = await r.json().catch(() => ({})) as { error?: string };
+        throw new Error(j?.error || t.error);
+      }
+
+      // Success: plain text stream
+      const body = r.body;
+      if (!body) throw new Error(t.error);
+
+      const reader = body.getReader();
+      const decoder = new TextDecoder();
+      let full = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        full += decoder.decode(value, { stream: true });
+        setArticle(full);
+      }
+
+      // Flush any remaining bytes
+      full += decoder.decode();
+      setArticle(full);
+
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : t.error);
     } finally {
@@ -195,30 +225,35 @@ function AngleCardItem({
       {/* Expanded article */}
       {expanded && (
         <div className="angle-expansion">
-          {loading && (
-            <>
-              <div className="skeleton" style={{ width: "80%" }} />
-              <div className="skeleton" style={{ width: "92%" }} />
-              <div className="skeleton" style={{ width: "68%" }} />
-            </>
+
+          {/* "writing…" — visible only before first text chunk arrives */}
+          {loading && !article && (
+            <p className="expansion-writing">{t.writing}</p>
           )}
+
+          {/* Error with implicit retry via collapse+expand */}
           {error && <div className="error">{error}</div>}
-          {!loading && !error && article && (
-            <>
-              <div className="prose">
-                <MarkdownText text={article} />
-              </div>
-              <div style={{ marginTop: 16 }}>
-                <button
-                  type="button"
-                  className="btn btn-sm"
-                  onClick={handleShare}
-                >
-                  {shareState === "copied" ? t.copied : t.share}
-                </button>
-              </div>
-            </>
+
+          {/* Article text — grows as stream arrives, no Share until done */}
+          {article && (
+            <div className="prose">
+              <MarkdownText text={article} />
+            </div>
           )}
+
+          {/* Share button — appears only when loading is complete */}
+          {!loading && !error && article && (
+            <div style={{ marginTop: 16 }}>
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={handleShare}
+              >
+                {shareState === "copied" ? t.copied : t.share}
+              </button>
+            </div>
+          )}
+
         </div>
       )}
     </div>
