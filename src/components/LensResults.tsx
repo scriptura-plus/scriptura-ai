@@ -95,10 +95,10 @@ export function LensResults({
   if (loading) {
     return (
       <div className="card">
-        <div className="skeleton" style={{ width: "70%" }} />
-        <div className="skeleton" style={{ width: "92%" }} />
-        <div className="skeleton" style={{ width: "85%" }} />
-        <div className="skeleton" style={{ width: "60%" }} />
+        <div className="lens-skeleton-bar" style={{ width: "60%" }} />
+        <div className="lens-skeleton-bar" style={{ width: "85%" }} />
+        <div className="lens-skeleton-bar" style={{ width: "78%" }} />
+        <div className="lens-skeleton-bar" style={{ width: "55%" }} />
       </div>
     );
   }
@@ -107,31 +107,35 @@ export function LensResults({
   // Angles renders as structured cards
   if (lens === "angles") {
     return (
-      <AngleCards
-        rawText={text}
-        reference={reference}
-        verseText={verseText}
-        lang={lang}
-        provider={provider}
-      />
+      <div className="lens-content-appear">
+        <AngleCards
+          rawText={text}
+          reference={reference}
+          verseText={verseText}
+          lang={lang}
+          provider={provider}
+        />
+      </div>
     );
   }
 
   // Word lens renders as structured word cards
   if (lens === "word") {
     return (
-      <WordCards
-        rawText={text}
-        reference={reference}
-        verseText={verseText}
-        lang={lang}
-        provider={provider}
-      />
+      <div className="lens-content-appear">
+        <WordCards
+          rawText={text}
+          reference={reference}
+          verseText={verseText}
+          lang={lang}
+          provider={provider}
+        />
+      </div>
     );
   }
 
   return (
-    <div className="card prose">
+    <div className="lens-content-appear card prose">
       <MarkdownText text={text} />
     </div>
   );
