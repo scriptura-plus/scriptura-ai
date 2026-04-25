@@ -1,4 +1,4 @@
-import { createAdminClient, createPublicClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/server";
 
 export const PROMPT_VERSIONS: Record<string, string> = {
   angles: "angles_v1",
@@ -29,10 +29,10 @@ export async function getCachedResult(
   lens: string,
   lang: string,
 ): Promise<CachedResult | null> {
-  const client = createPublicClient();
+  const client = createAdminClient();
 
   if (!client) {
-    console.log("[CACHE] public client unavailable");
+    console.error("[CACHE] admin client unavailable for read");
     return null;
   }
 
@@ -83,7 +83,7 @@ export async function saveCachedResult(args: {
   const client = createAdminClient();
 
   if (!client) {
-    console.error("[CACHE] admin client unavailable");
+    console.error("[CACHE] admin client unavailable for save");
     return false;
   }
 
