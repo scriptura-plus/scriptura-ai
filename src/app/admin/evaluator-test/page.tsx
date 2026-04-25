@@ -121,14 +121,18 @@ export default function EvaluatorTestPage() {
   const [requestText, setRequestText] = useState(
     formatJson(DUPLICATE_ANGLE_REQUEST),
   );
+
   const [resultText, setResultText] = useState("");
   const [rewriteText, setRewriteText] = useState("");
   const [reevaluationText, setReevaluationText] = useState("");
   const [saveText, setSaveText] = useState("");
+  const [readText, setReadText] = useState("");
+
   const [loading, setLoading] = useState(false);
   const [rewriting, setRewriting] = useState(false);
   const [reevaluating, setReevaluating] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [reading, setReading] = useState(false);
 
   const parsedRequest = useMemo(() => {
     try {
@@ -171,8 +175,7 @@ export default function EvaluatorTestPage() {
   const lastEvaluation = parsedEvaluationResult?.data?.evaluation ?? null;
   const lastRewrittenCard =
     getNestedRecord(parsedRewriteResult?.data?.rewritten, "card") ?? null;
-  const lastReevaluation =
-    parsedReevaluationResult?.data?.evaluation ?? null;
+  const lastReevaluation = parsedReevaluationResult?.data?.evaluation ?? null;
 
   useEffect(() => {
     const saved = window.localStorage.getItem("scriptura_admin_secret");
@@ -190,6 +193,7 @@ export default function EvaluatorTestPage() {
     setRewriteText("");
     setReevaluationText("");
     setSaveText("");
+    setReadText("");
   }
 
   async function runEvaluator() {
@@ -203,6 +207,7 @@ export default function EvaluatorTestPage() {
     setRewriteText("");
     setReevaluationText("");
     setSaveText("");
+    setReadText("");
 
     try {
       const response = await fetch("/api/evaluate-angle", {
@@ -242,6 +247,7 @@ export default function EvaluatorTestPage() {
     setRewriteText("");
     setReevaluationText("");
     setSaveText("");
+    setReadText("");
 
     try {
       const response = await fetch("/api/rewrite-angle-card", {
@@ -281,13 +287,16 @@ export default function EvaluatorTestPage() {
 
   async function runReevaluateRewritten() {
     if (!parsedRequest || !lastRewrittenCard) {
-      setReevaluationText("Run rewrite first. Re-evaluation needs rewritten card.");
+      setReevaluationText(
+        "Run rewrite first. Re-evaluation needs rewritten card.",
+      );
       return;
     }
 
     setReevaluating(true);
     setReevaluationText("");
     setSaveText("");
+    setReadText("");
 
     try {
       const response = await fetch("/api/evaluate-angle", {
@@ -335,6 +344,7 @@ export default function EvaluatorTestPage() {
 
     setSaving(true);
     setSaveText("");
+    setReadText("");
 
     try {
       const response = await fetch("/api/admin/save-angle-card", {
@@ -370,6 +380,48 @@ export default function EvaluatorTestPage() {
       );
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function runReadSavedCards() {
+    if (!parsedRequest) {
+      setReadText("Invalid JSON request.");
+      return;
+    }
+
+    setReading(true);
+    setReadText("");
+
+    try {
+      const params = new URLSearchParams({
+        reference: parsedRequest.reference,
+        lang: parsedRequest.lang,
+        statuses: "featured,reserve",
+        limit: "24",
+      });
+
+      const response = await fetch(`/api/admin/angle-cards?${params}`, {
+        method: "GET",
+        headers: {
+          "x-admin-secret": adminSecret,
+        },
+      });
+
+      const data = await response.json();
+
+      setReadText(
+        formatJson({
+          status: response.status,
+          ok: response.ok,
+          data,
+        }),
+      );
+    } catch (error) {
+      setReadText(
+        error instanceof Error ? error.message : "Read request failed.",
+      );
+    } finally {
+      setReading(false);
     }
   }
 
@@ -424,7 +476,7 @@ export default function EvaluatorTestPage() {
 
         <p style={{ marginBottom: 24, color: "#6f604a", lineHeight: 1.5 }}>
           Temporary internal test page for evaluator, rewrite, re-evaluation,
-          and saving one angle card into Supabase.
+          saving, and reading angle cards from Supabase.
         </p>
 
         <section
@@ -617,9 +669,7 @@ export default function EvaluatorTestPage() {
 
               <button
                 type="button"
-                disabled={
-                  reevaluating || !adminSecret || !lastRewrittenCard
-                }
+                disabled={reevaluating || !adminSecret || !lastRewrittenCard}
                 onClick={runReevaluateRewritten}
                 style={
                   reevaluating || !adminSecret || !lastRewrittenCard
@@ -634,15 +684,36 @@ export default function EvaluatorTestPage() {
 
               <button
                 type="button"
-                disabled={saving || !adminSecret || !lastRewrittenCard || !lastReevaluation}
+                disabled={
+                  saving ||
+                  !adminSecret ||
+                  !lastRewrittenCard ||
+                  !lastReevaluation
+                }
                 onClick={runSaveRewrittenCard}
                 style={
-                  saving || !adminSecret || !lastRewrittenCard || !lastReevaluation
+                  saving ||
+                  !adminSecret ||
+                  !lastRewrittenCard ||
+                  !lastReevaluation
                     ? disabledButtonStyle
                     : primaryButtonStyle
                 }
               >
                 {saving ? "Saving..." : "4. Save Rewritten Card"}
+              </button>
+
+              <button
+                type="button"
+                disabled={reading || !adminSecret || !parsedRequest}
+                onClick={runReadSavedCards}
+                style={
+                  reading || !adminSecret || !parsedRequest
+                    ? disabledButtonStyle
+                    : primaryButtonStyle
+                }
+              >
+                {reading ? "Reading..." : "5. Read Saved Cards"}
               </button>
             </div>
           </div>
@@ -657,6 +728,8 @@ export default function EvaluatorTestPage() {
           />
 
           <ResultBlock title="Save Result" text={saveText} />
+
+          <ResultBlock title="Saved Cards Result" text={readText} />
         </section>
       </div>
     </main>
