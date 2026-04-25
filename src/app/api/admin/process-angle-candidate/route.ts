@@ -24,6 +24,15 @@ type CandidateCard = {
   body?: string | null;
 };
 
+type PromptCard = {
+  id?: string;
+  title: string;
+  anchor?: string;
+  teaser?: string;
+  why_it_matters?: string;
+  body?: string;
+};
+
 type Evaluation = {
   angle_summary?: string;
   coverage_type?: AngleCardInput["coverage_type"];
@@ -75,6 +84,20 @@ function isCandidateCard(value: unknown): value is CandidateCard {
   const teaser = getString(value.teaser);
 
   return Boolean(title && teaser);
+}
+
+function toPromptCard(card: CandidateCard): PromptCard {
+  const promptCard: PromptCard = {
+    id: card.id,
+    title: card.title,
+  };
+
+  if (card.anchor) promptCard.anchor = card.anchor;
+  if (card.teaser) promptCard.teaser = card.teaser;
+  if (card.why_it_matters) promptCard.why_it_matters = card.why_it_matters;
+  if (card.body) promptCard.body = card.body;
+
+  return promptCard;
 }
 
 function parseReferenceParts(reference: string): {
@@ -245,7 +268,7 @@ async function evaluateCandidate(args: {
     reference: args.reference,
     verseText: args.verseText,
     lang: args.lang,
-    candidate: args.candidate,
+    candidate: toPromptCard(args.candidate),
     featuredCards: args.featuredCards.map(toEvaluatorCard),
     reserveCards: args.reserveCards.map(toEvaluatorCard),
     sourceArticle: args.sourceArticle,
@@ -276,7 +299,7 @@ async function rewriteCandidate(args: {
     reference: args.reference,
     verseText: args.verseText,
     lang: args.lang,
-    candidate: args.candidate,
+    candidate: toPromptCard(args.candidate),
     evaluation: args.evaluation,
     sourceArticle: args.sourceArticle,
   });
@@ -319,8 +342,7 @@ export async function POST(req: Request) {
     const lang = isLang(body?.lang) ? body.lang : null;
     const candidate = body?.candidate;
     const sourceArticle = getString(body?.sourceArticle) ?? undefined;
-    const targetFeaturedCount =
-      getNumber(body?.targetFeaturedCount) ?? 12;
+    const targetFeaturedCount = getNumber(body?.targetFeaturedCount) ?? 12;
 
     const sourceProvider = isProvider(body?.source_provider)
       ? body.source_provider
