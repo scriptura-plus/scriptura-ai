@@ -78,10 +78,12 @@ export default function EvaluatorTestPage() {
 
   const [processText, setProcessText] = useState("");
   const [cachedProcessText, setCachedProcessText] = useState("");
+  const [generateText, setGenerateText] = useState("");
   const [readText, setReadText] = useState("");
 
   const [processing, setProcessing] = useState(false);
   const [processingCached, setProcessingCached] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const [reading, setReading] = useState(false);
 
   const parsedRequest = useMemo(() => {
@@ -106,6 +108,7 @@ export default function EvaluatorTestPage() {
     setRequestText(formatJson(value));
     setProcessText("");
     setCachedProcessText("");
+    setGenerateText("");
     setReadText("");
   }
 
@@ -201,6 +204,52 @@ export default function EvaluatorTestPage() {
     }
   }
 
+  async function runGenerateAngleCandidates() {
+    if (!parsedRequest) {
+      setGenerateText("JSON запроса повреждён.");
+      return;
+    }
+
+    setGenerating(true);
+    setGenerateText("");
+
+    try {
+      const response = await fetch("/api/admin/generate-angle-candidates", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-secret": adminSecret,
+        },
+        body: JSON.stringify({
+          reference: parsedRequest.reference,
+          verseText: parsedRequest.verseText,
+          lang: parsedRequest.lang,
+          provider: parsedRequest.provider,
+          count: 6,
+          processLimit: 3,
+        }),
+      });
+
+      const data = await response.json();
+
+      setGenerateText(
+        formatJson({
+          status: response.status,
+          ok: response.ok,
+          data,
+        }),
+      );
+    } catch (error) {
+      setGenerateText(
+        error instanceof Error
+          ? error.message
+          : "Generate candidates request failed.",
+      );
+    } finally {
+      setGenerating(false);
+    }
+  }
+
   async function runReadSavedCards() {
     if (!parsedRequest) {
       setReadText("JSON запроса повреждён.");
@@ -289,8 +338,8 @@ export default function EvaluatorTestPage() {
         <p style={{ marginBottom: 24, color: "#6f604a", lineHeight: 1.5 }}>
           Эта страница тестирует полный цикл: кандидат → оценка GPT-5.5 →
           перепись при необходимости → повторная оценка → сохранение в
-          Supabase. Также можно обработать первые 3 старые карточки из
-          cached_results.
+          Supabase. Можно обработать старый кэш или сгенерировать новые
+          кандидаты для добора до 12.
         </p>
 
         <section
@@ -458,6 +507,21 @@ export default function EvaluatorTestPage() {
 
             <button
               type="button"
+              disabled={generating || !adminSecret || !parsedRequest}
+              onClick={runGenerateAngleCandidates}
+              style={
+                generating || !adminSecret || !parsedRequest
+                  ? disabledButtonStyle
+                  : { ...primaryButtonStyle, background: "#2f7a62" }
+              }
+            >
+              {generating
+                ? "Генерируем..."
+                : "Сгенерировать новые кандидаты: первые 3"}
+            </button>
+
+            <button
+              type="button"
               disabled={reading || !adminSecret || !parsedRequest}
               onClick={runReadSavedCards}
               style={
@@ -476,6 +540,11 @@ export default function EvaluatorTestPage() {
         <ResultBlock
           title="Результат обработки старого кэша"
           text={cachedProcessText}
+        />
+
+        <ResultBlock
+          title="Результат генерации новых кандидатов"
+          text={generateText}
         />
 
         <ResultBlock title="Сохранённые карточки" text={readText} />
