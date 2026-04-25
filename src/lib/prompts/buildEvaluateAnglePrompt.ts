@@ -91,6 +91,10 @@ One meaningful angle should occupy only one Featured slot.
 If a new candidate expresses the same angle as an existing card, do not treat it as a new card.
 Instead, compare the candidate against the existing card and decide which version is better.
 
+Reserve is not a trash bin.
+Reserve is a useful pool of good alternate versions, near-misses, and potentially valuable candidates.
+Hidden is for weak, confusing, risky, redundant-without-value, or low-usefulness cards.
+
 DEFINITIONS
 
 A strong Scriptura AI card:
@@ -167,6 +171,7 @@ Determine whether this candidate is:
 Important:
 A duplicate is not automatically bad.
 If the candidate expresses the same angle better than the existing card, it may replace it.
+If the candidate expresses the same angle slightly worse but is still strong, it belongs in Reserve, not Hidden.
 
 8. Set Balance Test
 Featured should not be ${targetFeaturedCount} versions of the same kind of insight.
@@ -238,9 +243,12 @@ Battle action values:
 Battle decision rules:
 - If candidate is better by 8+ points and matched card is not locked: placement should be "replace_existing".
 - If candidate is slightly better by 1–7 points: placement should usually be "reserve", unless Featured has a weak gap and the improvement is important.
-- If matched card is equal or better: placement should be "reserve", "hidden", or "reject" depending on usefulness.
+- If matched card is equal or better, but candidate is still text-grounded, clear, and score_total >= 70: placement should be "reserve" and battle_action should be "keep_existing_send_candidate_to_reserve".
+- If candidate loses the battle but remains a useful alternate wording, a near-miss, or a strong backup version: prefer "reserve", not "hidden".
+- Use "keep_existing_hide_candidate" only when the candidate is weak, confusing, risky, generic, or offers no useful alternate wording.
 - If matched card is locked and candidate appears significantly better: placement should be "needs_human_review".
-- If candidate and matched card are almost equivalent: keep the existing card and place the candidate in reserve or hidden.
+- If candidate and matched card are almost equivalent but candidate is still readable and grounded: keep the existing card and place the candidate in reserve.
+- If candidate and matched card are almost equivalent and candidate adds no useful alternate wording: hidden is acceptable.
 
 PLACEMENT RULES
 
@@ -264,13 +272,14 @@ If the matched card is locked, do not recommend automatic replacement; use needs
 
 reserve:
 Use when the card is interesting but not strong enough for Featured, or when it overlaps without clearly winning.
+Also use reserve for strong duplicate/near-duplicate cards that lose the battle but remain useful alternate versions.
 
 rewrite:
 Use when the angle itself is strong but the wording/card packaging is weak.
 Do not reject a strong angle just because the text is clumsy.
 
 hidden:
-Use when the card is weak, repetitive, or not useful, but not necessarily false.
+Use when the card is weak, confusing, risky, generic, repetitive without useful alternate wording, or not useful.
 
 reject:
 Use when the card is generic, unsupported, misleading, or too far from the text.
@@ -339,5 +348,6 @@ Important:
 - If same_angle is false, battle.required must be false and battle.winner must be null.
 - If placement is replace_existing, replace_card_id must not be null.
 - If placement is not replace_existing, replace_card_id should be null.
+- Prefer reserve over hidden when the candidate is strong but loses to an existing same-angle card.
 `.trim();
 }
