@@ -9,6 +9,7 @@ import {
   type AngleCardInput,
   type AngleCardRow,
 } from "@/lib/cache/angleCards";
+import type { RewriteAngleEvaluation } from "@/lib/prompts/buildRewriteAnglePrompt";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,7 +35,7 @@ type PromptCard = {
 };
 
 type Evaluation = {
-  angle_summary?: string;
+  angle_summary?: string | null;
   coverage_type?: AngleCardInput["coverage_type"];
   same_angle?: boolean;
   matched_card_id?: string | null;
@@ -44,7 +45,7 @@ type Evaluation = {
   battle?: unknown;
   placement?: string;
   replace_card_id?: string | null;
-  reason?: string;
+  reason?: string | null;
   risk?: string | null;
   rewrite_instruction?: string | null;
 };
@@ -98,6 +99,40 @@ function toPromptCard(card: CandidateCard): PromptCard {
   if (card.body) promptCard.body = card.body;
 
   return promptCard;
+}
+
+function toRewriteEvaluation(evaluation: Evaluation): RewriteAngleEvaluation {
+  const normalized: RewriteAngleEvaluation = {};
+
+  if (evaluation.angle_summary) {
+    normalized.angle_summary = evaluation.angle_summary;
+  }
+
+  if (evaluation.coverage_type) {
+    normalized.coverage_type = evaluation.coverage_type;
+  }
+
+  if (typeof evaluation.score_total === "number") {
+    normalized.score_total = evaluation.score_total;
+  }
+
+  if (evaluation.placement) {
+    normalized.placement = evaluation.placement;
+  }
+
+  if (evaluation.reason) {
+    normalized.reason = evaluation.reason;
+  }
+
+  if (evaluation.risk) {
+    normalized.risk = evaluation.risk;
+  }
+
+  if (evaluation.rewrite_instruction) {
+    normalized.rewrite_instruction = evaluation.rewrite_instruction;
+  }
+
+  return normalized;
 }
 
 function parseReferenceParts(reference: string): {
@@ -300,7 +335,7 @@ async function rewriteCandidate(args: {
     verseText: args.verseText,
     lang: args.lang,
     candidate: toPromptCard(args.candidate),
-    evaluation: args.evaluation,
+    evaluation: toRewriteEvaluation(args.evaluation),
     sourceArticle: args.sourceArticle,
   });
 
