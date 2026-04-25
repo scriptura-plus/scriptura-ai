@@ -29,7 +29,8 @@ function normalizeCardArray(value: unknown): EvaluateAngleCard[] {
 }
 
 function extractJsonObject(text: string): unknown {
-  const trimmed = text.trim()
+  const trimmed = text
+    .trim()
     .replace(/^```(?:json)?\s*/i, "")
     .replace(/\s*```$/i, "")
     .trim();
@@ -48,8 +49,24 @@ function extractJsonObject(text: string): unknown {
   }
 }
 
+function isAdminRequest(req: Request): boolean {
+  const expected = process.env.ADMIN_SECRET;
+
+  if (!expected) {
+    console.error("[EVALUATOR] ADMIN_SECRET is not configured");
+    return false;
+  }
+
+  const provided = req.headers.get("x-admin-secret");
+  return provided === expected;
+}
+
 export async function POST(req: Request) {
   try {
+    if (!isAdminRequest(req)) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const body = await req.json();
 
     const reference =
