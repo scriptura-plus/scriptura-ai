@@ -75,9 +75,13 @@ export default function EvaluatorTestPage() {
   const [requestText, setRequestText] = useState(
     formatJson(SEQUENCE_ANGLE_REQUEST),
   );
+
   const [processText, setProcessText] = useState("");
+  const [cachedProcessText, setCachedProcessText] = useState("");
   const [readText, setReadText] = useState("");
+
   const [processing, setProcessing] = useState(false);
+  const [processingCached, setProcessingCached] = useState(false);
   const [reading, setReading] = useState(false);
 
   const parsedRequest = useMemo(() => {
@@ -101,6 +105,7 @@ export default function EvaluatorTestPage() {
   function loadPreset(value: unknown) {
     setRequestText(formatJson(value));
     setProcessText("");
+    setCachedProcessText("");
     setReadText("");
   }
 
@@ -148,6 +153,51 @@ export default function EvaluatorTestPage() {
       );
     } finally {
       setProcessing(false);
+    }
+  }
+
+  async function runProcessCachedAngles() {
+    if (!parsedRequest) {
+      setCachedProcessText("JSON запроса повреждён.");
+      return;
+    }
+
+    setProcessingCached(true);
+    setCachedProcessText("");
+
+    try {
+      const response = await fetch("/api/admin/process-cached-angles", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-secret": adminSecret,
+        },
+        body: JSON.stringify({
+          reference: parsedRequest.reference,
+          verseText: parsedRequest.verseText,
+          lang: parsedRequest.lang,
+          provider: parsedRequest.provider,
+          limit: 3,
+        }),
+      });
+
+      const data = await response.json();
+
+      setCachedProcessText(
+        formatJson({
+          status: response.status,
+          ok: response.ok,
+          data,
+        }),
+      );
+    } catch (error) {
+      setCachedProcessText(
+        error instanceof Error
+          ? error.message
+          : "Process cached angles request failed.",
+      );
+    } finally {
+      setProcessingCached(false);
     }
   }
 
@@ -239,7 +289,8 @@ export default function EvaluatorTestPage() {
         <p style={{ marginBottom: 24, color: "#6f604a", lineHeight: 1.5 }}>
           Эта страница тестирует полный цикл: кандидат → оценка GPT-5.5 →
           перепись при необходимости → повторная оценка → сохранение в
-          Supabase.
+          Supabase. Также можно обработать первые 3 старые карточки из
+          cached_results.
         </p>
 
         <section
@@ -392,6 +443,21 @@ export default function EvaluatorTestPage() {
 
             <button
               type="button"
+              disabled={processingCached || !adminSecret || !parsedRequest}
+              onClick={runProcessCachedAngles}
+              style={
+                processingCached || !adminSecret || !parsedRequest
+                  ? disabledButtonStyle
+                  : { ...primaryButtonStyle, background: "#8a6a3f" }
+              }
+            >
+              {processingCached
+                ? "Обрабатываем кэш..."
+                : "Обработать старый кэш: первые 3"}
+            </button>
+
+            <button
+              type="button"
               disabled={reading || !adminSecret || !parsedRequest}
               onClick={runReadSavedCards}
               style={
@@ -406,6 +472,11 @@ export default function EvaluatorTestPage() {
         </section>
 
         <ResultBlock title="Результат автоцикла" text={processText} />
+
+        <ResultBlock
+          title="Результат обработки старого кэша"
+          text={cachedProcessText}
+        />
 
         <ResultBlock title="Сохранённые карточки" text={readText} />
       </div>
