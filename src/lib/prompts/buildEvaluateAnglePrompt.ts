@@ -80,6 +80,17 @@ ${prettyJson(reserveCards)}
 SOURCE ARTICLE OR MATERIAL, IF ANY:
 ${sourceArticle ? sourceArticle : "None provided."}
 
+EDITORIAL GOAL
+
+The system is trying to maintain the best possible set of ${targetFeaturedCount} Featured insight cards for this verse.
+
+The goal is not to collect many cards.
+The goal is to keep the strongest version of each meaningful angle.
+
+One meaningful angle should occupy only one Featured slot.
+If a new candidate expresses the same angle as an existing card, do not treat it as a new card.
+Instead, compare the candidate against the existing card and decide which version is better.
+
 DEFINITIONS
 
 A strong Scriptura AI card:
@@ -105,6 +116,7 @@ CORE TESTS
 
 1. Textual Anchor Test
 Does the card stand on a concrete detail of this verse?
+
 Examples:
 - a word
 - a phrase
@@ -128,6 +140,7 @@ If yes, it cannot score above 60.
 
 4. Evidence Chain Test
 The card should have a clear chain:
+
 textual anchor → observation → meaning shift
 
 If the chain is broken, reduce the score.
@@ -156,7 +169,7 @@ A duplicate is not automatically bad.
 If the candidate expresses the same angle better than the existing card, it may replace it.
 
 8. Set Balance Test
-Featured should not be 12 versions of the same kind of insight.
+Featured should not be ${targetFeaturedCount} versions of the same kind of insight.
 Prefer a balanced set across:
 - lexical
 - grammatical
@@ -191,6 +204,43 @@ Compute score_total from 0 to 100 using these weights:
 - clarity: 7%
 - distinctness: 5%
 - set_balance: 3%
+
+CARD BATTLE RULE
+
+If same_angle is true, you MUST perform a direct battle between the candidate and the matched existing card.
+
+The battle must answer:
+- Which card better expresses this same angle?
+- Which card has the sharper title?
+- Which card has stronger textual grounding?
+- Which card gives a better “I did not notice this before” effect?
+- Which card is clearer?
+- Which card is safer and less overclaimed?
+- Which card should represent this angle in Featured?
+
+Do not let a candidate win merely because it is newer or more stylish.
+Do not let an existing card win merely because it is already Featured.
+Choose the better editorial version.
+
+When same_angle is true, you MUST return a battle object.
+
+Battle winner values:
+- "candidate"
+- "matched"
+- "tie"
+
+Battle action values:
+- "replace_existing"
+- "keep_existing_send_candidate_to_reserve"
+- "keep_existing_hide_candidate"
+- "needs_human_review"
+
+Battle decision rules:
+- If candidate is better by 8+ points and matched card is not locked: placement should be "replace_existing".
+- If candidate is slightly better by 1–7 points: placement should usually be "reserve", unless Featured has a weak gap and the improvement is important.
+- If matched card is equal or better: placement should be "reserve", "hidden", or "reject" depending on usefulness.
+- If matched card is locked and candidate appears significantly better: placement should be "needs_human_review".
+- If candidate and matched card are almost equivalent: keep the existing card and place the candidate in reserve or hidden.
 
 PLACEMENT RULES
 
@@ -267,11 +317,27 @@ JSON schema:
     "set_balance": 0
   },
   "score_total": 0,
+  "battle": {
+    "required": true,
+    "old_card_id": "string or null",
+    "old_score": 0,
+    "new_score": 0,
+    "winner": "candidate | matched | tie | null",
+    "score_delta": 0,
+    "battle_action": "replace_existing | keep_existing_send_candidate_to_reserve | keep_existing_hide_candidate | needs_human_review | none",
+    "battle_reason": "string or null"
+  },
   "placement": "featured_new | replace_existing | reserve | rewrite | hidden | reject | needs_human_review",
   "replace_card_id": "string or null",
   "reason": "string",
   "risk": "string or null",
   "rewrite_instruction": "string or null"
 }
+
+Important:
+- If same_angle is true, battle.required must be true and battle.old_card_id must equal matched_card_id.
+- If same_angle is false, battle.required must be false and battle.winner must be null.
+- If placement is replace_existing, replace_card_id must not be null.
+- If placement is not replace_existing, replace_card_id should be null.
 `.trim();
 }
