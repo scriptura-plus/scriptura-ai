@@ -154,7 +154,7 @@ function buildGenerationPrompt(args: {
         : "Write in English.";
 
   return `
-You are Scriptura AI's angle-candidate generator.
+You are Scriptura AI's senior angle-candidate generator.
 
 Task:
 Generate ${args.count} NEW candidate insight cards for the Bible verse below.
@@ -172,33 +172,44 @@ ${languageInstruction}
 Existing cards already stored for this verse:
 ${JSON.stringify(existing, null, 2)}
 
+Main goal:
+Find genuinely NEW angles that are NOT already represented by the existing cards.
+
+Already represented angles — DO NOT repeat:
+1. "compassion" as inner organs / inward bodily reaction / εὔσπλαγχνοι.
+2. forgiveness "in Christ" / through Christ as sphere / ἐν Χριστῷ.
+3. pronoun shift around "one another" / ἀλλήλους vs ἑαυτοῖς.
+4. forgiveness as gift / χαρίζομαι / charis-root word.
+5. sequence: kindness → compassion → forgiveness.
+6. Ephesians 4:31 replaced by kindness / bitterness removed and replaced.
+7. "be" as "become" / γίνεσθε / process of becoming.
+8. forgiveness grammatically built into "be kind" / forgiving as how kindness acts.
+
+Before writing candidates, mentally select ONLY from still-underrepresented categories.
+
+Preferred underrepresented categories:
+A. imitation logic: the force of "as God..." / pattern, not payment.
+B. received-before-given logic: God forgave first; human forgiveness responds.
+C. plural/community layer: "you", "one another", "you" as community culture, but do NOT repeat the pronoun-shift card.
+D. relation to Ephesians 4:30: grieving the holy spirit and community speech.
+E. rhetorical hinge: "And/but you" as identity contrast, but do NOT repeat the verse 31 replacement card.
+F. moral logic of reciprocity: forgiven people become forgiving people.
+G. relation to "new personality/new self" context in Ephesians 4:24.
+H. passive/active contrast in the verse: God acted toward you; you act toward one another.
+I. sentence-level grounding: why the final clause is the foundation of the whole command.
+J. lexical or contextual detail not already covered.
+
 Critical rules:
 1. Do NOT repeat the same angles already represented in existing cards.
-2. Avoid these already covered angles:
-   - compassion as inner organs / inward bodily reaction
-   - forgiveness "in Christ" / through Christ as sphere
-   - pronoun shift around "one another"
-   - forgiveness as gift / charis-root word
-   - sequence: kindness → compassion → forgiveness
-3. Generate genuinely different angles.
-4. Each card must be text-anchored: it must point to a specific word, phrase, syntax, structure, contrast, or context.
+2. Do NOT merely repackage a covered card with a different title.
+3. Each candidate must name a clear angle category in its own thinking, but do not output the category separately.
+4. Each card must be text-anchored: it must point to a specific word, phrase, syntax, structure, contrast, or immediate context.
 5. Avoid generic moral comments.
 6. Avoid invented facts.
 7. Prefer "I never noticed that" discoveries.
 8. If an idea is uncertain, phrase it carefully.
-
-Good candidate types:
-- rhetorical structure
-- repeated wording
-- contrast inside the sentence
-- hidden logical relation
-- grammar/syntax
-- translation nuance not already covered
-- context from Ephesians 4
-- relation to previous verses
-- literary movement in the paragraph
-- semantic contrast between kindness and forgiveness
-- implied model/copying logic in "as God..."
+9. Do NOT overstate Greek grammar.
+10. Do NOT make theological claims that are not anchored in the verse/context.
 
 Output ONLY valid JSON.
 
@@ -300,7 +311,7 @@ export async function POST(req: Request) {
           lang,
           provider,
           source_provider: provider,
-          source_model: "generated_candidates_v1",
+          source_model: "generated_candidates_v2",
           candidate,
           sourceArticle: "",
           targetFeaturedCount: 12,
@@ -327,6 +338,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       ok: true,
+      generation_prompt_version: "generated_candidates_v2",
       existing_cards_checked: existing.cards.length,
       generated_count: candidates.length,
       processed_count: results.length,
