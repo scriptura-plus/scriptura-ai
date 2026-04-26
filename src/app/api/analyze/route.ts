@@ -44,6 +44,10 @@ type AngleCardLike = {
   source?: string | null;
 };
 
+function getString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
 function stringifyCachedRawJson(rawJson: unknown): string {
   if (typeof rawJson === "string") return rawJson;
   return JSON.stringify(rawJson);
@@ -464,6 +468,12 @@ export async function POST(req: Request) {
         verseText,
         lang,
       });
+
+      autoIntake = {
+        sourceTitle: angleTitle,
+        sourceType: getString(body?.sourceType) ?? "expanded_article",
+        sourceLens: getString(body?.sourceLens) ?? "expand-angle",
+      };
     } else {
       return NextResponse.json(
         {
