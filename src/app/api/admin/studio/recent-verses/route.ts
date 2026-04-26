@@ -50,7 +50,10 @@ function toPublicVerseSummary(verse: StudioVerseSummary) {
     chapter: verse.chapter,
     verse: verse.verse,
     lang: verse.lang,
+
+    canonical_ref: verse.canonical_ref,
     book_key: verse.book_key,
+
     total_count: verse.total_count,
     featured_count: verse.featured_count,
     reserve_count: verse.reserve_count,
