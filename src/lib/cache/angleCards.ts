@@ -112,6 +112,22 @@ export type PublicAngleCard = {
   coverage_type: AngleCardCoverageType | null;
 };
 
+export type StudioVerseSummary = {
+  reference: string;
+  book: string;
+  chapter: number;
+  verse: number;
+  lang: "ru" | "en" | "es";
+  total_count: number;
+  featured_count: number;
+  reserve_count: number;
+  hidden_count: number;
+  rejected_count: number;
+  best_score: number | null;
+  sources: string[];
+  last_activity_at: string;
+};
+
 export async function saveAngleCard(input: AngleCardInput): Promise<{
   ok: boolean;
   id: string | null;
@@ -231,6 +247,141 @@ export async function getAngleCards(args: {
     cards: (data ?? []) as AngleCardRow[],
     error: null,
   };
+}
+
+export async function getStudioVerseSummaries(args: {
+  lang: "ru" | "en" | "es";
+  days?: number;
+  limit?: number;
+}): Promise<{
+  ok: boolean;
+  verses: StudioVerseSummary[];
+  error: string | null;
+}> {
+  const client = createAdminClient();
+
+  if (!client) {
+    return {
+      ok: false,
+      verses: [],
+      error: "Supabase admin client unavailable",
+    };
+  }
+
+  const days = args.days ?? 7;
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+
+  const { data, error } = await client
+    .from("angle_cards")
+    .select(
+      "reference, book, chapter, verse, lang, status, score_total, source_model, source_type, created_at, updated_at",
+    )
+    .eq("lang", args.lang)
+    .gte("created_at", since)
+    .order("created_at", { ascending: false })
+    .limit(500);
+
+  if (error) {
+    return {
+      ok: false,
+      verses: [],
+      error: error.message,
+    };
+  }
+
+  const grouped = new Map<string, StudioVerseSummary>();
+
+  for (const row of data ?? []) {
+    const card = row as {
+      reference: string;
+      book: string;
+      chapter: number;
+      verse: number;
+      lang: "ru" | "en" | "es";
+      status: AngleCardStatus;
+      score_total: number | null;
+      source_model: string | null;
+      source_type: string | null;
+      created_at: string;
+      updated_at: string;
+    };
+
+    const key = `${card.lang}::${card.reference}`;
+    const existing = grouped.get(key);
+
+    const source =
+      card.source_model?.replace("article_extractor_v1:", "") ||
+      card.source_type ||
+      "unknown";
+
+    if (!existing) {
+      grouped.set(key, {
+        reference: card.reference,
+        book: card.book,
+        chapter: card.chapter,
+        verse: card.verse,
+        lang: card.lang,
+        total_count: 1,
+        featured_count: card.status === "featured" ? 1 : 0,
+        reserve_count: card.status === "reserve" ? 1 : 0,
+        hidden_count: card.status === "hidden" ? 1 : 0,
+        rejected_count: card.status === "rejected" ? 1 : 0,
+        best_score: card.score_total,
+        sources: source ? [source] : [],
+        last_activity_at: card.created_at,
+      });
+      continue;
+    }
+
+    existing.total_count += 1;
+
+    if (card.status === "featured") existing.featured_count += 1;
+    if (card.status === "reserve") existing.reserve_count += 1;
+    if (card.status === "hidden") existing.hidden_count += 1;
+    if (card.status === "rejected") existing.rejected_count += 1;
+
+    if (
+      typeof card.score_total === "number" &&
+      (existing.best_score === null || card.score_total > existing.best_score)
+    ) {
+      existing.best_score = card.score_total;
+    }
+
+    if (source && !existing.sources.includes(source)) {
+      existing.sources.push(source);
+    }
+
+    if (card.created_at > existing.last_activity_at) {
+      existing.last_activity_at = card.created_at;
+    }
+  }
+
+  const verses = Array.from(grouped.values())
+    .sort((a, b) => b.last_activity_at.localeCompare(a.last_activity_at))
+    .slice(0, args.limit ?? 50);
+
+  return {
+    ok: true,
+    verses,
+    error: null,
+  };
+}
+
+export async function getAllStudioCardsForVerse(args: {
+  reference: string;
+  lang: "ru" | "en" | "es";
+  limit?: number;
+}): Promise<{
+  ok: boolean;
+  cards: AngleCardRow[];
+  error: string | null;
+}> {
+  return getAngleCards({
+    reference: args.reference,
+    lang: args.lang,
+    statuses: ["featured", "reserve", "rewrite", "hidden", "rejected"],
+    limit: args.limit ?? 100,
+  });
 }
 
 export async function getFeaturedAngleCards(args: {
