@@ -21,6 +21,7 @@ export const dynamic = "force-dynamic";
 type Lang = "en" | "ru" | "es";
 
 const TARGET_ANGLE_COUNT = 12;
+const INITIAL_ANGLE_PROCESS_LIMIT = 6;
 
 const isLang = (v: unknown): v is Lang =>
   v === "en" || v === "ru" || v === "es";
@@ -215,6 +216,17 @@ function normalizeCachedCards(rawJson: unknown): AngleCardLike[] {
   return [];
 }
 
+function toCandidate(card: AngleCardLike, index: number) {
+  return {
+    id: card.id ?? `initial_angle_${index + 1}`,
+    title: card.title,
+    anchor: card.anchor ?? null,
+    teaser: card.teaser ?? card.body ?? "",
+    why_it_matters: card.why_it_matters ?? null,
+    body: card.body ?? null,
+  };
+}
+
 async function buildAnglesResponseFromCards(args: {
   reference: string;
   lang: Lang;
@@ -355,6 +367,100 @@ async function autoIntakeArticle(args: {
   }
 }
 
+async function autoProcessInitialAngles(args: {
+  req: Request;
+  reference: string;
+  verseText: string;
+  lang: Lang;
+  provider: string;
+  rawJson: unknown;
+  sourceLabel: string;
+}) {
+  const adminSecret = process.env.ADMIN_SECRET;
+
+  if (!adminSecret) {
+    console.warn("[INITIAL_ANGLES] skipped: ADMIN_SECRET is not configured", {
+      reference: args.reference,
+      lang: args.lang,
+    });
+    return;
+  }
+
+  const cards = normalizeCachedCards(args.rawJson).slice(
+    0,
+    INITIAL_ANGLE_PROCESS_LIMIT,
+  );
+
+  if (cards.length === 0) {
+    console.warn("[INITIAL_ANGLES] skipped: no cards found", {
+      reference: args.reference,
+      lang: args.lang,
+    });
+    return;
+  }
+
+  try {
+    const origin = new URL(args.req.url).origin;
+
+    for (let index = 0; index < cards.length; index += 1) {
+      const card = cards[index];
+      const candidate = toCandidate(card, index);
+
+      if (!candidate.title || !candidate.teaser) {
+        continue;
+      }
+
+      const response = await fetch(
+        `${origin}/api/admin/process-angle-candidate`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-admin-secret": adminSecret,
+          },
+          body: JSON.stringify({
+            reference: args.reference,
+            verseText: args.verseText,
+            lang: args.lang,
+            provider: args.provider,
+            source_provider: args.provider,
+            source_model: args.sourceLabel,
+            targetFeaturedCount: TARGET_ANGLE_COUNT,
+            sourceArticle: "",
+            candidate,
+          }),
+        },
+      );
+
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        console.warn("[INITIAL_ANGLES] process failed", {
+          reference: args.reference,
+          lang: args.lang,
+          title: candidate.title,
+          status: response.status,
+          data,
+        });
+        continue;
+      }
+
+      console.log("[INITIAL_ANGLES] processed", {
+        reference: args.reference,
+        lang: args.lang,
+        title: candidate.title,
+        data,
+      });
+    }
+  } catch (error) {
+    console.warn("[INITIAL_ANGLES] processing crashed", {
+      reference: args.reference,
+      lang: args.lang,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -413,6 +519,18 @@ export async function POST(req: Request) {
       const cached = await getCachedResult(reference, "angles", lang);
 
       if (cached?.raw_json) {
+        after(() =>
+          autoProcessInitialAngles({
+            req,
+            reference,
+            verseText,
+            lang,
+            provider,
+            rawJson: cached.raw_json,
+            sourceLabel: `cached_results:${cached.model ?? getModelName(provider)}`,
+          }),
+        );
+
         return NextResponse.json({
           text: stringifyCachedRawJson(cached.raw_json),
           cached: true,
@@ -513,6 +631,18 @@ export async function POST(req: Request) {
           model: getModelName(provider),
           raw_json: cacheableJson,
         });
+
+        after(() =>
+          autoProcessInitialAngles({
+            req,
+            reference,
+            verseText,
+            lang,
+            provider,
+            rawJson: cacheableJson,
+            sourceLabel: `initial_angles:${getModelName(provider)}`,
+          }),
+        );
       } else {
         console.warn("[CACHE] skipped save because response was not valid JSON", {
           reference,
