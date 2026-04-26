@@ -35,6 +35,8 @@ type StudioCard = {
   coverage_type: string | null;
   score_total: number | null;
   status: string;
+  rank?: number | null;
+  is_locked?: boolean;
   source_type: string | null;
   source_provider: string | null;
   source_model: string | null;
@@ -74,6 +76,37 @@ type CardsResponse = {
   cards?: StudioCard[];
 };
 
+type ReEvaluation = {
+  score_total?: number;
+  placement?: string;
+  reason?: string;
+  risk?: string | null;
+  scores?: Record<string, number>;
+  coverage_type?: string;
+  angle_summary?: string;
+};
+
+type ReEvaluateResponse = {
+  ok?: boolean;
+  error?: string;
+  mode?: string;
+  changed_database?: boolean;
+  reference?: string;
+  canonical_ref?: string | null;
+  lang?: Lang;
+  candidate_id?: string | null;
+  old_score?: number | null;
+  verse_text_source?: "request" | "getVerseText";
+  verse_text_preview?: string;
+  evaluation?: ReEvaluation;
+};
+
+type ReEvaluateState = {
+  loading: boolean;
+  error: string;
+  result: ReEvaluateResponse | null;
+};
+
 const BLUE = "#5f7890";
 const BLUE_DARK = "#4d6478";
 const BLUE_SOFT = "#d8e4ee";
@@ -83,6 +116,10 @@ const BG = "#f6efe1";
 const LINE = "#d8c9a8";
 const INK = "#2c241b";
 const SOFT = "#5a4a37";
+const WARNING_BG = "#f5e9c8";
+const WARNING_TEXT = "#8a6330";
+const ERROR_BG = "#f7ded2";
+const ERROR_TEXT = "#8a3a20";
 
 function formatDate(value: string): string {
   if (!value) return "—";
@@ -145,6 +182,43 @@ function getButtonStyle(active = false, disabled = false) {
   } as const;
 }
 
+function getSmallButtonStyle(disabled = false) {
+  return {
+    border: `1px solid rgba(95, 120, 144, 0.34)`,
+    borderRadius: 999,
+    background: disabled ? "#edf0f2" : BLUE_PALE,
+    color: BLUE_DARK,
+    padding: "8px 11px",
+    cursor: disabled ? "not-allowed" : "pointer",
+    fontSize: 13,
+    fontWeight: 800,
+    fontFamily: "inherit",
+    opacity: disabled ? 0.62 : 1,
+    transition:
+      "transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease, border-color 0.12s ease, opacity 0.12s ease",
+  } as const;
+}
+
+function getEvaluationScore(result: ReEvaluateResponse | null): number | null {
+  const score = result?.evaluation?.score_total;
+  return typeof score === "number" && Number.isFinite(score) ? score : null;
+}
+
+function getEvaluationPlacement(result: ReEvaluateResponse | null): string | null {
+  const placement = result?.evaluation?.placement;
+  return typeof placement === "string" && placement.trim() ? placement.trim() : null;
+}
+
+function getEvaluationReason(result: ReEvaluateResponse | null): string | null {
+  const reason = result?.evaluation?.reason;
+  return typeof reason === "string" && reason.trim() ? reason.trim() : null;
+}
+
+function getEvaluationRisk(result: ReEvaluateResponse | null): string | null {
+  const risk = result?.evaluation?.risk;
+  return typeof risk === "string" && risk.trim() ? risk.trim() : null;
+}
+
 export default function StudioPage() {
   const [adminSecret, setAdminSecret] = useState("");
   const [secretLoaded, setSecretLoaded] = useState(false);
@@ -162,6 +236,8 @@ export default function StudioPage() {
   const [versesError, setVersesError] = useState("");
   const [cardsError, setCardsError] = useState("");
   const [notice, setNotice] = useState("");
+
+  const [reEvaluations, setReEvaluations] = useState<Record<string, ReEvaluateState>>({});
 
   const selectedVerse = useMemo(() => {
     return verses.find((verse) => verse.reference === selectedReference) ?? null;
@@ -255,6 +331,7 @@ export default function StudioPage() {
     setSelectedReference(verse.reference);
     setLoadingCards(true);
     setCardsError("");
+    setReEvaluations({});
     setNotice(`Открываю ${displayReference(verse)}...`);
     try {
       const params = new URLSearchParams({
@@ -285,6 +362,93 @@ export default function StudioPage() {
       setNotice("");
     } finally {
       setLoadingCards(false);
+    }
+  }
+
+  async function reEvaluateCard(card: StudioCard) {
+    if (!selectedVerse) {
+      setCardsError("Сначала выбери стих.");
+      return;
+    }
+
+    if (!adminSecret.trim()) {
+      setCardsError("Вставь Admin Secret.");
+      return;
+    }
+
+    setReEvaluations((prev) => ({
+      ...prev,
+      [card.id]: {
+        loading: true,
+        error: "",
+        result: prev[card.id]?.result ?? null,
+      },
+    }));
+
+    setNotice(`Переоцениваю карточку: ${card.title}`);
+
+    try {
+      const response = await fetch("/api/admin/studio/re-evaluate-card", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-secret": adminSecret,
+        },
+        body: JSON.stringify({
+          reference: selectedVerse.reference,
+          canonical_ref: selectedVerse.canonical_ref,
+          lang,
+          provider: "openai",
+          candidate: {
+            id: card.id,
+            title: card.title,
+            anchor: card.anchor,
+            teaser: card.teaser,
+            why_it_matters: card.why_it_matters,
+            score_total: card.score_total,
+            status: card.status,
+            is_locked: card.is_locked ?? false,
+            angle_summary: card.angle_summary,
+          },
+          targetFeaturedCount: 12,
+        }),
+      });
+
+      const data = (await response.json()) as ReEvaluateResponse;
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || "Не удалось переоценить карточку.");
+      }
+
+      setReEvaluations((prev) => ({
+        ...prev,
+        [card.id]: {
+          loading: false,
+          error: "",
+          result: data,
+        },
+      }));
+
+      const newScore = getEvaluationScore(data);
+      const placement = getEvaluationPlacement(data);
+      setNotice(
+        `Переоценка готова: ${
+          newScore === null ? "без score" : `score ${newScore}`
+        }${placement ? ` / ${placement}` : ""}.`,
+      );
+    } catch (error) {
+      setReEvaluations((prev) => ({
+        ...prev,
+        [card.id]: {
+          loading: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Не удалось переоценить карточку.",
+          result: prev[card.id]?.result ?? null,
+        },
+      }));
+      setNotice("");
     }
   }
 
@@ -490,8 +654,8 @@ export default function StudioPage() {
                 marginTop: 12,
                 padding: "9px 11px",
                 borderRadius: 12,
-                background: "#f7ded2",
-                color: "#8a3a20",
+                background: ERROR_BG,
+                color: ERROR_TEXT,
                 fontSize: 13,
                 fontWeight: 700,
               }}
@@ -564,7 +728,7 @@ export default function StudioPage() {
                 const active = verse.reference === selectedReference;
                 return (
                   <button
-                    key={`${verse.lang}-${verse.reference}`}
+                    key={`${verse.lang}-${verse.canonical_ref ?? verse.reference}`}
                     type="button"
                     onClick={() => loadCards(verse)}
                     disabled={loadingCards && active}
@@ -598,8 +762,8 @@ export default function StudioPage() {
                             marginLeft: 8,
                             fontSize: 11,
                             fontWeight: 700,
-                            color: "#a07840",
-                            background: "#f5e9c8",
+                            color: WARNING_TEXT,
+                            background: WARNING_BG,
                             borderRadius: 999,
                             padding: "2px 7px",
                             verticalAlign: "middle",
@@ -702,8 +866,8 @@ export default function StudioPage() {
                 style={{
                   padding: 12,
                   borderRadius: 12,
-                  background: "#f7ded2",
-                  color: "#8a3a20",
+                  background: ERROR_BG,
+                  color: ERROR_TEXT,
                   fontSize: 13,
                   fontWeight: 700,
                 }}
@@ -745,116 +909,267 @@ export default function StudioPage() {
             ) : null}
 
             <div style={{ display: "grid", gap: 12 }}>
-              {cards.map((card) => (
-                <article
-                  key={card.id}
-                  style={{
-                    border: `1px solid ${LINE}`,
-                    borderRadius: 16,
-                    padding: 14,
-                    background: "#fffaf0",
-                  }}
-                >
-                  <div
+              {cards.map((card) => {
+                const reEval = reEvaluations[card.id] ?? {
+                  loading: false,
+                  error: "",
+                  result: null,
+                };
+
+                const newScore = getEvaluationScore(reEval.result);
+                const newPlacement = getEvaluationPlacement(reEval.result);
+                const reason = getEvaluationReason(reEval.result);
+                const risk = getEvaluationRisk(reEval.result);
+
+                return (
+                  <article
+                    key={card.id}
                     style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      gap: 10,
-                      alignItems: "flex-start",
-                      marginBottom: 8,
+                      border: `1px solid ${LINE}`,
+                      borderRadius: 16,
+                      padding: 14,
+                      background: "#fffaf0",
                     }}
                   >
-                    <h3
+                    <div
                       style={{
-                        margin: 0,
-                        fontSize: 17,
-                        lineHeight: 1.25,
-                        fontFamily:
-                          'ui-serif, Georgia, "Iowan Old Style", "Times New Roman", serif',
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: 10,
+                        alignItems: "flex-start",
+                        marginBottom: 8,
                       }}
                     >
-                      {card.title}
-                    </h3>
-                    {card.score_total !== null ? (
-                      <span
+                      <h3
                         style={{
-                          background: BLUE,
-                          color: "#fff",
-                          borderRadius: 999,
-                          padding: "5px 8px",
-                          fontSize: 12,
-                          fontWeight: 800,
-                          flexShrink: 0,
+                          margin: 0,
+                          fontSize: 17,
+                          lineHeight: 1.25,
+                          fontFamily:
+                            'ui-serif, Georgia, "Iowan Old Style", "Times New Roman", serif',
                         }}
                       >
-                        {card.score_total}
-                      </span>
+                        {card.title}
+                      </h3>
+                      {card.score_total !== null ? (
+                        <span
+                          style={{
+                            background: BLUE,
+                            color: "#fff",
+                            borderRadius: 999,
+                            padding: "5px 8px",
+                            fontSize: 12,
+                            fontWeight: 800,
+                            flexShrink: 0,
+                          }}
+                        >
+                          {card.score_total}
+                        </span>
+                      ) : null}
+                    </div>
+
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginBottom: 9 }}>
+                      <Badge text={statusLabel(card.status)} strong />
+                      {card.coverage_type ? <Badge text={card.coverage_type} /> : null}
+                      <Badge text={getCardSource(card)} />
+                    </div>
+
+                    {card.anchor ? (
+                      <p
+                        style={{
+                          margin: "0 0 9px",
+                          color: SOFT,
+                          fontSize: 13,
+                          lineHeight: 1.5,
+                          fontStyle: "italic",
+                        }}
+                      >
+                        "{card.anchor}"
+                      </p>
                     ) : null}
-                  </div>
 
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginBottom: 9 }}>
-                    <Badge text={statusLabel(card.status)} strong />
-                    {card.coverage_type ? <Badge text={card.coverage_type} /> : null}
-                    <Badge text={getCardSource(card)} />
-                  </div>
-
-                  {card.anchor ? (
-                    <p
-                      style={{
-                        margin: "0 0 9px",
-                        color: SOFT,
-                        fontSize: 13,
-                        lineHeight: 1.5,
-                        fontStyle: "italic",
-                      }}
-                    >
-                      "{card.anchor}"
+                    <p style={{ margin: "0 0 10px", fontSize: 14, lineHeight: 1.62 }}>
+                      {card.teaser}
                     </p>
-                  ) : null}
 
-                  <p style={{ margin: "0 0 10px", fontSize: 14, lineHeight: 1.62 }}>
-                    {card.teaser}
-                  </p>
+                    {card.why_it_matters ? (
+                      <p
+                        style={{
+                          margin: 0,
+                          borderTop: `1px solid ${LINE}`,
+                          paddingTop: 9,
+                          color: SOFT,
+                          fontSize: 13,
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        <strong style={{ color: BLUE_DARK }}>Почему важно: </strong>
+                        {card.why_it_matters}
+                      </p>
+                    ) : null}
 
-                  {card.why_it_matters ? (
-                    <p
-                      style={{
-                        margin: 0,
-                        borderTop: `1px solid ${LINE}`,
-                        paddingTop: 9,
-                        color: SOFT,
-                        fontSize: 13,
-                        lineHeight: 1.5,
-                      }}
-                    >
-                      <strong style={{ color: BLUE_DARK }}>Почему важно: </strong>
-                      {card.why_it_matters}
-                    </p>
-                  ) : null}
-
-                  {card.angle_summary ? (
                     <details style={{ marginTop: 10 }}>
                       <summary
-                        style={{ cursor: "pointer", color: BLUE_DARK, fontSize: 13, fontWeight: 800 }}
+                        style={{
+                          cursor: "pointer",
+                          color: BLUE_DARK,
+                          fontSize: 13,
+                          fontWeight: 800,
+                        }}
                       >
                         Оценка / угол
                       </summary>
-                      <p
-                        style={{ margin: "8px 0 0", color: SOFT, fontSize: 13, lineHeight: 1.5 }}
+
+                      <div
+                        style={{
+                          marginTop: 10,
+                          padding: 11,
+                          borderRadius: 13,
+                          border: `1px solid rgba(95, 120, 144, 0.18)`,
+                          background: BLUE_PALE,
+                        }}
                       >
-                        {card.angle_summary}
-                      </p>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginBottom: 9 }}>
+                          <Badge
+                            text={`текущая: ${
+                              card.score_total === null ? "—" : card.score_total
+                            }`}
+                            strong
+                          />
+                          <Badge text={`статус: ${statusLabel(card.status)}`} />
+                          {card.coverage_type ? <Badge text={`тип: ${card.coverage_type}`} /> : null}
+                        </div>
+
+                        {card.angle_summary ? (
+                          <p
+                            style={{
+                              margin: "0 0 10px",
+                              color: SOFT,
+                              fontSize: 13,
+                              lineHeight: 1.5,
+                            }}
+                          >
+                            {card.angle_summary}
+                          </p>
+                        ) : (
+                          <p
+                            style={{
+                              margin: "0 0 10px",
+                              color: SOFT,
+                              fontSize: 13,
+                              lineHeight: 1.5,
+                            }}
+                          >
+                            Сохранённого краткого описания угла пока нет.
+                          </p>
+                        )}
+
+                        <button
+                          type="button"
+                          disabled={reEval.loading}
+                          onClick={() => reEvaluateCard(card)}
+                          style={getSmallButtonStyle(reEval.loading)}
+                        >
+                          {reEval.loading ? "Оцениваю..." : "Переоценить"}
+                        </button>
+
+                        {reEval.error ? (
+                          <div
+                            style={{
+                              marginTop: 10,
+                              padding: "9px 10px",
+                              borderRadius: 12,
+                              background: ERROR_BG,
+                              color: ERROR_TEXT,
+                              fontSize: 13,
+                              fontWeight: 700,
+                            }}
+                          >
+                            {reEval.error}
+                          </div>
+                        ) : null}
+
+                        {reEval.result ? (
+                          <div
+                            style={{
+                              marginTop: 10,
+                              padding: 11,
+                              borderRadius: 13,
+                              background: "#fffaf0",
+                              border: `1px solid ${LINE}`,
+                            }}
+                          >
+                            <div
+                              style={{
+                                display: "flex",
+                                flexWrap: "wrap",
+                                gap: 7,
+                                marginBottom: 9,
+                              }}
+                            >
+                              <Badge
+                                text={`новая: ${newScore === null ? "—" : newScore}`}
+                                strong
+                              />
+                              {newPlacement ? <Badge text={`предложение: ${newPlacement}`} /> : null}
+                              {reEval.result.verse_text_source ? (
+                                <Badge text={`verse: ${reEval.result.verse_text_source}`} />
+                              ) : null}
+                            </div>
+
+                            {reason ? (
+                              <p
+                                style={{
+                                  margin: "0 0 8px",
+                                  color: SOFT,
+                                  fontSize: 13,
+                                  lineHeight: 1.5,
+                                }}
+                              >
+                                <strong style={{ color: BLUE_DARK }}>Причина: </strong>
+                                {reason}
+                              </p>
+                            ) : null}
+
+                            {risk ? (
+                              <p
+                                style={{
+                                  margin: "0 0 8px",
+                                  color: WARNING_TEXT,
+                                  fontSize: 13,
+                                  lineHeight: 1.5,
+                                }}
+                              >
+                                <strong>Риск: </strong>
+                                {risk}
+                              </p>
+                            ) : null}
+
+                            <p
+                              style={{
+                                margin: 0,
+                                color: SOFT,
+                                fontSize: 12,
+                                lineHeight: 1.45,
+                              }}
+                            >
+                              Preview-only: база не изменена. Кнопку “Применить” добавим
+                              после проверки нескольких переоценок.
+                            </p>
+                          </div>
+                        ) : null}
+                      </div>
                     </details>
-                  ) : null}
-                </article>
-              ))}
+                  </article>
+                );
+              })}
             </div>
           </section>
         </div>
 
         <p style={{ margin: "18px 0 0", color: SOFT, fontSize: 12, textAlign: "center" }}>
-          MVP Studio: read-only режим. Следующий этап — "Доработать карточку" и
-          "Добавить материал".
+          MVP Studio: read-only + preview-переоценка. Следующий этап — применить
+          оценку, доработать карточку и добавить материал.
         </p>
       </div>
     </main>
