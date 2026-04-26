@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
-import { getStudioVerseSummaries } from "@/lib/cache/angleCards";
+import {
+  getStudioVerseSummaries,
+  type StudioVerseSummary,
+} from "@/lib/cache/angleCards";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,14 +25,40 @@ function isAdminRequest(req: Request): boolean {
   return provided === expected;
 }
 
-function getPositiveNumber(value: string | null, fallback: number): number {
+function getPositiveInteger(
+  value: string | null,
+  fallback: number,
+  max: number,
+): number {
   if (!value) return fallback;
 
-  const number = Number(value);
+  const parsed = Number(value);
 
-  if (!Number.isFinite(number) || number <= 0) return fallback;
+  if (!Number.isFinite(parsed)) return fallback;
 
-  return Math.floor(number);
+  const integer = Math.floor(parsed);
+
+  if (integer <= 0) return fallback;
+
+  return Math.min(integer, max);
+}
+
+function toPublicVerseSummary(verse: StudioVerseSummary) {
+  return {
+    reference: verse.reference,
+    book: verse.book,
+    chapter: verse.chapter,
+    verse: verse.verse,
+    lang: verse.lang,
+    total_count: verse.total_count,
+    featured_count: verse.featured_count,
+    reserve_count: verse.reserve_count,
+    hidden_count: verse.hidden_count,
+    rejected_count: verse.rejected_count,
+    best_score: verse.best_score,
+    sources: verse.sources,
+    last_activity_at: verse.last_activity_at,
+  };
 }
 
 export async function GET(req: Request) {
@@ -43,4 +72,34 @@ export async function GET(req: Request) {
     const langParam = url.searchParams.get("lang");
     const lang: Lang = isLang(langParam) ? langParam : "ru";
 
-    const days = getPositive
+    const days = getPositiveInteger(url.searchParams.get("days"), 7, 365);
+    const limit = getPositiveInteger(url.searchParams.get("limit"), 50, 200);
+
+    const result = await getStudioVerseSummaries({
+      lang,
+      days,
+      limit,
+    });
+
+    if (!result.ok) {
+      return NextResponse.json(
+        { error: result.error ?? "Failed to load recent verses" },
+        { status: 500 },
+      );
+    }
+
+    return NextResponse.json({
+      ok: true,
+      lang,
+      days,
+      limit,
+      count: result.verses.length,
+      verses: result.verses.map(toPublicVerseSummary),
+    });
+  } catch (error: unknown) {
+    const message =
+      error instanceof Error ? error.message : "Failed to load recent verses";
+
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
