@@ -14,7 +14,10 @@ import {
 } from "@/lib/prompts/buildExtraPrompt";
 import { buildExpandPrompt } from "@/lib/prompts/buildExpandPrompt";
 import { getCachedResult, saveCachedResult } from "@/lib/cache/cachedResults";
-import { getAngleCards } from "@/lib/cache/angleCards";
+import {
+  getAngleCards,
+  getAngleCardsByCanonicalRef,
+} from "@/lib/cache/angleCards";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -249,13 +252,19 @@ async function buildAnglesResponseFromCards(args: {
   lang: Lang;
   canonical_ref?: string | null;
 }): Promise<string | null> {
-  const result = await getAngleCards({
-    reference: args.reference,
-    lang: args.lang,
-    canonical_ref: args.canonical_ref ?? null,
-    statuses: ["featured", "reserve"],
-    limit: TARGET_ANGLE_COUNT,
-  });
+  const result = args.canonical_ref
+    ? await getAngleCardsByCanonicalRef({
+        canonical_ref: args.canonical_ref,
+        lang: args.lang,
+        statuses: ["featured", "reserve"],
+        limit: TARGET_ANGLE_COUNT,
+      })
+    : await getAngleCards({
+        reference: args.reference,
+        lang: args.lang,
+        statuses: ["featured", "reserve"],
+        limit: TARGET_ANGLE_COUNT,
+      });
 
   if (!result.ok || result.cards.length === 0) {
     return null;
