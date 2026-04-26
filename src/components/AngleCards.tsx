@@ -1,40 +1,21 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { dictionary, type Lang } from "@/lib/i18n/dictionary";
 import type { Provider } from "@/lib/ai/providers";
 import { MarkdownText } from "./MarkdownText";
 import { extractJSONArray } from "@/lib/ai/parseJSON";
-import ExploreMorePearlsButton from "./ExploreMorePearlsButton";
 
 export type AngleCard = {
-  id?: string;
   title: string;
   teaser: string;
   anchor: string;
   why_it_matters: string;
-  score_total?: number | null;
-  status?: string | null;
-  coverage_type?: string | null;
-};
-
-type SavedPearlCard = {
-  id: string;
-  title: string;
-  anchor?: string | null;
-  teaser: string;
-  why_it_matters?: string | null;
-  score_total?: number | null;
-  status?: string | null;
-  coverage_type?: string | null;
 };
 
 function normalizeCard(c: unknown): AngleCard | null {
   if (!c || typeof c !== "object") return null;
-
   const o = c as Record<string, unknown>;
-
-  const id = String(o.id ?? "").trim();
 
   const title = String(
     o.title ?? o["заголовок"] ?? o.heading ?? o.name ?? o.discovery ?? "",
@@ -71,32 +52,9 @@ function normalizeCard(c: unknown): AngleCard | null {
       "",
   ).trim();
 
-  const scoreRaw = o.score_total;
-  const score_total =
-    typeof scoreRaw === "number" && Number.isFinite(scoreRaw)
-      ? scoreRaw
-      : null;
-
-  const status =
-    typeof o.status === "string" && o.status.trim() ? o.status.trim() : null;
-
-  const coverage_type =
-    typeof o.coverage_type === "string" && o.coverage_type.trim()
-      ? o.coverage_type.trim()
-      : null;
-
   if (!title || !teaser || !anchor || !why_it_matters) return null;
 
-  return {
-    id: id || undefined,
-    title,
-    teaser,
-    anchor,
-    why_it_matters,
-    score_total,
-    status,
-    coverage_type,
-  };
+  return { title, teaser, anchor, why_it_matters };
 }
 
 function extractCards(raw: string): AngleCard[] | null {
@@ -129,27 +87,6 @@ function extractCards(raw: string): AngleCard[] | null {
   return cards;
 }
 
-function getPearlsTitle(lang: Lang): string {
-  if (lang === "ru") return "Жемчужины стиха";
-  if (lang === "es") return "Perlas del versículo";
-  return "Verse pearls";
-}
-
-function savedPearlToAngleCard(card: SavedPearlCard): AngleCard | null {
-  if (!card.title || !card.teaser) return null;
-
-  return {
-    id: card.id,
-    title: card.title,
-    anchor: card.anchor ?? "",
-    teaser: card.teaser,
-    why_it_matters: card.why_it_matters ?? "",
-    score_total: card.score_total ?? null,
-    status: card.status ?? null,
-    coverage_type: card.coverage_type ?? null,
-  };
-}
-
 export function AngleCards({
   rawText,
   reference,
@@ -164,45 +101,21 @@ export function AngleCards({
   provider: Provider;
 }) {
   const t = dictionary[lang];
+  const cards = extractCards(rawText);
 
-  const parsedCards = useMemo(() => extractCards(rawText), [rawText]);
-  const [cards, setCards] = useState<AngleCard[]>(parsedCards ?? []);
-
-  useEffect(() => {
-    setCards(parsedCards ?? []);
-  }, [parsedCards]);
-
-  function handleCardsUpdated(updatedCards: SavedPearlCard[]) {
-    const featuredCards = updatedCards
-      .filter((card) => !card.status || card.status === "featured")
-      .map(savedPearlToAngleCard)
-      .filter((card): card is AngleCard => card !== null);
-
-    if (featuredCards.length > 0) {
-      setCards(featuredCards);
-    }
-  }
-
-  if (!parsedCards || parsedCards.length === 0) {
+  if (!cards || cards.length === 0) {
     return (
       <div className="card error">
-        {t.error} (Could not parse pearls — the AI may have returned non-JSON.)
+        {t.error} (Could not parse angles — the AI may have returned non-JSON.)
       </div>
     );
   }
 
   return (
-    <div className="lens-content-appear" style={{ display: "grid", gap: 14 }}>
-      <div className="row" style={{ justifyContent: "space-between" }}>
-        <h2 className="section-title">{getPearlsTitle(lang)}</h2>
-        <span className="muted">
-          {cards.length} {lang === "ru" ? "найдено" : lang === "es" ? "guardadas" : "found"}
-        </span>
-      </div>
-
+    <div style={{ display: "grid", gap: 14 }}>
       {cards.map((card, i) => (
         <AngleCardItem
-          key={card.id ?? `${card.title}-${i}`}
+          key={i}
           card={card}
           reference={reference}
           verseText={verseText}
@@ -210,14 +123,6 @@ export function AngleCards({
           provider={provider}
         />
       ))}
-
-      <ExploreMorePearlsButton
-        reference={reference}
-        verseText={verseText}
-        lang={lang}
-        provider={provider}
-        onCardsUpdated={handleCardsUpdated}
-      />
     </div>
   );
 }
@@ -236,11 +141,22 @@ function AngleCardItem({
   provider: Provider;
 }) {
   const t = dictionary[lang];
+
   const [expanded, setExpanded] = useState(false);
   const [article, setArticle] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
   const [shareState, setShareState] = useState<"idle" | "copied">("idle");
+
+  const [adminSecret, setAdminSecret] = useState("");
+  const [extracting, setExtracting] = useState(false);
+  const [extractMessage, setExtractMessage] = useState("");
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem("scriptura_admin_secret");
+    if (saved) setAdminSecret(saved);
+  }, []);
 
   async function handleExpand() {
     if (expanded) {
@@ -255,6 +171,7 @@ function AngleCardItem({
 
     setLoading(true);
     setError("");
+    setExtractMessage("");
 
     try {
       const r = await fetch("/api/analyze", {
@@ -306,6 +223,85 @@ function AngleCardItem({
     }
   }
 
+  async function handleExtractPearlsFromArticle() {
+    if (!adminSecret.trim()) {
+      setExtractMessage("ADMIN_SECRET не найден. Открой админ-тестер один раз.");
+      return;
+    }
+
+    if (!article.trim()) {
+      setExtractMessage("Сначала разверни статью.");
+      return;
+    }
+
+    setExtracting(true);
+    setExtractMessage("Извлекаю жемчужины из статьи...");
+
+    try {
+      const response = await fetch(
+        "/api/admin/extract-angle-candidates-from-article",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-admin-secret": adminSecret,
+          },
+          body: JSON.stringify({
+            reference,
+            verseText,
+            lang,
+            provider,
+            sourceTitle: card.title,
+            sourceType: "expanded_angle_article",
+            sourceLens: "angle_expand",
+            sourceArticle: article,
+            count: 3,
+            processLimit: 3,
+          }),
+        },
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        const message =
+          typeof data?.error === "string"
+            ? data.error
+            : "Extractor request failed.";
+        throw new Error(message);
+      }
+
+      const savedCount =
+        typeof data?.saved_count === "number" ? data.saved_count : 0;
+      const skippedCount =
+        typeof data?.skipped_count === "number" ? data.skipped_count : 0;
+      const extractedCount =
+        typeof data?.extracted_count === "number" ? data.extracted_count : 0;
+
+      if (savedCount > 0) {
+        setExtractMessage(
+          `Найдены и сохранены новые жемчужины: ${savedCount}. Извлечено: ${extractedCount}, пропущено: ${skippedCount}.`,
+        );
+      } else if (extractedCount > 0) {
+        setExtractMessage(
+          `Новые жемчужины не сохранены: ${skippedCount} пропущено как дубли или слабые кандидаты.`,
+        );
+      } else {
+        setExtractMessage(
+          "Новых сильных жемчужин в этой статье не найдено.",
+        );
+      }
+    } catch (e: unknown) {
+      setExtractMessage(
+        e instanceof Error
+          ? `Ошибка extractor: ${e.message}`
+          : "Ошибка extractor.",
+      );
+    } finally {
+      setExtracting(false);
+    }
+  }
+
   return (
     <div className="angle-card">
       <div className="angle-card-header">
@@ -350,12 +346,50 @@ function AngleCardItem({
           )}
 
           {!loading && !error && article && (
-            <div style={{ marginTop: 16 }}>
-              <button type="button" className="btn btn-sm" onClick={handleShare}>
+            <div
+              style={{
+                marginTop: 16,
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 8,
+                alignItems: "center",
+              }}
+            >
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={handleShare}
+              >
                 {shareState === "copied" ? t.copied : t.share}
               </button>
+
+              {adminSecret ? (
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={handleExtractPearlsFromArticle}
+                  disabled={extracting}
+                >
+                  {extracting
+                    ? "Ищу жемчужины..."
+                    : "Извлечь жемчужины из статьи"}
+                </button>
+              ) : null}
             </div>
           )}
+
+          {extractMessage ? (
+            <p
+              style={{
+                marginTop: 10,
+                marginBottom: 0,
+                fontSize: 13,
+                color: "var(--ink-soft)",
+              }}
+            >
+              {extractMessage}
+            </p>
+          ) : null}
         </div>
       )}
     </div>
