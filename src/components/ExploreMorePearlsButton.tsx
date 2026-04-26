@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type Lang = "ru" | "en" | "es";
 
@@ -95,9 +95,36 @@ export default function ExploreMorePearlsButton({
 }: ExploreMorePearlsButtonProps) {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const hideMessageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (hideMessageTimerRef.current) {
+        clearTimeout(hideMessageTimerRef.current);
+      }
+    };
+  }, []);
+
+  function showTemporaryMessage(nextMessage: string) {
+    if (hideMessageTimerRef.current) {
+      clearTimeout(hideMessageTimerRef.current);
+    }
+
+    setMessage(nextMessage);
+
+    hideMessageTimerRef.current = setTimeout(() => {
+      setMessage(null);
+      hideMessageTimerRef.current = null;
+    }, 4500);
+  }
 
   async function handleExploreMore() {
     if (loading) return;
+
+    if (hideMessageTimerRef.current) {
+      clearTimeout(hideMessageTimerRef.current);
+      hideMessageTimerRef.current = null;
+    }
 
     setLoading(true);
     setMessage(null);
@@ -119,7 +146,7 @@ export default function ExploreMorePearlsButton({
       const data = (await response.json()) as ExploreMoreResponse;
 
       if (!response.ok || !data.ok) {
-        setMessage(data.error ?? getFallbackError(lang));
+        showTemporaryMessage(data.error ?? getFallbackError(lang));
         return;
       }
 
@@ -128,18 +155,18 @@ export default function ExploreMorePearlsButton({
       }
 
       if (data.result_message) {
-        setMessage(data.result_message);
+        showTemporaryMessage(data.result_message);
         return;
       }
 
       if (data.explored === false) {
-        setMessage(data.decision?.message ?? getNoExploreMessage(lang));
+        showTemporaryMessage(data.decision?.message ?? getNoExploreMessage(lang));
         return;
       }
 
-      setMessage(getDoneMessage(lang));
+      showTemporaryMessage(getDoneMessage(lang));
     } catch (error) {
-      setMessage(
+      showTemporaryMessage(
         error instanceof Error ? error.message : getFallbackError(lang),
       );
     } finally {
