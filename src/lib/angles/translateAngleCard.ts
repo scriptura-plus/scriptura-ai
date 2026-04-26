@@ -56,7 +56,61 @@ function extractJsonObject(text: string): unknown {
   }
 }
 
-function normalizeTranslatedCard(
+function languageName(lang: AngleCardLang): string {
+  if (lang === "ru") return "Russian";
+  if (lang === "en") return "English";
+  return "Spanish";
+}
+
+function buildSingleTranslationPrompt(args: {
+  reference: string;
+  originLang: AngleCardLang;
+  targetLang: AngleCardLang;
+  card: TranslatableAngleCard;
+}): string {
+  return `
+You are translating one approved Scriptura AI insight card.
+
+The card has already passed editorial evaluation.
+Your task is NOT to create a new angle.
+Your task is to preserve the same idea, same textual anchor, same discovery, and same caution.
+
+Target language: ${languageName(args.targetLang)}
+Target language code: ${args.targetLang}
+
+Return ONLY valid JSON.
+
+Reference:
+${args.reference}
+
+Original language code:
+${args.originLang}
+
+Original approved card:
+${JSON.stringify(args.card, null, 2)}
+
+Requirements:
+- The output MUST be written in ${languageName(args.targetLang)}.
+- Do not leave the output in the original language unless the target language is the same as the original language.
+- Do not invent new details.
+- Do not add new claims.
+- Keep the card concise and suitable for a short insight card.
+- "anchor" should remain a textual support phrase. Translate it naturally if needed.
+- If a Hebrew/Greek word or proper name is central, preserve it when appropriate.
+- "why_it_matters" must be practical and concise, not preachy.
+- If the target language is the original language, polish lightly but do not change the meaning.
+
+JSON shape:
+{
+  "title": "...",
+  "anchor": "...",
+  "teaser": "...",
+  "why_it_matters": "..."
+}
+`.trim();
+}
+
+function normalizeSingleTranslatedCard(
   value: unknown,
   lang: AngleCardLang,
 ): TranslatedAngleCard {
@@ -80,60 +134,25 @@ function normalizeTranslatedCard(
   };
 }
 
-function buildTranslationPrompt(args: {
+async function translateOneLanguage(args: {
   reference: string;
   originLang: AngleCardLang;
+  targetLang: AngleCardLang;
   card: TranslatableAngleCard;
-}): string {
-  return `
-You are translating one approved Scriptura AI insight card into Russian, English, and Spanish.
+}): Promise<TranslatedAngleCard> {
+  const provider = isProvider("openai") ? "openai" : defaultProvider();
 
-The insight has already passed editorial evaluation. Your task is NOT to create new angles.
-Preserve the same idea, same textual anchor, same discovery, same level of caution.
+  const prompt = buildSingleTranslationPrompt({
+    reference: args.reference,
+    originLang: args.originLang,
+    targetLang: args.targetLang,
+    card: args.card,
+  });
 
-Return ONLY valid JSON.
+  const text = await runAI(provider, prompt, args.targetLang, true);
+  const parsed = extractJsonObject(text);
 
-Reference:
-${args.reference}
-
-Original language:
-${args.originLang}
-
-Original approved card:
-${JSON.stringify(args.card, null, 2)}
-
-Requirements:
-- Translate the same card into ru, en, es.
-- Do not invent new details.
-- Do not add new claims.
-- Keep the card concise and suitable for a short insight card.
-- "anchor" should remain a textual support phrase. Translate it naturally if needed.
-- If a Hebrew/Greek word or proper name is central, preserve it when appropriate.
-- "why_it_matters" must be practical and concise, not preachy.
-- If the original language is already one of ru/en/es, still include that language in the output, polished but not changed in meaning.
-
-JSON shape:
-{
-  "ru": {
-    "title": "...",
-    "anchor": "...",
-    "teaser": "...",
-    "why_it_matters": "..."
-  },
-  "en": {
-    "title": "...",
-    "anchor": "...",
-    "teaser": "...",
-    "why_it_matters": "..."
-  },
-  "es": {
-    "title": "...",
-    "anchor": "...",
-    "teaser": "...",
-    "why_it_matters": "..."
-  }
-}
-`.trim();
+  return normalizeSingleTranslatedCard(parsed, args.targetLang);
 }
 
 export async function translateAngleCard(args: {
@@ -147,30 +166,24 @@ export async function translateAngleCard(args: {
   raw?: unknown;
 }> {
   try {
-    const provider = isProvider("openai") ? "openai" : defaultProvider();
+    const cards: TranslatedAngleCard[] = [];
 
-    const prompt = buildTranslationPrompt({
-      reference: args.reference,
-      originLang: args.originLang,
-      card: args.card,
-    });
+    for (const targetLang of TARGET_LANGS) {
+      const translated = await translateOneLanguage({
+        reference: args.reference,
+        originLang: args.originLang,
+        targetLang,
+        card: args.card,
+      });
 
-    const text = await runAI(provider, prompt, args.originLang, true);
-    const parsed = extractJsonObject(text);
-
-    if (!isRecord(parsed)) {
-      throw new Error("Translation response is not a JSON object");
+      cards.push(translated);
     }
-
-    const cards = TARGET_LANGS.map((lang) =>
-      normalizeTranslatedCard(parsed[lang], lang),
-    );
 
     return {
       ok: true,
       cards,
       error: null,
-      raw: parsed,
+      raw: cards,
     };
   } catch (error) {
     return {
