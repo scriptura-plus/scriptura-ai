@@ -1,7 +1,9 @@
+import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { runAI } from "@/lib/ai/runAI";
 import { isProvider, defaultProvider } from "@/lib/ai/providers";
 import { normalizeReference } from "@/lib/bible/normalizeReference";
+import { translateAngleCard } from "@/lib/angles/translateAngleCard";
 import { buildEvaluateAnglePrompt } from "@/lib/prompts/buildEvaluateAnglePrompt";
 import { buildRewriteAnglePrompt } from "@/lib/prompts/buildRewriteAnglePrompt";
 import {
@@ -60,6 +62,34 @@ type Evaluation = {
   reason?: string | null;
   risk?: string | null;
   rewrite_instruction?: string | null;
+};
+
+type SaveOneCardArgs = {
+  reference: string;
+  book: string;
+  chapter: number;
+  verse: number;
+  lang: Lang;
+  canonical_ref: string | null;
+  book_key: string | null;
+  translation_group_id: string;
+  origin_lang: Lang;
+  title: string;
+  anchor: string | null;
+  teaser: string;
+  why_it_matters: string | null;
+  angle_summary: string | null;
+  coverage_type: AngleCardInput["coverage_type"];
+  score_total: number | null;
+  scores: unknown;
+  evaluation: Evaluation;
+  battle: unknown;
+  status: AngleCardInput["status"];
+  rewritten: boolean;
+  sourceProvider: string | null;
+  sourceModel: string | null;
+  candidate: CandidateCard;
+  replace_card_id: string | null;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -695,6 +725,65 @@ async function rewriteCandidate(args: {
   };
 }
 
+async function saveOneCard(args: SaveOneCardArgs): Promise<{
+  ok: boolean;
+  id: string | null;
+  lang: Lang;
+  error: string | null;
+}> {
+  const saveResult = await saveAngleCard({
+    reference: args.reference,
+    book: args.book,
+    chapter: args.chapter,
+    verse: args.verse,
+    lang: args.lang,
+
+    canonical_ref: args.canonical_ref,
+    book_key: args.book_key,
+    translation_group_id: args.translation_group_id,
+    origin_lang: args.origin_lang,
+
+    title: args.title,
+    anchor: args.anchor,
+    teaser: args.teaser,
+    why_it_matters: args.why_it_matters,
+
+    angle_summary: args.angle_summary,
+    coverage_type: args.coverage_type,
+
+    score_total: args.score_total,
+    scores: args.scores,
+    evaluation: args.evaluation,
+    battle: args.battle,
+
+    status: args.status,
+    rank: args.status === "featured" ? 999 : null,
+    is_locked: false,
+
+    source_type: args.rewritten
+      ? "admin_process_candidate_rewrite"
+      : "admin_process_candidate",
+    source_provider: args.sourceProvider,
+    source_model: args.sourceModel,
+
+    editor_provider: "openai",
+    editor_model: getModelName("openai"),
+
+    original_card: args.candidate,
+    rewritten_from_card_id: null,
+    replaced_card_id: args.replace_card_id,
+
+    prompt_version: "angle_cards_v1",
+  });
+
+  return {
+    ok: saveResult.ok,
+    id: saveResult.id,
+    lang: args.lang,
+    error: saveResult.error,
+  };
+}
+
 export async function POST(req: Request) {
   try {
     if (!isAdminRequest(req)) {
@@ -768,6 +857,7 @@ export async function POST(req: Request) {
         skipped: true,
         skip_reason: "matched_duplicate",
         saved_id: null,
+        saved_ids: [],
         rewritten: false,
         status: "skipped_duplicate",
         score_total: getNumber(firstEvaluation.score_total),
@@ -814,6 +904,7 @@ export async function POST(req: Request) {
           skipped: true,
           skip_reason: "matched_duplicate_after_rewrite",
           saved_id: null,
+          saved_ids: [],
           rewritten,
           status: "skipped_duplicate",
           score_total: getNumber(finalEvaluation.score_total),
@@ -835,6 +926,7 @@ export async function POST(req: Request) {
         skipped: true,
         skip_reason: skipDecision.reason,
         saved_id: null,
+        saved_ids: [],
         rewritten,
         status: "skipped_not_savable",
         score_total: getNumber(finalEvaluation.score_total),
@@ -851,63 +943,93 @@ export async function POST(req: Request) {
     const cardForSave = getFinalCardForSave(finalCard);
     const status = normalizeStatusFromPlacement(finalEvaluation.placement);
     const scoreTotal = getNumber(finalEvaluation.score_total);
+    const translationGroupId = randomUUID();
 
-    const saveResult = await saveAngleCard({
+    const translationResult = await translateAngleCard({
       reference,
-      book: referenceParts.book,
-      chapter: referenceParts.chapter,
-      verse: referenceParts.verse,
-      lang,
-
-      canonical_ref: normalizedReference.canonical_ref,
-      book_key: normalizedReference.book_key,
-      translation_group_id: null,
-      origin_lang: lang,
-
-      title: cardForSave.title,
-      anchor: cardForSave.anchor,
-      teaser: cardForSave.teaser,
-      why_it_matters: cardForSave.why_it_matters,
-
-      angle_summary: getString(finalEvaluation.angle_summary),
-      coverage_type: normalizeCoverageType(finalEvaluation.coverage_type),
-
-      score_total: scoreTotal,
-      scores: finalEvaluation.scores ?? null,
-      evaluation: finalEvaluation,
-      battle: finalEvaluation.battle ?? null,
-
-      status,
-      rank: status === "featured" ? 999 : null,
-      is_locked: false,
-
-      source_type: rewritten
-        ? "admin_process_candidate_rewrite"
-        : "admin_process_candidate",
-      source_provider: sourceProvider,
-      source_model: sourceModel,
-
-      editor_provider: "openai",
-      editor_model: getModelName("openai"),
-
-      original_card: candidate,
-      rewritten_from_card_id: null,
-      replaced_card_id: getString(finalEvaluation.replace_card_id),
-
-      prompt_version: "angle_cards_v1",
+      originLang: lang,
+      card: {
+        title: cardForSave.title,
+        anchor: cardForSave.anchor,
+        teaser: cardForSave.teaser,
+        why_it_matters: cardForSave.why_it_matters,
+      },
     });
 
-    if (!saveResult.ok) {
+    if (!translationResult.ok) {
       return NextResponse.json(
-        { error: saveResult.error ?? "Failed to save processed card" },
+        {
+          error:
+            translationResult.error ??
+            "Failed to translate approved angle card",
+          canonical_ref: normalizedReference.canonical_ref,
+          book_key: normalizedReference.book_key,
+          first_evaluation: firstEvaluation,
+          final_card: finalCard,
+          final_evaluation: finalEvaluation,
+        },
         { status: 500 },
       );
     }
 
+    const saveResults = [];
+
+    for (const translated of translationResult.cards) {
+      const saveResult = await saveOneCard({
+        reference,
+        book: referenceParts.book,
+        chapter: referenceParts.chapter,
+        verse: referenceParts.verse,
+        lang: translated.lang,
+        canonical_ref: normalizedReference.canonical_ref,
+        book_key: normalizedReference.book_key,
+        translation_group_id: translationGroupId,
+        origin_lang: lang,
+
+        title: translated.title,
+        anchor: translated.anchor,
+        teaser: translated.teaser,
+        why_it_matters: translated.why_it_matters,
+
+        angle_summary: getString(finalEvaluation.angle_summary),
+        coverage_type: normalizeCoverageType(finalEvaluation.coverage_type),
+
+        score_total: scoreTotal,
+        scores: finalEvaluation.scores ?? null,
+        evaluation: finalEvaluation,
+        battle: finalEvaluation.battle ?? null,
+
+        status,
+        rewritten,
+        sourceProvider,
+        sourceModel,
+        candidate,
+        replace_card_id: getString(finalEvaluation.replace_card_id),
+      });
+
+      if (!saveResult.ok) {
+        return NextResponse.json(
+          {
+            error: saveResult.error ?? "Failed to save translated card",
+            failed_lang: translated.lang,
+            partial_saved: saveResults,
+          },
+          { status: 500 },
+        );
+      }
+
+      saveResults.push(saveResult);
+    }
+
+    const originSaved =
+      saveResults.find((result) => result.lang === lang) ?? saveResults[0];
+
     return NextResponse.json({
       ok: true,
       skipped: false,
-      saved_id: saveResult.id,
+      saved_id: originSaved?.id ?? null,
+      saved_ids: saveResults,
+      translation_group_id: translationGroupId,
       rewritten,
       status,
       score_total: scoreTotal,
@@ -916,6 +1038,7 @@ export async function POST(req: Request) {
       first_evaluation: firstEvaluation,
       rewritten_card: rewrittenCard,
       final_card: finalCard,
+      translated_cards: translationResult.cards,
       final_evaluation: finalEvaluation,
     });
   } catch (error: unknown) {
