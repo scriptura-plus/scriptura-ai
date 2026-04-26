@@ -18,12 +18,19 @@ export type AngleCardCoverageType =
   | "conceptual"
   | "other";
 
+export type AngleCardLang = "ru" | "en" | "es";
+
 export type AngleCardInput = {
   reference: string;
   book: string;
   chapter: number;
   verse: number;
-  lang: "ru" | "en" | "es";
+  lang: AngleCardLang;
+
+  canonical_ref?: string | null;
+  book_key?: string | null;
+  translation_group_id?: string | null;
+  origin_lang?: AngleCardLang | null;
 
   title: string;
   anchor?: string | null;
@@ -64,7 +71,12 @@ export type AngleCardRow = {
   chapter: number;
   verse: number;
 
-  lang: "ru" | "en" | "es";
+  lang: AngleCardLang;
+
+  canonical_ref: string | null;
+  book_key: string | null;
+  translation_group_id: string | null;
+  origin_lang: AngleCardLang | null;
 
   title: string;
   anchor: string | null;
@@ -117,7 +129,9 @@ export type StudioVerseSummary = {
   book: string;
   chapter: number;
   verse: number;
-  lang: "ru" | "en" | "es";
+  lang: AngleCardLang;
+  canonical_ref: string | null;
+  book_key: string | null;
   total_count: number;
   featured_count: number;
   reserve_count: number;
@@ -151,6 +165,11 @@ export async function saveAngleCard(input: AngleCardInput): Promise<{
       chapter: input.chapter,
       verse: input.verse,
       lang: input.lang,
+
+      canonical_ref: input.canonical_ref ?? null,
+      book_key: input.book_key ?? null,
+      translation_group_id: input.translation_group_id ?? null,
+      origin_lang: input.origin_lang ?? input.lang,
 
       title: input.title,
       anchor: input.anchor ?? null,
@@ -202,7 +221,7 @@ export async function saveAngleCard(input: AngleCardInput): Promise<{
 
 export async function getAngleCards(args: {
   reference: string;
-  lang: "ru" | "en" | "es";
+  lang: AngleCardLang;
   statuses?: AngleCardStatus[];
   limit?: number;
 }): Promise<{
@@ -249,8 +268,57 @@ export async function getAngleCards(args: {
   };
 }
 
+export async function getAngleCardsByCanonicalRef(args: {
+  canonical_ref: string;
+  lang: AngleCardLang;
+  statuses?: AngleCardStatus[];
+  limit?: number;
+}): Promise<{
+  ok: boolean;
+  cards: AngleCardRow[];
+  error: string | null;
+}> {
+  const client = createAdminClient();
+
+  if (!client) {
+    return {
+      ok: false,
+      cards: [],
+      error: "Supabase admin client unavailable",
+    };
+  }
+
+  const statuses = args.statuses ?? ["featured", "reserve"];
+
+  const { data, error } = await client
+    .from("angle_cards")
+    .select("*")
+    .eq("canonical_ref", args.canonical_ref)
+    .eq("lang", args.lang)
+    .in("status", statuses)
+    .order("status", { ascending: true })
+    .order("rank", { ascending: true, nullsFirst: false })
+    .order("score_total", { ascending: false, nullsFirst: false })
+    .order("created_at", { ascending: true })
+    .limit(args.limit ?? 24);
+
+  if (error) {
+    return {
+      ok: false,
+      cards: [],
+      error: error.message,
+    };
+  }
+
+  return {
+    ok: true,
+    cards: (data ?? []) as AngleCardRow[],
+    error: null,
+  };
+}
+
 export async function getStudioVerseSummaries(args: {
-  lang: "ru" | "en" | "es";
+  lang: AngleCardLang;
   days?: number;
   limit?: number;
 }): Promise<{
@@ -274,7 +342,7 @@ export async function getStudioVerseSummaries(args: {
   const { data, error } = await client
     .from("angle_cards")
     .select(
-      "reference, book, chapter, verse, lang, status, score_total, source_model, source_type, created_at, updated_at",
+      "reference, book, chapter, verse, lang, canonical_ref, book_key, status, score_total, source_model, source_type, created_at, updated_at",
     )
     .eq("lang", args.lang)
     .gte("created_at", since)
@@ -297,7 +365,9 @@ export async function getStudioVerseSummaries(args: {
       book: string;
       chapter: number;
       verse: number;
-      lang: "ru" | "en" | "es";
+      lang: AngleCardLang;
+      canonical_ref: string | null;
+      book_key: string | null;
       status: AngleCardStatus;
       score_total: number | null;
       source_model: string | null;
@@ -306,7 +376,8 @@ export async function getStudioVerseSummaries(args: {
       updated_at: string;
     };
 
-    const key = `${card.lang}::${card.reference}`;
+    const groupKey = card.canonical_ref || card.reference;
+    const key = `${card.lang}::${groupKey}`;
     const existing = grouped.get(key);
 
     const source =
@@ -321,6 +392,8 @@ export async function getStudioVerseSummaries(args: {
         chapter: card.chapter,
         verse: card.verse,
         lang: card.lang,
+        canonical_ref: card.canonical_ref,
+        book_key: card.book_key,
         total_count: 1,
         featured_count: card.status === "featured" ? 1 : 0,
         reserve_count: card.status === "reserve" ? 1 : 0,
@@ -369,13 +442,23 @@ export async function getStudioVerseSummaries(args: {
 
 export async function getAllStudioCardsForVerse(args: {
   reference: string;
-  lang: "ru" | "en" | "es";
+  lang: AngleCardLang;
+  canonical_ref?: string | null;
   limit?: number;
 }): Promise<{
   ok: boolean;
   cards: AngleCardRow[];
   error: string | null;
 }> {
+  if (args.canonical_ref) {
+    return getAngleCardsByCanonicalRef({
+      canonical_ref: args.canonical_ref,
+      lang: args.lang,
+      statuses: ["featured", "reserve", "rewrite", "hidden", "rejected"],
+      limit: args.limit ?? 100,
+    });
+  }
+
   return getAngleCards({
     reference: args.reference,
     lang: args.lang,
@@ -386,13 +469,23 @@ export async function getAllStudioCardsForVerse(args: {
 
 export async function getFeaturedAngleCards(args: {
   reference: string;
-  lang: "ru" | "en" | "es";
+  lang: AngleCardLang;
+  canonical_ref?: string | null;
   limit?: number;
 }): Promise<{
   ok: boolean;
   cards: AngleCardRow[];
   error: string | null;
 }> {
+  if (args.canonical_ref) {
+    return getAngleCardsByCanonicalRef({
+      canonical_ref: args.canonical_ref,
+      lang: args.lang,
+      statuses: ["featured"],
+      limit: args.limit ?? 12,
+    });
+  }
+
   return getAngleCards({
     reference: args.reference,
     lang: args.lang,
@@ -403,13 +496,23 @@ export async function getFeaturedAngleCards(args: {
 
 export async function getReserveAngleCards(args: {
   reference: string;
-  lang: "ru" | "en" | "es";
+  lang: AngleCardLang;
+  canonical_ref?: string | null;
   limit?: number;
 }): Promise<{
   ok: boolean;
   cards: AngleCardRow[];
   error: string | null;
 }> {
+  if (args.canonical_ref) {
+    return getAngleCardsByCanonicalRef({
+      canonical_ref: args.canonical_ref,
+      lang: args.lang,
+      statuses: ["reserve"],
+      limit: args.limit ?? 24,
+    });
+  }
+
   return getAngleCards({
     reference: args.reference,
     lang: args.lang,
