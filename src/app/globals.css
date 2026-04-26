@@ -157,11 +157,6 @@ a:hover { text-decoration: underline; }
 }
 
 /* ── Premium lens loading skeleton ───────────────────────────────────────── */
-/*
- * Warm slow shimmer derived from the parchment palette.
- * Distinct from the generic .skeleton used in TranslationView / expansion.
- * bg-alt (#efe5d0) → highlight (#fdf7e8) → bg-alt — same hue family, gentle sweep.
- */
 .lens-skeleton-bar {
   background: linear-gradient(
     90deg,
@@ -185,7 +180,6 @@ a:hover { text-decoration: underline; }
   100% { background-position: -130% 0; }
 }
 
-/* Subtle fade-in when real content replaces the skeleton */
 .lens-content-appear {
   animation: lens-fade-in 0.28s ease-out;
 }
@@ -423,7 +417,6 @@ a:hover { text-decoration: underline; }
   gap: 7px;
 }
 
-/* Mobile-first: 6 cols for books, 4 cols for numbers */
 .picker-grid-books   { grid-template-columns: repeat(6, 1fr); }
 .picker-grid-numbers { grid-template-columns: repeat(4, 1fr); }
 
@@ -442,7 +435,6 @@ a:hover { text-decoration: underline; }
   box-shadow: 0 1px 4px rgba(0,0,0,0.10);
 }
 
-/* Book abbreviation buttons */
 .picker-btn-book {
   font-size: 13px;
   font-weight: 600;
@@ -455,12 +447,6 @@ a:hover { text-decoration: underline; }
   justify-content: center;
 }
 
-/*
- * Canonical color-group system — three subtle semitones from the same blue-gray family.
- *   darker  = Pentateuch · Prophets · Four Gospels · Revelation
- *   lighter = Historical books (Josh–Esther) · Acts
- *   mid     = Wisdom/Poetic (Job–Song) · Epistles (Rom–Jude)
- */
 .picker-btn-group-darker  { background: #afc2d4; }
 .picker-btn-group-darker:hover  { background: #9fb5c8; }
 .picker-btn-group-lighter { background: #d5e2eb; }
@@ -468,7 +454,6 @@ a:hover { text-decoration: underline; }
 .picker-btn-group-mid     { background: #c4d3e2; }
 .picker-btn-group-mid:hover     { background: #b5c6d5; }
 
-/* Chapter / verse number buttons — refined, lighter-weight numerals */
 .picker-btn-number {
   font-size: 18px;
   font-weight: 400;
@@ -485,7 +470,6 @@ a:hover { text-decoration: underline; }
 }
 .picker-btn-number:hover { background: #b5c8d8; }
 
-/* Collapsible free reference */
 .picker-free-row {
   margin-top: 22px;
   display: flex;
@@ -504,7 +488,6 @@ a:hover { text-decoration: underline; }
 }
 .picker-free-toggle:hover { color: var(--ink); }
 
-/* Tablet — iPad mini / standard (≥ 600px) */
 @media (min-width: 600px) {
   .picker-grid-books   { grid-template-columns: repeat(7, 1fr); gap: 8px; }
   .picker-grid-numbers { grid-template-columns: repeat(5, 1fr); gap: 8px; }
@@ -513,7 +496,6 @@ a:hover { text-decoration: underline; }
   .picker-section-header { font-size: 13px; }
 }
 
-/* iPad Pro / large tablet (≥ 768px) */
 @media (min-width: 768px) {
   .picker-grid-books   { grid-template-columns: repeat(8, 1fr); gap: 9px; }
   .picker-grid-numbers { grid-template-columns: repeat(6, 1fr); gap: 9px; }
@@ -522,7 +504,6 @@ a:hover { text-decoration: underline; }
   .picker-book-title { font-size: 34px; }
 }
 
-/* Desktop (≥ 1024px) */
 @media (min-width: 1024px) {
   .picker-grid-books   { grid-template-columns: repeat(9, 1fr); }
   .picker-grid-numbers { grid-template-columns: repeat(8, 1fr); }
@@ -548,4 +529,55 @@ a:hover { text-decoration: underline; }
   .h1 { font-size: 26px; }
   .verse-text { font-size: 19px; }
   .container { padding: 18px 16px 80px; }
+}
+
+/* ─── Explore more pearls button ─────────────────────────────────────────── */
+.pearls-explore-box {
+  margin: 22px 0 10px;
+  padding: 16px;
+  border: 1px solid rgba(92, 66, 36, 0.14);
+  border-radius: 18px;
+  background: rgba(255, 250, 240, 0.68);
+}
+
+.pearls-explore-button {
+  width: 100%;
+  border: none;
+  border-radius: 999px;
+  padding: 13px 18px;
+  background: var(--accent-deep);
+  color: #fffaf0;
+  font-size: 15px;
+  font-weight: 650;
+  font-family: inherit;
+  cursor: pointer;
+  transition: transform 0.08s ease, background 0.15s ease, opacity 0.15s ease;
+}
+
+.pearls-explore-button:hover {
+  background: var(--accent);
+}
+
+.pearls-explore-button:active {
+  transform: scale(0.98);
+}
+
+.pearls-explore-button:disabled {
+  opacity: 0.62;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.pearls-explore-message {
+  margin: 12px 0 0;
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.pearls-explore-meta {
+  margin: 8px 0 0;
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.4;
 }
