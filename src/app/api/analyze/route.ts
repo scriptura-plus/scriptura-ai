@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { runAI } from "@/lib/ai/runAI";
 import { isProvider, defaultProvider } from "@/lib/ai/providers";
 import {
@@ -515,17 +515,19 @@ export async function POST(req: Request) {
     }
 
     if (autoIntake) {
-      void autoIntakeArticle({
-        req,
-        reference,
-        verseText,
-        lang,
-        provider,
-        sourceTitle: autoIntake.sourceTitle,
-        sourceType: autoIntake.sourceType,
-        sourceLens: autoIntake.sourceLens,
-        sourceArticle: text,
-      });
+      after(() =>
+        autoIntakeArticle({
+          req,
+          reference,
+          verseText,
+          lang,
+          provider,
+          sourceTitle: autoIntake.sourceTitle,
+          sourceType: autoIntake.sourceType,
+          sourceLens: autoIntake.sourceLens,
+          sourceArticle: text,
+        }),
+      );
     }
 
     return NextResponse.json({ text, cached: false });
