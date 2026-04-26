@@ -89,6 +89,37 @@ function getNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+function getBoolean(value: unknown): boolean | null {
+  return typeof value === "boolean" ? value : null;
+}
+
+function firstString(record: Record<string, unknown>, keys: string[]): string | null {
+  for (const key of keys) {
+    const value = getString(record[key]);
+    if (value) return value;
+  }
+
+  return null;
+}
+
+function firstNumber(record: Record<string, unknown>, keys: string[]): number | null {
+  for (const key of keys) {
+    const value = getNumber(record[key]);
+    if (typeof value === "number") return value;
+  }
+
+  return null;
+}
+
+function firstBoolean(record: Record<string, unknown>, keys: string[]): boolean | null {
+  for (const key of keys) {
+    const value = getBoolean(record[key]);
+    if (typeof value === "boolean") return value;
+  }
+
+  return null;
+}
+
 function isCandidateCard(value: unknown): value is CandidateCard {
   if (!isRecord(value)) return false;
 
@@ -110,6 +141,214 @@ function toPromptCard(card: CandidateCard): PromptCard {
   if (card.body) promptCard.body = card.body;
 
   return promptCard;
+}
+
+function normalizeCoverageType(
+  value: unknown,
+): AngleCardInput["coverage_type"] {
+  if (
+    value === "lexical" ||
+    value === "grammatical" ||
+    value === "structural" ||
+    value === "contextual" ||
+    value === "translation" ||
+    value === "rhetorical" ||
+    value === "historical" ||
+    value === "conceptual" ||
+    value === "other"
+  ) {
+    return value;
+  }
+
+  if (value === "лексический") return "lexical";
+  if (value === "грамматический") return "grammatical";
+  if (value === "структурный") return "structural";
+  if (value === "контекстуальный") return "contextual";
+  if (value === "переводческий") return "translation";
+  if (value === "риторический") return "rhetorical";
+  if (value === "исторический") return "historical";
+  if (value === "концептуальный") return "conceptual";
+
+  return null;
+}
+
+function normalizePlacementValue(value: unknown): string | null {
+  const raw = getString(value);
+  if (!raw) return null;
+
+  const normalized = raw.trim().toLowerCase();
+
+  if (normalized === "избранное" || normalized === "новая_избранная") {
+    return "featured_new";
+  }
+
+  if (normalized === "заменить" || normalized === "заменить_существующую") {
+    return "replace_existing";
+  }
+
+  if (normalized === "резерв" || normalized === "в_резерв") {
+    return "reserve";
+  }
+
+  if (normalized === "переписать") {
+    return "rewrite";
+  }
+
+  if (
+    normalized === "скрыть" ||
+    normalized === "скрытая" ||
+    normalized === "hidden" ||
+    normalized === "hide" ||
+    normalized === "skip" ||
+    normalized === "skipped"
+  ) {
+    return "hidden";
+  }
+
+  if (
+    normalized === "отклонить" ||
+    normalized === "отклонено" ||
+    normalized === "reject" ||
+    normalized === "rejected"
+  ) {
+    return "rejected";
+  }
+
+  if (normalized === "ручная_проверка") {
+    return "needs_human_review";
+  }
+
+  return raw;
+}
+
+function normalizeBattleAction(value: unknown): string | null {
+  const raw = getString(value);
+  if (!raw) return null;
+
+  const normalized = raw.trim().toLowerCase();
+
+  if (
+    normalized === "оставить_старую_скрыть_новую" ||
+    normalized === "оставить_старую_пропустить_новую" ||
+    normalized === "hide_new" ||
+    normalized === "skip_new" ||
+    normalized === "keep_existing_hide_candidate"
+  ) {
+    return "keep_existing_hide_candidate";
+  }
+
+  if (
+    normalized === "оставить_старую_в_резерв" ||
+    normalized === "keep_existing_send_candidate_to_reserve"
+  ) {
+    return "keep_existing_send_candidate_to_reserve";
+  }
+
+  if (
+    normalized === "заменить_старую" ||
+    normalized === "replace_existing"
+  ) {
+    return "replace_existing";
+  }
+
+  if (normalized === "none" || normalized === "нет") {
+    return "none";
+  }
+
+  return raw;
+}
+
+function normalizeWinner(value: unknown): string | null {
+  const raw = getString(value);
+  if (!raw) return null;
+
+  const normalized = raw.trim().toLowerCase();
+
+  if (
+    normalized === "совпавшая" ||
+    normalized === "старая" ||
+    normalized === "существующая" ||
+    normalized === "matched" ||
+    normalized === "old" ||
+    normalized === "existing"
+  ) {
+    return "matched";
+  }
+
+  if (
+    normalized === "кандидат" ||
+    normalized === "новая" ||
+    normalized === "candidate" ||
+    normalized === "new"
+  ) {
+    return "candidate";
+  }
+
+  return raw;
+}
+
+function normalizeBattle(value: unknown): EvaluationBattle | null {
+  if (!isRecord(value)) return null;
+
+  const battleAction = normalizeBattleAction(
+    value.battle_action ?? value["действие_по_сравнению"],
+  );
+
+  return {
+    required:
+      firstBoolean(value, ["required", "требуется"]) ?? undefined,
+    old_card_id:
+      firstString(value, ["old_card_id", "идентификатор_старой_карточки"]) ??
+      null,
+    old_score:
+      firstNumber(value, ["old_score", "оценка_старой"]) ?? undefined,
+    new_score:
+      firstNumber(value, ["new_score", "оценка_новой"]) ?? undefined,
+    winner: normalizeWinner(value.winner ?? value["победитель"]),
+    score_delta:
+      firstNumber(value, ["score_delta", "разница_оценок"]) ?? undefined,
+    battle_action: battleAction,
+    battle_reason:
+      firstString(value, ["battle_reason", "причина_сравнения"]) ?? null,
+  };
+}
+
+function normalizeEvaluation(parsed: unknown): Evaluation {
+  if (!isRecord(parsed)) {
+    throw new Error("Evaluator returned invalid JSON object");
+  }
+
+  const battle = normalizeBattle(parsed.battle ?? parsed["сравнение"]);
+
+  const evaluation: Evaluation = {
+    angle_summary:
+      firstString(parsed, ["angle_summary", "краткое_описание_угла"]) ?? null,
+    coverage_type: normalizeCoverageType(
+      parsed.coverage_type ?? parsed["тип_охвата"],
+    ),
+    same_angle:
+      firstBoolean(parsed, ["same_angle", "тот_же_угол"]) ?? undefined,
+    matched_card_id:
+      firstString(parsed, ["matched_card_id", "идентификатор_совпавшей_карточки"]) ??
+      null,
+    similarity_confidence:
+      firstNumber(parsed, ["similarity_confidence", "уверенность_сходства"]) ??
+      undefined,
+    scores: parsed.scores ?? parsed["оценки"] ?? null,
+    score_total:
+      firstNumber(parsed, ["score_total", "общая_оценка"]) ?? undefined,
+    battle,
+    placement: normalizePlacementValue(parsed.placement ?? parsed["размещение"]) ?? undefined,
+    replace_card_id:
+      firstString(parsed, ["replace_card_id", "заменить_карточку"]) ?? null,
+    reason: firstString(parsed, ["reason", "причина"]) ?? null,
+    risk: firstString(parsed, ["risk", "риск"]) ?? null,
+    rewrite_instruction:
+      firstString(parsed, ["rewrite_instruction", "указание_для_переписывания"]) ??
+      null,
+  };
+
+  return evaluation;
 }
 
 function toRewriteEvaluation(evaluation: Evaluation): RewriteAngleEvaluation {
@@ -210,50 +449,32 @@ function toEvaluatorCard(card: AngleCardRow) {
   };
 }
 
-function normalizeCoverageType(
-  value: unknown,
-): AngleCardInput["coverage_type"] {
-  if (
-    value === "lexical" ||
-    value === "grammatical" ||
-    value === "structural" ||
-    value === "contextual" ||
-    value === "translation" ||
-    value === "rhetorical" ||
-    value === "historical" ||
-    value === "conceptual" ||
-    value === "other"
-  ) {
-    return value;
-  }
-
-  return null;
-}
-
 function normalizeStatusFromPlacement(
   placement: unknown,
 ): AngleCardInput["status"] {
-  if (placement === "featured_new" || placement === "replace_existing") {
+  const normalized = normalizePlacementValue(placement);
+
+  if (normalized === "featured_new" || normalized === "replace_existing") {
     return "featured";
   }
 
-  if (placement === "reserve") {
+  if (normalized === "reserve") {
     return "reserve";
   }
 
-  if (placement === "rewrite") {
+  if (normalized === "rewrite") {
     return "rewrite";
   }
 
-  if (placement === "hidden") {
+  if (normalized === "hidden") {
     return "hidden";
   }
 
-  if (placement === "reject" || placement === "rejected") {
+  if (normalized === "reject" || normalized === "rejected") {
     return "rejected";
   }
 
-  if (placement === "needs_human_review") {
+  if (normalized === "needs_human_review") {
     return "reserve";
   }
 
@@ -270,20 +491,7 @@ function shouldRewrite(evaluation: Evaluation): boolean {
 
 function getBattle(evaluation: Evaluation): EvaluationBattle | null {
   if (!isRecord(evaluation.battle)) return null;
-
-  return {
-    required:
-      typeof evaluation.battle.required === "boolean"
-        ? evaluation.battle.required
-        : undefined,
-    old_card_id: getString(evaluation.battle.old_card_id),
-    old_score: getNumber(evaluation.battle.old_score) ?? undefined,
-    new_score: getNumber(evaluation.battle.new_score) ?? undefined,
-    winner: getString(evaluation.battle.winner),
-    score_delta: getNumber(evaluation.battle.score_delta) ?? undefined,
-    battle_action: getString(evaluation.battle.battle_action),
-    battle_reason: getString(evaluation.battle.battle_reason),
-  };
+  return normalizeBattle(evaluation.battle);
 }
 
 function shouldSkipMatchedDuplicate(evaluation: Evaluation): boolean {
@@ -291,7 +499,67 @@ function shouldSkipMatchedDuplicate(evaluation: Evaluation): boolean {
 
   if (!battle) return false;
 
-  return evaluation.same_angle === true && battle.winner === "matched";
+  const action = normalizeBattleAction(battle.battle_action);
+
+  if (evaluation.same_angle === true && battle.winner === "matched") {
+    return true;
+  }
+
+  if (
+    evaluation.same_angle === true &&
+    action === "keep_existing_hide_candidate"
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+function shouldSkipInsteadOfSave(evaluation: Evaluation): {
+  skip: boolean;
+  reason: string;
+} {
+  const scoreTotal = getNumber(evaluation.score_total);
+  const placement = normalizePlacementValue(evaluation.placement);
+  const battle = getBattle(evaluation);
+  const battleAction = normalizeBattleAction(battle?.battle_action);
+
+  if (typeof scoreTotal !== "number") {
+    return {
+      skip: true,
+      reason: "invalid_score_total",
+    };
+  }
+
+  if (scoreTotal < 65) {
+    return {
+      skip: true,
+      reason: "score_below_save_threshold",
+    };
+  }
+
+  if (
+    placement === "hidden" ||
+    placement === "rejected" ||
+    placement === "reject"
+  ) {
+    return {
+      skip: true,
+      reason: "placement_not_savable",
+    };
+  }
+
+  if (battleAction === "keep_existing_hide_candidate") {
+    return {
+      skip: true,
+      reason: "battle_hide_candidate",
+    };
+  }
+
+  return {
+    skip: false,
+    reason: "savable",
+  };
 }
 
 function getFinalCardForSave(card: CandidateCard): {
@@ -350,11 +618,7 @@ async function evaluateCandidate(args: {
   const text = await runAI(editorProvider, prompt, args.lang, true);
   const parsed = extractJsonObject(text);
 
-  if (!isRecord(parsed)) {
-    throw new Error("Evaluator returned invalid JSON object");
-  }
-
-  return parsed as Evaluation;
+  return normalizeEvaluation(parsed);
 }
 
 async function rewriteCandidate(args: {
@@ -525,6 +789,24 @@ export async function POST(req: Request) {
           final_evaluation: finalEvaluation,
         });
       }
+    }
+
+    const skipDecision = shouldSkipInsteadOfSave(finalEvaluation);
+
+    if (skipDecision.skip) {
+      return NextResponse.json({
+        ok: true,
+        skipped: true,
+        skip_reason: skipDecision.reason,
+        saved_id: null,
+        rewritten,
+        status: "skipped_not_savable",
+        score_total: getNumber(finalEvaluation.score_total),
+        first_evaluation: firstEvaluation,
+        rewritten_card: rewrittenCard,
+        final_card: finalCard,
+        final_evaluation: finalEvaluation,
+      });
     }
 
     const referenceParts = parseReferenceParts(reference);
