@@ -135,13 +135,14 @@ export async function GET(req: Request) {
     const url = new URL(req.url);
 
     const reference = url.searchParams.get("reference")?.trim() ?? "";
+    const canonical_ref = url.searchParams.get("canonical_ref")?.trim() || null;
     const langParam = url.searchParams.get("lang");
     const lang: Lang = isLang(langParam) ? langParam : "ru";
     const limit = getPositiveInteger(url.searchParams.get("limit"), 100, 300);
 
-    if (!reference) {
+    if (!reference && !canonical_ref) {
       return NextResponse.json(
-        { error: "reference is required" },
+        { error: "reference or canonical_ref is required" },
         { status: 400 },
       );
     }
@@ -149,6 +150,7 @@ export async function GET(req: Request) {
     const result = await getAllStudioCardsForVerse({
       reference,
       lang,
+      canonical_ref,
       limit,
     });
 
@@ -162,6 +164,7 @@ export async function GET(req: Request) {
     return NextResponse.json({
       ok: true,
       reference,
+      canonical_ref,
       lang,
       summary: summarizeCards(result.cards),
       count: result.cards.length,
