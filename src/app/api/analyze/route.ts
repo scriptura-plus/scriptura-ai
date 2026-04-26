@@ -265,6 +265,92 @@ async function buildAnglesResponseFromCards(args: {
   return JSON.stringify(merged);
 }
 
+async function autoIntakeArticle(args: {
+  req: Request;
+  reference: string;
+  verseText: string;
+  lang: Lang;
+  provider: string;
+  sourceTitle: string;
+  sourceType: string;
+  sourceLens: string;
+  sourceArticle: string;
+}) {
+  const adminSecret = process.env.ADMIN_SECRET;
+
+  if (!adminSecret) {
+    console.warn("[AUTO_INTAKE] skipped: ADMIN_SECRET is not configured", {
+      reference: args.reference,
+      sourceType: args.sourceType,
+      sourceLens: args.sourceLens,
+    });
+    return;
+  }
+
+  if (!args.sourceArticle.trim()) {
+    console.warn("[AUTO_INTAKE] skipped: empty sourceArticle", {
+      reference: args.reference,
+      sourceType: args.sourceType,
+      sourceLens: args.sourceLens,
+    });
+    return;
+  }
+
+  try {
+    const origin = new URL(args.req.url).origin;
+
+    const response = await fetch(
+      `${origin}/api/admin/extract-angle-candidates-from-article`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-secret": adminSecret,
+        },
+        body: JSON.stringify({
+          reference: args.reference,
+          verseText: args.verseText,
+          lang: args.lang,
+          provider: args.provider,
+          sourceTitle: args.sourceTitle,
+          sourceType: args.sourceType,
+          sourceLens: args.sourceLens,
+          sourceArticle: args.sourceArticle,
+          count: 3,
+          processLimit: 3,
+        }),
+      },
+    );
+
+    const data = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      console.warn("[AUTO_INTAKE] extractor failed", {
+        reference: args.reference,
+        sourceType: args.sourceType,
+        sourceLens: args.sourceLens,
+        status: response.status,
+        data,
+      });
+      return;
+    }
+
+    console.log("[AUTO_INTAKE] extractor finished", {
+      reference: args.reference,
+      sourceType: args.sourceType,
+      sourceLens: args.sourceLens,
+      data,
+    });
+  } catch (error) {
+    console.warn("[AUTO_INTAKE] extractor request crashed", {
+      reference: args.reference,
+      sourceType: args.sourceType,
+      sourceLens: args.sourceLens,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -333,6 +419,13 @@ export async function POST(req: Request) {
 
     let prompt: string;
     let expectJSON = false;
+    let autoIntake:
+      | {
+          sourceTitle: string;
+          sourceType: string;
+          sourceLens: string;
+        }
+      | null = null;
 
     if (kind === "lens" && isLensId(id)) {
       prompt = buildLensPrompt({ lens: id, reference, verseText, lang });
@@ -340,6 +433,12 @@ export async function POST(req: Request) {
     } else if (kind === "extra" && isExtraId(id)) {
       prompt = buildExtraPrompt({ id, reference, verseText, lang });
       expectJSON = true;
+
+      autoIntake = {
+        sourceTitle: `Углублённый анализ: ${String(id)}`,
+        sourceType: "extra_analysis_article",
+        sourceLens: String(id),
+      };
     } else if (kind === "context") {
       const { buildContextPrompt } = await import(
         "@/lib/prompts/buildContextPrompt"
@@ -413,6 +512,20 @@ export async function POST(req: Request) {
           preview: text.slice(0, 1000),
         });
       }
+    }
+
+    if (autoIntake) {
+      void autoIntakeArticle({
+        req,
+        reference,
+        verseText,
+        lang,
+        provider,
+        sourceTitle: autoIntake.sourceTitle,
+        sourceType: autoIntake.sourceType,
+        sourceLens: autoIntake.sourceLens,
+        sourceArticle: text,
+      });
     }
 
     return NextResponse.json({ text, cached: false });
