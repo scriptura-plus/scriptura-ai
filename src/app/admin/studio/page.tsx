@@ -144,6 +144,7 @@ function getButtonStyle(active = false, disabled = false) {
 
 export default function StudioPage() {
   const [adminSecret, setAdminSecret] = useState("");
+  const [secretLoaded, setSecretLoaded] = useState(false);
   const [lang, setLang] = useState<Lang>("ru");
   const [days, setDays] = useState(7);
 
@@ -166,7 +167,17 @@ export default function StudioPage() {
   useEffect(() => {
     const saved = window.localStorage.getItem("scriptura_admin_secret");
     if (saved) setAdminSecret(saved);
+    setSecretLoaded(true);
   }, []);
+
+  useEffect(() => {
+    if (!secretLoaded) return;
+    if (!adminSecret.trim()) return;
+    if (verses.length > 0 || loadingVerses) return;
+
+    void loadRecentVerses(7, adminSecret);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [secretLoaded, adminSecret]);
 
   useEffect(() => {
     if (!notice) return;
@@ -183,8 +194,10 @@ export default function StudioPage() {
     window.localStorage.setItem("scriptura_admin_secret", value);
   }
 
-  async function loadRecentVerses(nextDays = days) {
-    if (!adminSecret.trim()) {
+  async function loadRecentVerses(nextDays = days, secretOverride?: string) {
+    const secret = secretOverride ?? adminSecret;
+
+    if (!secret.trim()) {
       setVersesError("Вставь Admin Secret, чтобы открыть Studio.");
       return;
     }
@@ -203,7 +216,7 @@ export default function StudioPage() {
       const response = await fetch(`/api/admin/studio/recent-verses?${params}`, {
         method: "GET",
         headers: {
-          "x-admin-secret": adminSecret,
+          "x-admin-secret": secret,
         },
       });
 
@@ -220,10 +233,13 @@ export default function StudioPage() {
 
       if (!selectedReference && nextVerses[0]) {
         setSelectedReference(nextVerses[0].reference);
-        void loadCards(nextVerses[0].reference);
+        void loadCards(nextVerses[0].reference, secret);
       }
 
-      if (selectedReference && !nextVerses.some((v) => v.reference === selectedReference)) {
+      if (
+        selectedReference &&
+        !nextVerses.some((v) => v.reference === selectedReference)
+      ) {
         setSelectedReference("");
         setCards([]);
         setCardsSummary(null);
@@ -238,8 +254,10 @@ export default function StudioPage() {
     }
   }
 
-  async function loadCards(reference: string) {
-    if (!adminSecret.trim()) {
+  async function loadCards(reference: string, secretOverride?: string) {
+    const secret = secretOverride ?? adminSecret;
+
+    if (!secret.trim()) {
       setCardsError("Вставь Admin Secret.");
       return;
     }
@@ -264,7 +282,7 @@ export default function StudioPage() {
       const response = await fetch(`/api/admin/studio/cards?${params}`, {
         method: "GET",
         headers: {
-          "x-admin-secret": adminSecret,
+          "x-admin-secret": secret,
         },
       });
 
@@ -306,6 +324,25 @@ export default function StudioPage() {
           'ui-sans-serif, -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif',
       }}
     >
+      <style>{`
+        @keyframes studio-shimmer {
+          0% { background-position: 220% 0; }
+          100% { background-position: -220% 0; }
+        }
+
+        .studio-layout {
+          display: grid;
+          grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+          gap: 14px;
+        }
+
+        @media (max-width: 760px) {
+          .studio-layout {
+            grid-template-columns: 1fr;
+          }
+        }
+      `}</style>
+
       <div style={{ maxWidth: 980, margin: "0 auto" }}>
         <header style={{ marginBottom: 18 }}>
           <div
@@ -497,13 +534,7 @@ export default function StudioPage() {
           ) : null}
         </section>
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "minmax(0, 0.85fr) minmax(0, 1.15fr)",
-            gap: 14,
-          }}
-        >
+        <div className="studio-layout">
           <section
             style={{
               background: PAPER,
