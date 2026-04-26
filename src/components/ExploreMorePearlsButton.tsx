@@ -44,6 +44,48 @@ type ExploreMorePearlsButtonProps = {
   onCardsUpdated?: (cards: PearlCard[]) => void;
 };
 
+function getIdleLabel(lang: Lang): string {
+  if (lang === "ru") return "Найти ещё жемчужины";
+  if (lang === "es") return "Buscar más perlas";
+  return "Find more pearls";
+}
+
+function getLoadingLabel(lang: Lang): string {
+  if (lang === "ru") return "Ищем жемчужины...";
+  if (lang === "es") return "Buscando perlas...";
+  return "Finding pearls...";
+}
+
+function getFallbackError(lang: Lang): string {
+  if (lang === "ru") {
+    return "Не получилось найти новые жемчужины. Попробуйте позже.";
+  }
+
+  if (lang === "es") {
+    return "No se pudieron encontrar nuevas perlas. Inténtalo de nuevo más tarde.";
+  }
+
+  return "Could not find new pearls. Please try again later.";
+}
+
+function getDoneMessage(lang: Lang): string {
+  if (lang === "ru") return "Готово. Список жемчужин обновлён.";
+  if (lang === "es") return "Listo. La lista de perlas se actualizó.";
+  return "Done. The pearls list has been updated.";
+}
+
+function getNoExploreMessage(lang: Lang): string {
+  if (lang === "ru") {
+    return "Основные сильные жемчужины по этому стиху уже найдены.";
+  }
+
+  if (lang === "es") {
+    return "Las principales perlas de este versículo ya fueron encontradas.";
+  }
+
+  return "The main strong pearls for this verse have already been found.";
+}
+
 export default function ExploreMorePearlsButton({
   reference,
   verseText,
@@ -53,16 +95,12 @@ export default function ExploreMorePearlsButton({
 }: ExploreMorePearlsButtonProps) {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const [lastResult, setLastResult] = useState<ExploreMoreResponse | null>(
-    null,
-  );
 
   async function handleExploreMore() {
     if (loading) return;
 
     setLoading(true);
     setMessage(null);
-    setLastResult(null);
 
     try {
       const response = await fetch("/api/angles/explore-more", {
@@ -80,13 +118,8 @@ export default function ExploreMorePearlsButton({
 
       const data = (await response.json()) as ExploreMoreResponse;
 
-      setLastResult(data);
-
       if (!response.ok || !data.ok) {
-        setMessage(
-          data.error ??
-            "Не получилось найти новые жемчужины. Попробуйте позже.",
-        );
+        setMessage(data.error ?? getFallbackError(lang));
         return;
       }
 
@@ -100,27 +133,19 @@ export default function ExploreMorePearlsButton({
       }
 
       if (data.explored === false) {
-        setMessage(
-          data.decision?.message ??
-            "Основные сильные жемчужины по этому стиху уже найдены.",
-        );
+        setMessage(data.decision?.message ?? getNoExploreMessage(lang));
         return;
       }
 
-      setMessage("Готово. Список жемчужин обновлён.");
+      setMessage(getDoneMessage(lang));
     } catch (error) {
       setMessage(
-        error instanceof Error
-          ? error.message
-          : "Не получилось найти новые жемчужины.",
+        error instanceof Error ? error.message : getFallbackError(lang),
       );
     } finally {
       setLoading(false);
     }
   }
-
-  const addedCount = lastResult?.added_count ?? 0;
-  const maturity = lastResult?.decision?.set_maturity;
 
   return (
     <div className="pearls-explore-box">
@@ -130,21 +155,10 @@ export default function ExploreMorePearlsButton({
         onClick={handleExploreMore}
         disabled={loading}
       >
-        {loading ? "Ищем жемчужины..." : "Найти ещё жемчужины"}
+        {loading ? getLoadingLabel(lang) : getIdleLabel(lang)}
       </button>
 
       {message ? <p className="pearls-explore-message">{message}</p> : null}
-
-      {lastResult?.ok ? (
-        <p className="pearls-explore-meta">
-          {maturity ? `Зрелость набора: ${maturity}. ` : ""}
-          {lastResult.explored
-            ? addedCount > 0
-              ? `Добавлено: ${addedCount}.`
-              : "Новых сильных карточек не добавлено."
-            : "Поиск остановлен без лишней генерации."}
-        </p>
-      ) : null}
     </div>
   );
 }
