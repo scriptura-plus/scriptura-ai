@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { runAI } from "@/lib/ai/runAI";
 import { isProvider, defaultProvider } from "@/lib/ai/providers";
+import { normalizeReference } from "@/lib/bible/normalizeReference";
 import { buildEvaluateAnglePrompt } from "@/lib/prompts/buildEvaluateAnglePrompt";
 import { buildRewriteAnglePrompt } from "@/lib/prompts/buildRewriteAnglePrompt";
 import {
@@ -93,7 +94,10 @@ function getBoolean(value: unknown): boolean | null {
   return typeof value === "boolean" ? value : null;
 }
 
-function firstString(record: Record<string, unknown>, keys: string[]): string | null {
+function firstString(
+  record: Record<string, unknown>,
+  keys: string[],
+): string | null {
   for (const key of keys) {
     const value = getString(record[key]);
     if (value) return value;
@@ -102,7 +106,10 @@ function firstString(record: Record<string, unknown>, keys: string[]): string | 
   return null;
 }
 
-function firstNumber(record: Record<string, unknown>, keys: string[]): number | null {
+function firstNumber(
+  record: Record<string, unknown>,
+  keys: string[],
+): number | null {
   for (const key of keys) {
     const value = getNumber(record[key]);
     if (typeof value === "number") return value;
@@ -111,7 +118,10 @@ function firstNumber(record: Record<string, unknown>, keys: string[]): number | 
   return null;
 }
 
-function firstBoolean(record: Record<string, unknown>, keys: string[]): boolean | null {
+function firstBoolean(
+  record: Record<string, unknown>,
+  keys: string[],
+): boolean | null {
   for (const key of keys) {
     const value = getBoolean(record[key]);
     if (typeof value === "boolean") return value;
@@ -244,10 +254,7 @@ function normalizeBattleAction(value: unknown): string | null {
     return "keep_existing_send_candidate_to_reserve";
   }
 
-  if (
-    normalized === "заменить_старую" ||
-    normalized === "replace_existing"
-  ) {
+  if (normalized === "заменить_старую" || normalized === "replace_existing") {
     return "replace_existing";
   }
 
@@ -295,8 +302,7 @@ function normalizeBattle(value: unknown): EvaluationBattle | null {
   );
 
   return {
-    required:
-      firstBoolean(value, ["required", "требуется"]) ?? undefined,
+    required: firstBoolean(value, ["required", "требуется"]) ?? undefined,
     old_card_id:
       firstString(value, ["old_card_id", "идентификатор_старой_карточки"]) ??
       null,
@@ -329,23 +335,31 @@ function normalizeEvaluation(parsed: unknown): Evaluation {
     same_angle:
       firstBoolean(parsed, ["same_angle", "тот_же_угол"]) ?? undefined,
     matched_card_id:
-      firstString(parsed, ["matched_card_id", "идентификатор_совпавшей_карточки"]) ??
-      null,
+      firstString(parsed, [
+        "matched_card_id",
+        "идентификатор_совпавшей_карточки",
+      ]) ?? null,
     similarity_confidence:
-      firstNumber(parsed, ["similarity_confidence", "уверенность_сходства"]) ??
-      undefined,
+      firstNumber(parsed, [
+        "similarity_confidence",
+        "уверенность_сходства",
+      ]) ?? undefined,
     scores: parsed.scores ?? parsed["оценки"] ?? null,
     score_total:
       firstNumber(parsed, ["score_total", "общая_оценка"]) ?? undefined,
     battle,
-    placement: normalizePlacementValue(parsed.placement ?? parsed["размещение"]) ?? undefined,
+    placement:
+      normalizePlacementValue(parsed.placement ?? parsed["размещение"]) ??
+      undefined,
     replace_card_id:
       firstString(parsed, ["replace_card_id", "заменить_карточку"]) ?? null,
     reason: firstString(parsed, ["reason", "причина"]) ?? null,
     risk: firstString(parsed, ["risk", "риск"]) ?? null,
     rewrite_instruction:
-      firstString(parsed, ["rewrite_instruction", "указание_для_переписывания"]) ??
-      null,
+      firstString(parsed, [
+        "rewrite_instruction",
+        "указание_для_переписывания",
+      ]) ?? null,
   };
 
   return evaluation;
@@ -390,6 +404,22 @@ function parseReferenceParts(reference: string): {
   chapter: number;
   verse: number;
 } {
+  const normalized = normalizeReference(reference);
+
+  if (
+    normalized.book &&
+    Number.isFinite(normalized.chapter) &&
+    Number.isFinite(normalized.verse) &&
+    normalized.chapter > 0 &&
+    normalized.verse > 0
+  ) {
+    return {
+      book: normalized.book,
+      chapter: normalized.chapter,
+      verse: normalized.verse,
+    };
+  }
+
   const match = reference.match(/^(.+?)\s+(\d+):(\d+)$/);
 
   if (!match) {
@@ -698,6 +728,8 @@ export async function POST(req: Request) {
       );
     }
 
+    const normalizedReference = normalizeReference(reference);
+
     const existing = await getAngleCards({
       reference,
       lang,
@@ -739,6 +771,8 @@ export async function POST(req: Request) {
         rewritten: false,
         status: "skipped_duplicate",
         score_total: getNumber(firstEvaluation.score_total),
+        canonical_ref: normalizedReference.canonical_ref,
+        book_key: normalizedReference.book_key,
         first_evaluation: firstEvaluation,
         final_card: candidate,
         final_evaluation: firstEvaluation,
@@ -783,6 +817,8 @@ export async function POST(req: Request) {
           rewritten,
           status: "skipped_duplicate",
           score_total: getNumber(finalEvaluation.score_total),
+          canonical_ref: normalizedReference.canonical_ref,
+          book_key: normalizedReference.book_key,
           first_evaluation: firstEvaluation,
           rewritten_card: rewrittenCard,
           final_card: finalCard,
@@ -802,6 +838,8 @@ export async function POST(req: Request) {
         rewritten,
         status: "skipped_not_savable",
         score_total: getNumber(finalEvaluation.score_total),
+        canonical_ref: normalizedReference.canonical_ref,
+        book_key: normalizedReference.book_key,
         first_evaluation: firstEvaluation,
         rewritten_card: rewrittenCard,
         final_card: finalCard,
@@ -820,6 +858,11 @@ export async function POST(req: Request) {
       chapter: referenceParts.chapter,
       verse: referenceParts.verse,
       lang,
+
+      canonical_ref: normalizedReference.canonical_ref,
+      book_key: normalizedReference.book_key,
+      translation_group_id: null,
+      origin_lang: lang,
 
       title: cardForSave.title,
       anchor: cardForSave.anchor,
@@ -868,6 +911,8 @@ export async function POST(req: Request) {
       rewritten,
       status,
       score_total: scoreTotal,
+      canonical_ref: normalizedReference.canonical_ref,
+      book_key: normalizedReference.book_key,
       first_evaluation: firstEvaluation,
       rewritten_card: rewrittenCard,
       final_card: finalCard,
