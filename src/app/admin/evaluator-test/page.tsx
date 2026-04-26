@@ -65,7 +65,7 @@ const WEAK_GENERIC_REQUEST = {
 };
 
 const SAMPLE_ARTICLE =
-  "Вставь сюда статью линзы или глубокий материал. Extractor попробует извлечь из неё 1–3 короткие жемчужины, затем каждая пройдёт через GPT-5.5 evaluator/rewrite/battle и будет сохранена только если она достаточно сильная и не дублирует существующие карточки.";
+  "В этой статье рассматривается, что Павел не просто перечисляет добродетели, а показывает смену внутренней среды общины. В предыдущем стихе он говорит об удалении раздражения, ярости, крика, злоречия и злобы. Поэтому фраза «А вы будьте добры» звучит как контрастный поворот: освободившееся место после удалённой враждебности должно быть заполнено другим способом обращения с людьми.\n\nОсобенно важно, что доброта здесь не остаётся мягким настроением. Она раскрывается через сострадание и прощение. Прощение становится практической проверкой того, действительно ли община стала другой внутренне.";
 
 function formatJson(value: unknown): string {
   return JSON.stringify(value, null, 2);
@@ -261,20 +261,42 @@ export default function EvaluatorTestPage() {
   }
 
   async function runExtractFromArticle() {
+    setExtractText("Кнопка нажата. Проверяю данные...");
+
+    if (!adminSecret.trim()) {
+      setExtractText("Ошибка: ADMIN_SECRET пустой.");
+      return;
+    }
+
     if (!parsedRequest) {
-      setExtractText("JSON запроса повреждён.");
+      setExtractText("Ошибка: JSON запроса повреждён.");
       return;
     }
 
     if (!articleText.trim()) {
-      setExtractText("Вставь текст статьи.");
+      setExtractText("Ошибка: вставь текст статьи.");
       return;
     }
 
     setExtracting(true);
-    setExtractText("");
+    setExtractText(
+      "Отправляю статью в extractor. Ждём ответ GPT-5.5...\n\nЭто может занять 1–3 минуты.",
+    );
 
     try {
+      const payload = {
+        reference: parsedRequest.reference,
+        verseText: parsedRequest.verseText,
+        lang: parsedRequest.lang,
+        provider: parsedRequest.provider,
+        sourceTitle: articleTitle || "Статья линзы",
+        sourceType: "lens_article",
+        sourceLens: articleLens || "manual_article",
+        sourceArticle: articleText,
+        count: 3,
+        processLimit: 3,
+      };
+
       const response = await fetch(
         "/api/admin/extract-angle-candidates-from-article",
         {
@@ -283,35 +305,42 @@ export default function EvaluatorTestPage() {
             "Content-Type": "application/json",
             "x-admin-secret": adminSecret,
           },
-          body: JSON.stringify({
-            reference: parsedRequest.reference,
-            verseText: parsedRequest.verseText,
-            lang: parsedRequest.lang,
-            provider: parsedRequest.provider,
-            sourceTitle: articleTitle || "Статья линзы",
-            sourceType: "lens_article",
-            sourceLens: articleLens || "manual_article",
-            sourceArticle: articleText,
-            count: 3,
-            processLimit: 3,
-          }),
+          body: JSON.stringify(payload),
         },
       );
 
-      const data = await response.json();
+      let data: unknown = null;
+
+      try {
+        data = await response.json();
+      } catch {
+        data = {
+          error: "Response was not valid JSON.",
+        };
+      }
 
       setExtractText(
         formatJson({
+          diagnostic: "Extractor request finished.",
           status: response.status,
           ok: response.ok,
+          sent: {
+            reference: payload.reference,
+            lang: payload.lang,
+            provider: payload.provider,
+            sourceTitle: payload.sourceTitle,
+            sourceLens: payload.sourceLens,
+            sourceArticleLength: payload.sourceArticle.length,
+          },
           data,
         }),
       );
     } catch (error) {
       setExtractText(
-        error instanceof Error
-          ? error.message
-          : "Extract from article request failed.",
+        formatJson({
+          diagnostic: "Extractor request failed before receiving response.",
+          error: error instanceof Error ? error.message : String(error),
+        }),
       );
     } finally {
       setExtracting(false);
@@ -404,62 +433,26 @@ export default function EvaluatorTestPage() {
         </h1>
 
         <p style={{ marginBottom: 24, color: "#6f604a", lineHeight: 1.5 }}>
-          Эта страница тестирует редакционный pipeline: кандидат → оценка
-          GPT-5.5 → перепись при необходимости → повторная оценка → battle с
+          Эта страница тестирует редакционный pipeline: кандидат → оценка GPT-5.5
+          → перепись при необходимости → повторная оценка → battle с
           существующими карточками → сохранение в Supabase. Можно обработать
           старый кэш, сгенерировать новых кандидатов или извлечь жемчужины из
           статьи линзы.
         </p>
 
-        <section
-          style={{
-            border: "1px solid rgba(80, 58, 32, 0.18)",
-            borderRadius: 18,
-            padding: 18,
-            background: "rgba(255, 252, 245, 0.72)",
-            marginBottom: 18,
-          }}
-        >
-          <label
-            style={{
-              display: "block",
-              fontSize: 13,
-              textTransform: "uppercase",
-              letterSpacing: "0.08em",
-              color: "#7a6a53",
-              marginBottom: 8,
-            }}
-          >
-            Admin Secret
-          </label>
+        <section style={sectionStyle}>
+          <label style={labelStyle}>Admin Secret</label>
 
           <input
             value={adminSecret}
             onChange={(event) => saveSecret(event.target.value)}
             placeholder="Вставь ADMIN_SECRET"
             type="password"
-            style={{
-              width: "100%",
-              border: "1px solid rgba(80, 58, 32, 0.22)",
-              borderRadius: 12,
-              padding: "12px 14px",
-              background: "#fffaf0",
-              color: "#2c2418",
-              fontSize: 15,
-              boxSizing: "border-box",
-            }}
+            style={inputStyle}
           />
         </section>
 
-        <section
-          style={{
-            border: "1px solid rgba(80, 58, 32, 0.18)",
-            borderRadius: 18,
-            padding: 18,
-            background: "rgba(255, 252, 245, 0.72)",
-            marginBottom: 18,
-          }}
-        >
+        <section style={sectionStyle}>
           <h2 style={{ fontSize: 18, marginTop: 0, marginBottom: 12 }}>
             Готовые тесты
           </h2>
@@ -499,15 +492,7 @@ export default function EvaluatorTestPage() {
           </div>
         </section>
 
-        <section
-          style={{
-            border: "1px solid rgba(80, 58, 32, 0.18)",
-            borderRadius: 18,
-            padding: 18,
-            background: "rgba(255, 252, 245, 0.72)",
-            marginBottom: 18,
-          }}
-        >
+        <section style={sectionStyle}>
           <h2 style={{ fontSize: 18, marginTop: 0 }}>Request JSON</h2>
 
           <textarea
@@ -515,18 +500,11 @@ export default function EvaluatorTestPage() {
             onChange={(event) => setRequestText(event.target.value)}
             spellCheck={false}
             style={{
-              width: "100%",
+              ...textareaStyle,
               minHeight: 420,
-              border: "1px solid rgba(80, 58, 32, 0.18)",
-              borderRadius: 14,
-              padding: 14,
-              background: "#fffaf0",
-              color: "#2c2418",
               fontFamily:
                 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
               fontSize: 13,
-              lineHeight: 1.45,
-              boxSizing: "border-box",
             }}
           />
 
@@ -604,15 +582,7 @@ export default function EvaluatorTestPage() {
           </div>
         </section>
 
-        <section
-          style={{
-            border: "1px solid rgba(80, 58, 32, 0.18)",
-            borderRadius: 18,
-            padding: 18,
-            background: "rgba(255, 252, 245, 0.72)",
-            marginBottom: 18,
-          }}
-        >
+        <section style={sectionStyle}>
           <h2 style={{ fontSize: 18, marginTop: 0, marginBottom: 8 }}>
             Извлечь жемчужины из статьи
           </h2>
@@ -628,32 +598,14 @@ export default function EvaluatorTestPage() {
               value={articleTitle}
               onChange={(event) => setArticleTitle(event.target.value)}
               placeholder="Название статьи"
-              style={{
-                width: "100%",
-                border: "1px solid rgba(80, 58, 32, 0.22)",
-                borderRadius: 12,
-                padding: "12px 14px",
-                background: "#fffaf0",
-                color: "#2c2418",
-                fontSize: 15,
-                boxSizing: "border-box",
-              }}
+              style={inputStyle}
             />
 
             <input
               value={articleLens}
               onChange={(event) => setArticleLens(event.target.value)}
               placeholder="sourceLens: word / context / translation / deep_analysis / unfold"
-              style={{
-                width: "100%",
-                border: "1px solid rgba(80, 58, 32, 0.22)",
-                borderRadius: 12,
-                padding: "12px 14px",
-                background: "#fffaf0",
-                color: "#2c2418",
-                fontSize: 15,
-                boxSizing: "border-box",
-              }}
+              style={inputStyle}
             />
           </div>
 
@@ -662,18 +614,11 @@ export default function EvaluatorTestPage() {
             onChange={(event) => setArticleText(event.target.value)}
             spellCheck={false}
             style={{
-              width: "100%",
+              ...textareaStyle,
               minHeight: 260,
-              border: "1px solid rgba(80, 58, 32, 0.18)",
-              borderRadius: 14,
-              padding: 14,
-              background: "#fffaf0",
-              color: "#2c2418",
               fontFamily:
                 'ui-serif, Georgia, Cambria, "Times New Roman", Times, serif',
               fontSize: 15,
-              lineHeight: 1.55,
-              boxSizing: "border-box",
             }}
           />
 
@@ -726,17 +671,48 @@ export default function EvaluatorTestPage() {
   );
 }
 
+const sectionStyle = {
+  border: "1px solid rgba(80, 58, 32, 0.18)",
+  borderRadius: 18,
+  padding: 18,
+  background: "rgba(255, 252, 245, 0.72)",
+  marginBottom: 18,
+} as const;
+
+const labelStyle = {
+  display: "block",
+  fontSize: 13,
+  textTransform: "uppercase",
+  letterSpacing: "0.08em",
+  color: "#7a6a53",
+  marginBottom: 8,
+} as const;
+
+const inputStyle = {
+  width: "100%",
+  border: "1px solid rgba(80, 58, 32, 0.22)",
+  borderRadius: 12,
+  padding: "12px 14px",
+  background: "#fffaf0",
+  color: "#2c2418",
+  fontSize: 15,
+  boxSizing: "border-box",
+} as const;
+
+const textareaStyle = {
+  width: "100%",
+  border: "1px solid rgba(80, 58, 32, 0.18)",
+  borderRadius: 14,
+  padding: 14,
+  background: "#fffaf0",
+  color: "#2c2418",
+  lineHeight: 1.55,
+  boxSizing: "border-box",
+} as const;
+
 function ResultBlock({ title, text }: { title: string; text: string }) {
   return (
-    <div
-      style={{
-        border: "1px solid rgba(80, 58, 32, 0.18)",
-        borderRadius: 18,
-        padding: 18,
-        background: "rgba(255, 252, 245, 0.72)",
-        marginBottom: 18,
-      }}
-    >
+    <div style={sectionStyle}>
       <h2 style={{ fontSize: 18, marginTop: 0, marginBottom: 10 }}>{title}</h2>
 
       <pre
