@@ -84,6 +84,7 @@ type ReEvaluation = {
   scores?: Record<string, number>;
   coverage_type?: string;
   angle_summary?: string;
+  battle?: unknown;
 };
 
 type ReEvaluateResponse = {
@@ -101,9 +102,27 @@ type ReEvaluateResponse = {
   evaluation?: ReEvaluation;
 };
 
+type ApplyEvaluationResponse = {
+  ok?: boolean;
+  error?: string;
+  changed_database?: boolean;
+  card_id?: string;
+  applied?: {
+    score_total?: number | null;
+    status?: string;
+    rank?: number | null;
+    coverage_type?: string | null;
+    angle_summary?: string | null;
+  };
+  card?: Partial<StudioCard>;
+};
+
 type ReEvaluateState = {
   loading: boolean;
+  applying: boolean;
+  applied: boolean;
   error: string;
+  applyError: string;
   result: ReEvaluateResponse | null;
 };
 
@@ -120,6 +139,8 @@ const WARNING_BG = "#f5e9c8";
 const WARNING_TEXT = "#8a6330";
 const ERROR_BG = "#f7ded2";
 const ERROR_TEXT = "#8a3a20";
+const SUCCESS_BG = "#e4eddc";
+const SUCCESS_TEXT = "#4f6b3c";
 
 function formatDate(value: string): string {
   if (!value) return "—";
@@ -199,6 +220,24 @@ function getSmallButtonStyle(disabled = false) {
   } as const;
 }
 
+function getApplyButtonStyle(disabled = false) {
+  return {
+    border: `1px solid ${disabled ? "rgba(95, 120, 144, 0.28)" : BLUE}`,
+    borderRadius: 999,
+    background: disabled ? "#edf0f2" : BLUE,
+    color: disabled ? BLUE_DARK : "#ffffff",
+    padding: "8px 11px",
+    cursor: disabled ? "not-allowed" : "pointer",
+    fontSize: 13,
+    fontWeight: 800,
+    fontFamily: "inherit",
+    opacity: disabled ? 0.62 : 1,
+    boxShadow: disabled ? "none" : "0 6px 16px rgba(95, 120, 144, 0.18)",
+    transition:
+      "transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease, border-color 0.12s ease, opacity 0.12s ease",
+  } as const;
+}
+
 function getEvaluationScore(result: ReEvaluateResponse | null): number | null {
   const score = result?.evaluation?.score_total;
   return typeof score === "number" && Number.isFinite(score) ? score : null;
@@ -219,6 +258,57 @@ function getEvaluationRisk(result: ReEvaluateResponse | null): string | null {
   return typeof risk === "string" && risk.trim() ? risk.trim() : null;
 }
 
+function createEmptyReEvaluateState(
+  previous?: ReEvaluateState,
+): ReEvaluateState {
+  return {
+    loading: false,
+    applying: false,
+    applied: false,
+    error: "",
+    applyError: "",
+    result: previous?.result ?? null,
+  };
+}
+
+function summarizeCards(cards: StudioCard[]): CardsSummary {
+  const sources = new Set<string>();
+  let bestScore: number | null = null;
+
+  const summary: CardsSummary = {
+    total: cards.length,
+    featured: 0,
+    reserve: 0,
+    rewrite: 0,
+    hidden: 0,
+    rejected: 0,
+    best_score: null,
+    sources: [],
+  };
+
+  for (const card of cards) {
+    if (card.status === "featured") summary.featured += 1;
+    if (card.status === "reserve") summary.reserve += 1;
+    if (card.status === "rewrite") summary.rewrite += 1;
+    if (card.status === "hidden") summary.hidden += 1;
+    if (card.status === "rejected") summary.rejected += 1;
+
+    if (
+      typeof card.score_total === "number" &&
+      (bestScore === null || card.score_total > bestScore)
+    ) {
+      bestScore = card.score_total;
+    }
+
+    sources.add(getCardSource(card));
+  }
+
+  summary.best_score = bestScore;
+  summary.sources = Array.from(sources);
+
+  return summary;
+}
+
 export default function StudioPage() {
   const [adminSecret, setAdminSecret] = useState("");
   const [secretLoaded, setSecretLoaded] = useState(false);
@@ -237,7 +327,9 @@ export default function StudioPage() {
   const [cardsError, setCardsError] = useState("");
   const [notice, setNotice] = useState("");
 
-  const [reEvaluations, setReEvaluations] = useState<Record<string, ReEvaluateState>>({});
+  const [reEvaluations, setReEvaluations] = useState<
+    Record<string, ReEvaluateState>
+  >({});
 
   const selectedVerse = useMemo(() => {
     return verses.find((verse) => verse.reference === selectedReference) ?? null;
@@ -310,7 +402,9 @@ export default function StudioPage() {
       }
     } catch (error) {
       setVersesError(
-        error instanceof Error ? error.message : "Не удалось загрузить активность.",
+        error instanceof Error
+          ? error.message
+          : "Не удалось загрузить активность.",
       );
       setNotice("");
     } finally {
@@ -379,9 +473,9 @@ export default function StudioPage() {
     setReEvaluations((prev) => ({
       ...prev,
       [card.id]: {
+        ...createEmptyReEvaluateState(prev[card.id]),
         loading: true,
-        error: "",
-        result: prev[card.id]?.result ?? null,
+        applied: false,
       },
     }));
 
@@ -424,7 +518,10 @@ export default function StudioPage() {
         ...prev,
         [card.id]: {
           loading: false,
+          applying: false,
+          applied: false,
           error: "",
+          applyError: "",
           result: data,
         },
       }));
@@ -440,12 +537,119 @@ export default function StudioPage() {
       setReEvaluations((prev) => ({
         ...prev,
         [card.id]: {
+          ...createEmptyReEvaluateState(prev[card.id]),
           loading: false,
           error:
             error instanceof Error
               ? error.message
               : "Не удалось переоценить карточку.",
+        },
+      }));
+      setNotice("");
+    }
+  }
+
+  async function applyEvaluation(card: StudioCard) {
+    const state = reEvaluations[card.id];
+
+    if (!state?.result?.evaluation) {
+      setCardsError("Сначала сделай переоценку карточки.");
+      return;
+    }
+
+    if (!adminSecret.trim()) {
+      setCardsError("Вставь Admin Secret.");
+      return;
+    }
+
+    setReEvaluations((prev) => ({
+      ...prev,
+      [card.id]: {
+        ...createEmptyReEvaluateState(prev[card.id]),
+        result: prev[card.id]?.result ?? null,
+        applying: true,
+      },
+    }));
+
+    setNotice(`Применяю новую оценку: ${card.title}`);
+
+    try {
+      const response = await fetch("/api/admin/studio/apply-card-evaluation", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-secret": adminSecret,
+        },
+        body: JSON.stringify({
+          card_id: card.id,
+          evaluation: state.result.evaluation,
+        }),
+      });
+
+      const data = (await response.json()) as ApplyEvaluationResponse;
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || "Не удалось применить оценку.");
+      }
+
+      setCards((prevCards) => {
+        const nextCards = prevCards.map((current) => {
+          if (current.id !== card.id) return current;
+
+          return {
+            ...current,
+            score_total:
+              typeof data.applied?.score_total === "number"
+                ? data.applied.score_total
+                : current.score_total,
+            status: data.applied?.status ?? current.status,
+            rank:
+              typeof data.applied?.rank === "number" || data.applied?.rank === null
+                ? data.applied.rank
+                : current.rank,
+            coverage_type:
+              data.applied?.coverage_type === undefined
+                ? current.coverage_type
+                : data.applied.coverage_type,
+            angle_summary:
+              data.applied?.angle_summary === undefined
+                ? current.angle_summary
+                : data.applied.angle_summary,
+            updated_at:
+              typeof data.card?.updated_at === "string"
+                ? data.card.updated_at
+                : new Date().toISOString(),
+          };
+        });
+
+        setCardsSummary(summarizeCards(nextCards));
+        return nextCards;
+      });
+
+      setReEvaluations((prev) => ({
+        ...prev,
+        [card.id]: {
+          loading: false,
+          applying: false,
+          applied: true,
+          error: "",
+          applyError: "",
           result: prev[card.id]?.result ?? null,
+        },
+      }));
+
+      setNotice("Новая оценка применена. База обновлена.");
+    } catch (error) {
+      setReEvaluations((prev) => ({
+        ...prev,
+        [card.id]: {
+          ...createEmptyReEvaluateState(prev[card.id]),
+          result: prev[card.id]?.result ?? null,
+          applying: false,
+          applyError:
+            error instanceof Error
+              ? error.message
+              : "Не удалось применить оценку.",
         },
       }));
       setNotice("");
@@ -910,16 +1114,13 @@ export default function StudioPage() {
 
             <div style={{ display: "grid", gap: 12 }}>
               {cards.map((card) => {
-                const reEval = reEvaluations[card.id] ?? {
-                  loading: false,
-                  error: "",
-                  result: null,
-                };
+                const reEval = reEvaluations[card.id] ?? createEmptyReEvaluateState();
 
                 const newScore = getEvaluationScore(reEval.result);
                 const newPlacement = getEvaluationPlacement(reEval.result);
                 const reason = getEvaluationReason(reEval.result);
                 const risk = getEvaluationRisk(reEval.result);
+                const canApply = Boolean(reEval.result?.evaluation && !reEval.applied);
 
                 return (
                   <article
@@ -1040,35 +1241,24 @@ export default function StudioPage() {
                           {card.coverage_type ? <Badge text={`тип: ${card.coverage_type}`} /> : null}
                         </div>
 
-                        {card.angle_summary ? (
-                          <p
-                            style={{
-                              margin: "0 0 10px",
-                              color: SOFT,
-                              fontSize: 13,
-                              lineHeight: 1.5,
-                            }}
-                          >
-                            {card.angle_summary}
-                          </p>
-                        ) : (
-                          <p
-                            style={{
-                              margin: "0 0 10px",
-                              color: SOFT,
-                              fontSize: 13,
-                              lineHeight: 1.5,
-                            }}
-                          >
-                            Сохранённого краткого описания угла пока нет.
-                          </p>
-                        )}
+                        <p
+                          style={{
+                            margin: "0 0 10px",
+                            color: SOFT,
+                            fontSize: 13,
+                            lineHeight: 1.5,
+                          }}
+                        >
+                          Нажми «Переоценить», чтобы проверить карточку новым
+                          редакционным стандартом. База не изменится, пока ты не
+                          нажмёшь «Применить новую оценку».
+                        </p>
 
                         <button
                           type="button"
-                          disabled={reEval.loading}
+                          disabled={reEval.loading || reEval.applying}
                           onClick={() => reEvaluateCard(card)}
-                          style={getSmallButtonStyle(reEval.loading)}
+                          style={getSmallButtonStyle(reEval.loading || reEval.applying)}
                         >
                           {reEval.loading ? "Оцениваю..." : "Переоценить"}
                         </button>
@@ -1145,16 +1335,62 @@ export default function StudioPage() {
                               </p>
                             ) : null}
 
+                            {reEval.applied ? (
+                              <div
+                                style={{
+                                  marginTop: 10,
+                                  padding: "9px 10px",
+                                  borderRadius: 12,
+                                  background: SUCCESS_BG,
+                                  color: SUCCESS_TEXT,
+                                  fontSize: 13,
+                                  fontWeight: 800,
+                                }}
+                              >
+                                Оценка применена. База обновлена.
+                              </div>
+                            ) : (
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
+                                <button
+                                  type="button"
+                                  disabled={!canApply || reEval.applying}
+                                  onClick={() => applyEvaluation(card)}
+                                  style={getApplyButtonStyle(!canApply || reEval.applying)}
+                                >
+                                  {reEval.applying
+                                    ? "Применяю..."
+                                    : "Применить новую оценку"}
+                                </button>
+                              </div>
+                            )}
+
+                            {reEval.applyError ? (
+                              <div
+                                style={{
+                                  marginTop: 10,
+                                  padding: "9px 10px",
+                                  borderRadius: 12,
+                                  background: ERROR_BG,
+                                  color: ERROR_TEXT,
+                                  fontSize: 13,
+                                  fontWeight: 700,
+                                }}
+                              >
+                                {reEval.applyError}
+                              </div>
+                            ) : null}
+
                             <p
                               style={{
-                                margin: 0,
+                                margin: "10px 0 0",
                                 color: SOFT,
                                 fontSize: 12,
                                 lineHeight: 1.45,
                               }}
                             >
-                              Preview-only: база не изменена. Кнопку “Применить” добавим
-                              после проверки нескольких переоценок.
+                              Применение меняет только оценочные поля: score,
+                              status, тип угла, evaluation и summary. Текст
+                              карточки не меняется.
                             </p>
                           </div>
                         ) : null}
@@ -1168,8 +1404,8 @@ export default function StudioPage() {
         </div>
 
         <p style={{ margin: "18px 0 0", color: SOFT, fontSize: 12, textAlign: "center" }}>
-          MVP Studio: read-only + preview-переоценка. Следующий этап — применить
-          оценку, доработать карточку и добавить материал.
+          MVP Studio: переоценка и применение оценки. Следующий этап — доработать
+          карточку и добавить материал.
         </p>
       </div>
     </main>
