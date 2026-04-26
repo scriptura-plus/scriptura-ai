@@ -1,6 +1,7 @@
 import { after, NextResponse } from "next/server";
 import { runAI } from "@/lib/ai/runAI";
 import { isProvider, defaultProvider } from "@/lib/ai/providers";
+import { normalizeReference } from "@/lib/bible/normalizeReference";
 import {
   buildLensPrompt,
   type LensId,
@@ -59,6 +60,22 @@ function parseReference(reference: string): {
   chapter: number;
   verse: number;
 } {
+  const normalized = normalizeReference(reference);
+
+  if (
+    normalized.book &&
+    Number.isFinite(normalized.chapter) &&
+    Number.isFinite(normalized.verse) &&
+    normalized.chapter > 0 &&
+    normalized.verse > 0
+  ) {
+    return {
+      book: normalized.book,
+      chapter: normalized.chapter,
+      verse: normalized.verse,
+    };
+  }
+
   const match = reference.trim().match(/^(.+?)\s+(\d+):(\d+)$/);
 
   if (!match) {
@@ -230,10 +247,12 @@ function toCandidate(card: AngleCardLike, index: number) {
 async function buildAnglesResponseFromCards(args: {
   reference: string;
   lang: Lang;
+  canonical_ref?: string | null;
 }): Promise<string | null> {
   const featuredResult = await getFeaturedAngleCards({
     reference: args.reference,
     lang: args.lang,
+    canonical_ref: args.canonical_ref ?? null,
     limit: TARGET_ANGLE_COUNT,
   });
 
@@ -483,12 +502,15 @@ export async function POST(req: Request) {
       );
     }
 
+    const normalizedReference = normalizeReference(reference);
+
     const shouldUseAnglesCache =
       kind === "lens" && id === "angles" && isLensId(id);
 
     if (shouldUseAnglesCache) {
       console.log("[ANGLE_CARDS] lookup", {
         reference,
+        canonical_ref: normalizedReference.canonical_ref,
         lens: "angles",
         lang,
       });
@@ -496,11 +518,13 @@ export async function POST(req: Request) {
       const angleCardsText = await buildAnglesResponseFromCards({
         reference,
         lang,
+        canonical_ref: normalizedReference.canonical_ref,
       });
 
       if (angleCardsText) {
         console.log("[ANGLE_CARDS] hit", {
           reference,
+          canonical_ref: normalizedReference.canonical_ref,
           lang,
         });
 
@@ -508,11 +532,13 @@ export async function POST(req: Request) {
           text: angleCardsText,
           cached: true,
           source: "angle_cards",
+          canonical_ref: normalizedReference.canonical_ref,
         });
       }
 
       console.log("[ANGLE_CARDS] miss", {
         reference,
+        canonical_ref: normalizedReference.canonical_ref,
         lang,
       });
 
@@ -535,6 +561,7 @@ export async function POST(req: Request) {
           text: stringifyCachedRawJson(cached.raw_json),
           cached: true,
           source: "cached_results",
+          canonical_ref: normalizedReference.canonical_ref,
         });
       }
     }
@@ -670,7 +697,11 @@ export async function POST(req: Request) {
       );
     }
 
-    return NextResponse.json({ text, cached: false });
+    return NextResponse.json({
+      text,
+      cached: false,
+      canonical_ref: normalizedReference.canonical_ref,
+    });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : "Analysis failed";
     return NextResponse.json({ error: message }, { status: 500 });
