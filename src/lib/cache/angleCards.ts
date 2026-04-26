@@ -413,6 +413,15 @@ export async function getStudioVerseSummaries(args: {
     if (card.status === "hidden") existing.hidden_count += 1;
     if (card.status === "rejected") existing.rejected_count += 1;
 
+    // Если группа создана по старой карточке без canonical_ref,
+    // но следующая карточка его уже имеет — обновляем
+    if (!existing.canonical_ref && card.canonical_ref) {
+      existing.canonical_ref = card.canonical_ref;
+    }
+    if (!existing.book_key && card.book_key) {
+      existing.book_key = card.book_key;
+    }
+
     if (
       typeof card.score_total === "number" &&
       (existing.best_score === null || card.score_total > existing.best_score)
