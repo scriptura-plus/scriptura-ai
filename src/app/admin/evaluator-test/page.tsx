@@ -64,6 +64,9 @@ const WEAK_GENERIC_REQUEST = {
   },
 };
 
+const SAMPLE_ARTICLE =
+  "Вставь сюда статью линзы или глубокий материал. Extractor попробует извлечь из неё 1–3 короткие жемчужины, затем каждая пройдёт через GPT-5.5 evaluator/rewrite/battle и будет сохранена только если она достаточно сильная и не дублирует существующие карточки.";
+
 function formatJson(value: unknown): string {
   return JSON.stringify(value, null, 2);
 }
@@ -76,14 +79,20 @@ export default function EvaluatorTestPage() {
     formatJson(SEQUENCE_ANGLE_REQUEST),
   );
 
+  const [articleText, setArticleText] = useState(SAMPLE_ARTICLE);
+  const [articleTitle, setArticleTitle] = useState("Тестовая статья линзы");
+  const [articleLens, setArticleLens] = useState("manual_article");
+
   const [processText, setProcessText] = useState("");
   const [cachedProcessText, setCachedProcessText] = useState("");
   const [generateText, setGenerateText] = useState("");
+  const [extractText, setExtractText] = useState("");
   const [readText, setReadText] = useState("");
 
   const [processing, setProcessing] = useState(false);
   const [processingCached, setProcessingCached] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [extracting, setExtracting] = useState(false);
   const [reading, setReading] = useState(false);
 
   const parsedRequest = useMemo(() => {
@@ -109,6 +118,7 @@ export default function EvaluatorTestPage() {
     setProcessText("");
     setCachedProcessText("");
     setGenerateText("");
+    setExtractText("");
     setReadText("");
   }
 
@@ -250,6 +260,64 @@ export default function EvaluatorTestPage() {
     }
   }
 
+  async function runExtractFromArticle() {
+    if (!parsedRequest) {
+      setExtractText("JSON запроса повреждён.");
+      return;
+    }
+
+    if (!articleText.trim()) {
+      setExtractText("Вставь текст статьи.");
+      return;
+    }
+
+    setExtracting(true);
+    setExtractText("");
+
+    try {
+      const response = await fetch(
+        "/api/admin/extract-angle-candidates-from-article",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-admin-secret": adminSecret,
+          },
+          body: JSON.stringify({
+            reference: parsedRequest.reference,
+            verseText: parsedRequest.verseText,
+            lang: parsedRequest.lang,
+            provider: parsedRequest.provider,
+            sourceTitle: articleTitle || "Статья линзы",
+            sourceType: "lens_article",
+            sourceLens: articleLens || "manual_article",
+            sourceArticle: articleText,
+            count: 3,
+            processLimit: 3,
+          }),
+        },
+      );
+
+      const data = await response.json();
+
+      setExtractText(
+        formatJson({
+          status: response.status,
+          ok: response.ok,
+          data,
+        }),
+      );
+    } catch (error) {
+      setExtractText(
+        error instanceof Error
+          ? error.message
+          : "Extract from article request failed.",
+      );
+    } finally {
+      setExtracting(false);
+    }
+  }
+
   async function runReadSavedCards() {
     if (!parsedRequest) {
       setReadText("JSON запроса повреждён.");
@@ -332,14 +400,15 @@ export default function EvaluatorTestPage() {
     >
       <div style={{ maxWidth: 980, margin: "0 auto" }}>
         <h1 style={{ fontSize: 32, marginBottom: 8 }}>
-          Scriptura AI — автоцикл карточек
+          Scriptura AI — автоцикл жемчужин
         </h1>
 
         <p style={{ marginBottom: 24, color: "#6f604a", lineHeight: 1.5 }}>
-          Эта страница тестирует полный цикл: кандидат → оценка GPT-5.5 →
-          перепись при необходимости → повторная оценка → сохранение в
-          Supabase. Можно обработать старый кэш или сгенерировать новые
-          кандидаты для добора до 12.
+          Эта страница тестирует редакционный pipeline: кандидат → оценка
+          GPT-5.5 → перепись при необходимости → повторная оценка → battle с
+          существующими карточками → сохранение в Supabase. Можно обработать
+          старый кэш, сгенерировать новых кандидатов или извлечь жемчужины из
+          статьи линзы.
         </p>
 
         <section
@@ -535,6 +604,105 @@ export default function EvaluatorTestPage() {
           </div>
         </section>
 
+        <section
+          style={{
+            border: "1px solid rgba(80, 58, 32, 0.18)",
+            borderRadius: 18,
+            padding: 18,
+            background: "rgba(255, 252, 245, 0.72)",
+            marginBottom: 18,
+          }}
+        >
+          <h2 style={{ fontSize: 18, marginTop: 0, marginBottom: 8 }}>
+            Извлечь жемчужины из статьи
+          </h2>
+
+          <p style={{ color: "#6f604a", lineHeight: 1.5, marginTop: 0 }}>
+            Вставь сюда статью из линзы или глубокий материал. Extractor
+            попробует добыть из неё 1–3 candidate-жемчужины, а затем каждая
+            пройдёт обычный evaluator/rewrite/battle.
+          </p>
+
+          <div style={{ display: "grid", gap: 10, marginBottom: 12 }}>
+            <input
+              value={articleTitle}
+              onChange={(event) => setArticleTitle(event.target.value)}
+              placeholder="Название статьи"
+              style={{
+                width: "100%",
+                border: "1px solid rgba(80, 58, 32, 0.22)",
+                borderRadius: 12,
+                padding: "12px 14px",
+                background: "#fffaf0",
+                color: "#2c2418",
+                fontSize: 15,
+                boxSizing: "border-box",
+              }}
+            />
+
+            <input
+              value={articleLens}
+              onChange={(event) => setArticleLens(event.target.value)}
+              placeholder="sourceLens: word / context / translation / deep_analysis / unfold"
+              style={{
+                width: "100%",
+                border: "1px solid rgba(80, 58, 32, 0.22)",
+                borderRadius: 12,
+                padding: "12px 14px",
+                background: "#fffaf0",
+                color: "#2c2418",
+                fontSize: 15,
+                boxSizing: "border-box",
+              }}
+            />
+          </div>
+
+          <textarea
+            value={articleText}
+            onChange={(event) => setArticleText(event.target.value)}
+            spellCheck={false}
+            style={{
+              width: "100%",
+              minHeight: 260,
+              border: "1px solid rgba(80, 58, 32, 0.18)",
+              borderRadius: 14,
+              padding: 14,
+              background: "#fffaf0",
+              color: "#2c2418",
+              fontFamily:
+                'ui-serif, Georgia, Cambria, "Times New Roman", Times, serif',
+              fontSize: 15,
+              lineHeight: 1.55,
+              boxSizing: "border-box",
+            }}
+          />
+
+          <div style={{ marginTop: 14 }}>
+            <button
+              type="button"
+              disabled={
+                extracting ||
+                !adminSecret ||
+                !parsedRequest ||
+                !articleText.trim()
+              }
+              onClick={runExtractFromArticle}
+              style={
+                extracting ||
+                !adminSecret ||
+                !parsedRequest ||
+                !articleText.trim()
+                  ? disabledButtonStyle
+                  : { ...primaryButtonStyle, background: "#9a5b35" }
+              }
+            >
+              {extracting
+                ? "Извлекаем жемчужины..."
+                : "Извлечь жемчужины из статьи"}
+            </button>
+          </div>
+        </section>
+
         <ResultBlock title="Результат автоцикла" text={processText} />
 
         <ResultBlock
@@ -545,6 +713,11 @@ export default function EvaluatorTestPage() {
         <ResultBlock
           title="Результат генерации новых кандидатов"
           text={generateText}
+        />
+
+        <ResultBlock
+          title="Результат извлечения из статьи"
+          text={extractText}
         />
 
         <ResultBlock title="Сохранённые карточки" text={readText} />
