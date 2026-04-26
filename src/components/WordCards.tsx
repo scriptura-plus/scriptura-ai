@@ -89,12 +89,18 @@ function WordCardItem({
   const [shareState, setShareState] = useState<"idle" | "copied">("idle");
 
   async function handleExpand() {
-    if (expanded) { setExpanded(false); return; }
+    if (expanded) {
+      setExpanded(false);
+      return;
+    }
+
     setExpanded(true);
+
     if (article) return;
 
     setLoading(true);
     setError("");
+
     try {
       const r = await fetch("/api/analyze", {
         method: "POST",
@@ -107,10 +113,15 @@ function WordCardItem({
           verseText,
           lang,
           provider,
+          sourceLens: "word",
+          sourceType: "word_card_article",
         }),
       });
+
       const j = await r.json();
+
       if (!r.ok) throw new Error(j?.error || t.error);
+
       setArticle(j.text ?? "");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : t.error);
@@ -120,11 +131,14 @@ function WordCardItem({
   }
 
   async function handleShare() {
-    const shareText =
-      `${reference} — ${card.title}\n\n${article}\n\n${t.shareFrom}`;
+    const shareText = `${reference} — ${card.title}\n\n${article}\n\n${t.shareFrom}`;
+
     if (typeof navigator !== "undefined" && navigator.share) {
       try {
-        await navigator.share({ title: `${reference} — ${card.title}`, text: shareText });
+        await navigator.share({
+          title: `${reference} — ${card.title}`,
+          text: shareText,
+        });
       } catch {
         // user dismissed share sheet — do nothing
       }
@@ -141,7 +155,6 @@ function WordCardItem({
 
   return (
     <div className="angle-card">
-      {/* Card header */}
       <div className="angle-card-header">
         <div>
           <div className="angle-card-title">{card.title}</div>
@@ -151,6 +164,7 @@ function WordCardItem({
             <span className="angle-anchor-text">"{card.original}"</span>
           </div>
         </div>
+
         <button
           type="button"
           className={`btn btn-sm${expanded ? " btn-ghost" : ""}`}
@@ -161,22 +175,18 @@ function WordCardItem({
         </button>
       </div>
 
-      {/* Teaser */}
       <p className="angle-card-teaser">{card.teaser}</p>
 
-      {/* Gap */}
       <div className="angle-why">
         <span className="angle-anchor-label">{t.gap}: </span>
         {card.gap}
       </div>
 
-      {/* Why it matters */}
       <div className="angle-why" style={{ marginTop: 6 }}>
         <span className="angle-anchor-label">{t.whyItMatters}: </span>
         {card.why_it_matters}
       </div>
 
-      {/* Expanded article */}
       {expanded && (
         <div className="angle-expansion">
           {loading && (
@@ -186,12 +196,15 @@ function WordCardItem({
               <div className="skeleton" style={{ width: "68%" }} />
             </>
           )}
+
           {error && <div className="error">{error}</div>}
+
           {!loading && !error && article && (
             <>
               <div className="prose">
                 <MarkdownText text={article} />
               </div>
+
               <div style={{ marginTop: 16 }}>
                 <button
                   type="button"
