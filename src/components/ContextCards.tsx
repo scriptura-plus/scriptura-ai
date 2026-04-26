@@ -22,7 +22,15 @@ type NarrowPayload = {
 
 function extractNarrow(raw: string): NarrowPayload | null {
   const parsed = extractJSONObject<NarrowPayload>(raw);
-  if (!parsed || typeof parsed.thesis !== "string" || !Array.isArray(parsed.cards)) return null;
+
+  if (
+    !parsed ||
+    typeof parsed.thesis !== "string" ||
+    !Array.isArray(parsed.cards)
+  ) {
+    return null;
+  }
+
   const cards = parsed.cards.filter(
     (c: unknown) =>
       typeof c === "object" &&
@@ -32,12 +40,14 @@ function extractNarrow(raw: string): NarrowPayload | null {
       typeof (c as Record<string, unknown>).shift === "string" &&
       typeof (c as Record<string, unknown>).why_it_matters === "string",
   ) as ContextCard[];
+
   return { thesis: parsed.thesis, cards };
 }
 
 function extractWide(raw: string): ContextCard[] | null {
   const parsed = extractJSONArray<ContextCard>(raw);
   if (!parsed) return null;
+
   return parsed.filter(
     (c: unknown) =>
       typeof c === "object" &&
@@ -68,20 +78,31 @@ export function ContextCards({
 
   if (level === "narrow") {
     const payload = extractNarrow(rawText);
+
     if (!payload || payload.cards.length === 0) {
       return (
         <div className="card error">
-          {t.error} (Could not parse narrow context — the AI may have returned non-JSON.)
+          {t.error} (Could not parse narrow context — the AI may have returned
+          non-JSON.)
         </div>
       );
     }
+
     return (
       <div style={{ display: "grid", gap: 14 }}>
         {payload.thesis && (
-          <p style={{ fontStyle: "italic", fontSize: "1.05rem", lineHeight: 1.6, margin: 0 }}>
+          <p
+            style={{
+              fontStyle: "italic",
+              fontSize: "1.05rem",
+              lineHeight: 1.6,
+              margin: 0,
+            }}
+          >
             {payload.thesis}
           </p>
         )}
+
         {payload.cards.map((card, i) => (
           <ContextCardItem
             key={i}
@@ -96,15 +117,17 @@ export function ContextCards({
     );
   }
 
-  // wide
   const cards = extractWide(rawText);
+
   if (!cards || cards.length === 0) {
     return (
       <div className="card error">
-        {t.error} (Could not parse wide context — the AI may have returned non-JSON.)
+        {t.error} (Could not parse wide context — the AI may have returned
+        non-JSON.)
       </div>
     );
   }
+
   return (
     <div style={{ display: "grid", gap: 14 }}>
       {cards.map((card, i) => (
@@ -135,6 +158,7 @@ function ContextCardItem({
   provider: Provider;
 }) {
   const t = dictionary[lang];
+
   const [expanded, setExpanded] = useState(false);
   const [article, setArticle] = useState("");
   const [loading, setLoading] = useState(false);
@@ -142,12 +166,18 @@ function ContextCardItem({
   const [shareState, setShareState] = useState<"idle" | "copied">("idle");
 
   async function handleExpand() {
-    if (expanded) { setExpanded(false); return; }
+    if (expanded) {
+      setExpanded(false);
+      return;
+    }
+
     setExpanded(true);
+
     if (article) return;
 
     setLoading(true);
     setError("");
+
     try {
       const r = await fetch("/api/analyze", {
         method: "POST",
@@ -160,10 +190,15 @@ function ContextCardItem({
           verseText,
           lang,
           provider,
+          sourceLens: "context",
+          sourceType: "context_card_article",
         }),
       });
+
       const j = await r.json();
+
       if (!r.ok) throw new Error(j?.error || t.error);
+
       setArticle(j.text ?? "");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : t.error);
@@ -173,11 +208,14 @@ function ContextCardItem({
   }
 
   async function handleShare() {
-    const shareText =
-      `${reference} — ${card.title}\n\n${article}\n\n${t.shareFrom}`;
+    const shareText = `${reference} — ${card.title}\n\n${article}\n\n${t.shareFrom}`;
+
     if (typeof navigator !== "undefined" && navigator.share) {
       try {
-        await navigator.share({ title: `${reference} — ${card.title}`, text: shareText });
+        await navigator.share({
+          title: `${reference} — ${card.title}`,
+          text: shareText,
+        });
       } catch {
         // user dismissed share sheet — do nothing
       }
@@ -203,6 +241,7 @@ function ContextCardItem({
             <span className="angle-anchor-text">"{card.shift}"</span>
           </div>
         </div>
+
         <button
           type="button"
           className={`btn btn-sm${expanded ? " btn-ghost" : ""}`}
@@ -229,12 +268,15 @@ function ContextCardItem({
               <div className="skeleton" style={{ width: "68%" }} />
             </>
           )}
+
           {error && <div className="error">{error}</div>}
+
           {!loading && !error && article && (
             <>
               <div className="prose">
                 <MarkdownText text={article} />
               </div>
+
               <div style={{ marginTop: 16 }}>
                 <button
                   type="button"
