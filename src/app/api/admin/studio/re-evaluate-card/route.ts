@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { runAI } from "@/lib/ai/runAI";
+import { isProvider, defaultProvider } from "@/lib/ai/providers";
+import { getVerseText } from "@/lib/bible/getVerseText";
 import { buildEvaluateAnglePrompt } from "@/lib/prompts/buildEvaluateAnglePrompt";
 import {
   getAllStudioCardsForVerse,
@@ -117,6 +119,38 @@ function extractJsonObject(text: string): unknown {
   }
 }
 
+async function resolveVerseText(args: {
+  reference: string;
+  lang: AngleCardLang;
+  bodyVerseText: unknown;
+  provider: unknown;
+}): Promise<{
+  text: string;
+  source: "request" | "getVerseText";
+}> {
+  const provided = getString(args.bodyVerseText);
+
+  if (provided) {
+    return {
+      text: provided,
+      source: "request",
+    };
+  }
+
+  const verseProvider = isProvider(args.provider)
+    ? args.provider
+    : isProvider("openai")
+      ? "openai"
+      : defaultProvider();
+
+  const verse = await getVerseText(args.reference, args.lang, verseProvider);
+
+  return {
+    text: verse.text,
+    source: "getVerseText",
+  };
+}
+
 export async function POST(req: Request) {
   try {
     if (!isAdminRequest(req)) {
@@ -126,7 +160,6 @@ export async function POST(req: Request) {
     const body = await req.json();
 
     const reference = getString(body?.reference);
-    const verseText = getString(body?.verseText) ?? "";
     const canonical_ref = getString(body?.canonical_ref);
     const lang = isLang(body?.lang) ? body.lang : null;
     const candidate = body?.candidate;
@@ -141,6 +174,13 @@ export async function POST(req: Request) {
         { status: 400 },
       );
     }
+
+    const resolvedVerse = await resolveVerseText({
+      reference,
+      lang,
+      bodyVerseText: body?.verseText,
+      provider: body?.provider,
+    });
 
     const existing = await getAllStudioCardsForVerse({
       reference,
@@ -165,7 +205,7 @@ export async function POST(req: Request) {
 
     const prompt = buildEvaluateAnglePrompt({
       reference,
-      verseText,
+      verseText: resolvedVerse.text,
       lang,
       candidate: toPromptCard(candidate),
       featuredCards: featuredCards.map(toEvaluatorCard),
@@ -186,6 +226,8 @@ export async function POST(req: Request) {
       lang,
       candidate_id: candidate.id ?? null,
       old_score: candidate.score_total ?? null,
+      verse_text_source: resolvedVerse.source,
+      verse_text_preview: resolvedVerse.text.slice(0, 220),
       evaluation,
     });
   } catch (error: unknown) {
