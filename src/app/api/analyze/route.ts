@@ -14,7 +14,7 @@ import {
 } from "@/lib/prompts/buildExtraPrompt";
 import { buildExpandPrompt } from "@/lib/prompts/buildExpandPrompt";
 import { getCachedResult, saveCachedResult } from "@/lib/cache/cachedResults";
-import { getFeaturedAngleCards } from "@/lib/cache/angleCards";
+import { getAngleCards } from "@/lib/cache/angleCards";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -249,18 +249,19 @@ async function buildAnglesResponseFromCards(args: {
   lang: Lang;
   canonical_ref?: string | null;
 }): Promise<string | null> {
-  const featuredResult = await getFeaturedAngleCards({
+  const result = await getAngleCards({
     reference: args.reference,
     lang: args.lang,
     canonical_ref: args.canonical_ref ?? null,
+    statuses: ["featured", "reserve"],
     limit: TARGET_ANGLE_COUNT,
   });
 
-  if (!featuredResult.ok || featuredResult.cards.length === 0) {
+  if (!result.ok || result.cards.length === 0) {
     return null;
   }
 
-  const featuredCards: AngleCardLike[] = featuredResult.cards.map((card) => ({
+  const savedCards: AngleCardLike[] = result.cards.map((card) => ({
     id: card.id,
     title: card.title,
     anchor: card.anchor,
@@ -272,8 +273,8 @@ async function buildAnglesResponseFromCards(args: {
     source: "angle_cards",
   }));
 
-  if (featuredCards.length >= TARGET_ANGLE_COUNT) {
-    return JSON.stringify(featuredCards.slice(0, TARGET_ANGLE_COUNT));
+  if (savedCards.length >= TARGET_ANGLE_COUNT) {
+    return JSON.stringify(savedCards.slice(0, TARGET_ANGLE_COUNT));
   }
 
   const cached = await getCachedResult(args.reference, "angles", args.lang);
@@ -282,7 +283,7 @@ async function buildAnglesResponseFromCards(args: {
     : [];
 
   const seenTitles = new Set(
-    featuredCards.map((card) => card.title.trim().toLowerCase()),
+    savedCards.map((card) => card.title.trim().toLowerCase()),
   );
 
   const fallbackCards = cachedCards.filter((card) => {
@@ -292,7 +293,7 @@ async function buildAnglesResponseFromCards(args: {
     return true;
   });
 
-  const merged = [...featuredCards, ...fallbackCards].slice(
+  const merged = [...savedCards, ...fallbackCards].slice(
     0,
     TARGET_ANGLE_COUNT,
   );
