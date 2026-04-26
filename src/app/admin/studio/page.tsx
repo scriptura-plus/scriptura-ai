@@ -20,6 +20,7 @@ type VerseSummary = {
   sources: string[];
   last_activity_at: string;
   book_key: string | null;
+  canonical_ref: string | null;
 };
 
 type StudioCard = {
@@ -66,6 +67,7 @@ type CardsResponse = {
   ok?: boolean;
   error?: string;
   reference?: string;
+  canonical_ref?: string | null;
   lang?: Lang;
   summary?: CardsSummary;
   count?: number;
@@ -220,7 +222,7 @@ export default function StudioPage() {
       setNotice(`Готово: найдено стихов — ${nextVerses.length}.`);
       if (!selectedReference && nextVerses[0]) {
         setSelectedReference(nextVerses[0].reference);
-        void loadCards(nextVerses[0].reference, secret);
+        void loadCards(nextVerses[0], secret);
       }
       if (
         selectedReference &&
@@ -240,26 +242,29 @@ export default function StudioPage() {
     }
   }
 
-  async function loadCards(reference: string, secretOverride?: string) {
+  async function loadCards(verse: VerseSummary, secretOverride?: string) {
     const secret = secretOverride ?? adminSecret;
     if (!secret.trim()) {
       setCardsError("Вставь Admin Secret.");
       return;
     }
-    if (!reference.trim()) {
+    if (!verse.reference.trim()) {
       setCardsError("Reference пустой.");
       return;
     }
-    setSelectedReference(reference);
+    setSelectedReference(verse.reference);
     setLoadingCards(true);
     setCardsError("");
-    setNotice(`Открываю ${reference}...`);
+    setNotice(`Открываю ${displayReference(verse)}...`);
     try {
       const params = new URLSearchParams({
-        reference,
+        reference: verse.reference,
         lang,
         limit: "120",
       });
+      if (verse.canonical_ref) {
+        params.set("canonical_ref", verse.canonical_ref);
+      }
       const response = await fetch(`/api/admin/studio/cards?${params}`, {
         method: "GET",
         headers: { "x-admin-secret": secret },
@@ -561,7 +566,7 @@ export default function StudioPage() {
                   <button
                     key={`${verse.lang}-${verse.reference}`}
                     type="button"
-                    onClick={() => loadCards(verse.reference)}
+                    onClick={() => loadCards(verse)}
                     disabled={loadingCards && active}
                     style={{
                       textAlign: "left",
@@ -587,6 +592,22 @@ export default function StudioPage() {
                       }}
                     >
                       {displayReference(verse)}
+                      {!verse.canonical_ref ? (
+                        <span
+                          style={{
+                            marginLeft: 8,
+                            fontSize: 11,
+                            fontWeight: 700,
+                            color: "#a07840",
+                            background: "#f5e9c8",
+                            borderRadius: 999,
+                            padding: "2px 7px",
+                            verticalAlign: "middle",
+                          }}
+                        >
+                          legacy
+                        </span>
+                      ) : null}
                     </div>
                     <div
                       style={{
