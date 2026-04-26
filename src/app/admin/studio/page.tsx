@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { formatReference } from "@/lib/bible/formatReference";
 
 type Lang = "ru" | "en" | "es";
 
@@ -18,6 +19,7 @@ type VerseSummary = {
   best_score: number | null;
   sources: string[];
   last_activity_at: string;
+  book_key: string | null;
 };
 
 type StudioCard = {
@@ -82,7 +84,6 @@ const SOFT = "#5a4a37";
 
 function formatDate(value: string): string {
   if (!value) return "—";
-
   try {
     const date = new Date(value);
     return new Intl.DateTimeFormat("ru-RU", {
@@ -174,18 +175,15 @@ export default function StudioPage() {
     if (!secretLoaded) return;
     if (!adminSecret.trim()) return;
     if (verses.length > 0 || loadingVerses) return;
-
     void loadRecentVerses(7, adminSecret);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [secretLoaded, adminSecret]);
 
   useEffect(() => {
     if (!notice) return;
-
     const timer = window.setTimeout(() => {
       setNotice("");
     }, 3500);
-
     return () => window.clearTimeout(timer);
   }, [notice]);
 
@@ -196,46 +194,34 @@ export default function StudioPage() {
 
   async function loadRecentVerses(nextDays = days, secretOverride?: string) {
     const secret = secretOverride ?? adminSecret;
-
     if (!secret.trim()) {
       setVersesError("Вставь Admin Secret, чтобы открыть Studio.");
       return;
     }
-
     setLoadingVerses(true);
     setVersesError("");
     setNotice(`Загружаю активность за ${nextDays} дн...`);
-
     try {
       const params = new URLSearchParams({
         lang,
         days: String(nextDays),
         limit: "80",
       });
-
       const response = await fetch(`/api/admin/studio/recent-verses?${params}`, {
         method: "GET",
-        headers: {
-          "x-admin-secret": secret,
-        },
+        headers: { "x-admin-secret": secret },
       });
-
       const data = (await response.json()) as RecentVersesResponse;
-
       if (!response.ok || !data.ok) {
         throw new Error(data.error || "Не удалось загрузить активность.");
       }
-
       const nextVerses = data.verses ?? [];
-
       setVerses(nextVerses);
       setNotice(`Готово: найдено стихов — ${nextVerses.length}.`);
-
       if (!selectedReference && nextVerses[0]) {
         setSelectedReference(nextVerses[0].reference);
         void loadCards(nextVerses[0].reference, secret);
       }
-
       if (
         selectedReference &&
         !nextVerses.some((v) => v.reference === selectedReference)
@@ -256,42 +242,32 @@ export default function StudioPage() {
 
   async function loadCards(reference: string, secretOverride?: string) {
     const secret = secretOverride ?? adminSecret;
-
     if (!secret.trim()) {
       setCardsError("Вставь Admin Secret.");
       return;
     }
-
     if (!reference.trim()) {
       setCardsError("Reference пустой.");
       return;
     }
-
     setSelectedReference(reference);
     setLoadingCards(true);
     setCardsError("");
     setNotice(`Открываю ${reference}...`);
-
     try {
       const params = new URLSearchParams({
         reference,
         lang,
         limit: "120",
       });
-
       const response = await fetch(`/api/admin/studio/cards?${params}`, {
         method: "GET",
-        headers: {
-          "x-admin-secret": secret,
-        },
+        headers: { "x-admin-secret": secret },
       });
-
       const data = (await response.json()) as CardsResponse;
-
       if (!response.ok || !data.ok) {
         throw new Error(data.error || "Не удалось загрузить карточки.");
       }
-
       setCards(data.cards ?? []);
       setCardsSummary(data.summary ?? null);
       setNotice(`Карточки загружены: ${data.cards?.length ?? 0}.`);
@@ -313,6 +289,17 @@ export default function StudioPage() {
     await loadRecentVerses(nextDays);
   }
 
+  function displayReference(verse: VerseSummary): string {
+    return (
+      formatReference({
+        bookKey: verse.book_key,
+        chapter: verse.chapter,
+        verse: verse.verse,
+        lang,
+      }) ?? verse.reference
+    );
+  }
+
   return (
     <main
       style={{
@@ -329,13 +316,11 @@ export default function StudioPage() {
           0% { background-position: 220% 0; }
           100% { background-position: -220% 0; }
         }
-
         .studio-layout {
           display: grid;
           grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
           gap: 14px;
         }
-
         @media (max-width: 760px) {
           .studio-layout {
             grid-template-columns: 1fr;
@@ -357,7 +342,6 @@ export default function StudioPage() {
           >
             Scriptura Studio
           </div>
-
           <h1
             style={{
               fontFamily:
@@ -370,15 +354,7 @@ export default function StudioPage() {
           >
             Живая работа системы
           </h1>
-
-          <p
-            style={{
-              margin: "8px 0 0",
-              color: SOFT,
-              fontSize: 15,
-              lineHeight: 1.55,
-            }}
-          >
+          <p style={{ margin: "8px 0 0", color: SOFT, fontSize: 15, lineHeight: 1.55 }}>
             Здесь видно, какие стихи недавно получили жемчужины, откуда они
             пришли и какие карточки уже сохранены.
           </p>
@@ -408,7 +384,6 @@ export default function StudioPage() {
           >
             Admin Secret
           </label>
-
           <input
             value={adminSecret}
             onChange={(event) => saveSecret(event.target.value)}
@@ -426,7 +401,6 @@ export default function StudioPage() {
               outlineColor: BLUE,
             }}
           />
-
           <div
             style={{
               display: "flex",
@@ -441,36 +415,29 @@ export default function StudioPage() {
               disabled={loadingVerses}
               onClick={() => changeDays(1)}
               style={getButtonStyle(days === 1, loadingVerses)}
-              title="Показать стихи, где карточки появились за последние 24 часа"
             >
               Сегодня
             </button>
-
             <button
               type="button"
               disabled={loadingVerses}
               onClick={() => changeDays(7)}
               style={getButtonStyle(days === 7, loadingVerses)}
-              title="Показать активность за последнюю неделю"
             >
               7 дней
             </button>
-
             <button
               type="button"
               disabled={loadingVerses}
               onClick={() => changeDays(30)}
               style={getButtonStyle(days === 30, loadingVerses)}
-              title="Показать активность за последние 30 дней"
             >
               30 дней
             </button>
-
             <select
               value={lang}
               onChange={(event) => setLang(event.target.value as Lang)}
               disabled={loadingVerses}
-              title="Язык карточек"
               style={{
                 border: `1px solid rgba(95, 120, 144, 0.28)`,
                 borderRadius: 999,
@@ -486,16 +453,11 @@ export default function StudioPage() {
               <option value="en">EN</option>
               <option value="es">ES</option>
             </select>
-
             <button
               type="button"
               disabled={loadingVerses}
               onClick={() => loadRecentVerses(days)}
-              style={{
-                ...getButtonStyle(true, loadingVerses),
-                marginLeft: "auto",
-              }}
-              title="Обновить список активности"
+              style={{ ...getButtonStyle(true, loadingVerses), marginLeft: "auto" }}
             >
               {loadingVerses ? "Загружаю..." : "Обновить"}
             </button>
@@ -565,10 +527,7 @@ export default function StudioPage() {
               >
                 Недавние стихи
               </h2>
-
-              <span style={{ fontSize: 13, color: SOFT }}>
-                {verses.length} найдено
-              </span>
+              <span style={{ fontSize: 13, color: SOFT }}>{verses.length} найдено</span>
             </div>
 
             {loadingVerses ? (
@@ -591,35 +550,29 @@ export default function StudioPage() {
                   lineHeight: 1.5,
                 }}
               >
-                Пока нет загруженной активности. Нажми “Обновить”.
+                Пока нет загруженной активности. Нажми "Обновить".
               </div>
             ) : null}
 
             <div style={{ display: "grid", gap: 10 }}>
               {verses.map((verse) => {
                 const active = verse.reference === selectedReference;
-
                 return (
                   <button
                     key={`${verse.lang}-${verse.reference}`}
                     type="button"
                     onClick={() => loadCards(verse.reference)}
                     disabled={loadingCards && active}
-                    title={`Открыть карточки: ${verse.reference}`}
                     style={{
                       textAlign: "left",
-                      border: `1px solid ${
-                        active ? BLUE : "rgba(216, 201, 168, 0.9)"
-                      }`,
+                      border: `1px solid ${active ? BLUE : "rgba(216, 201, 168, 0.9)"}`,
                       background: active ? BLUE_PALE : "#fffaf0",
                       borderRadius: 15,
                       padding: 13,
                       cursor: "pointer",
                       color: INK,
                       fontFamily: "inherit",
-                      boxShadow: active
-                        ? "0 6px 16px rgba(95, 120, 144, 0.16)"
-                        : "none",
+                      boxShadow: active ? "0 6px 16px rgba(95, 120, 144, 0.16)" : "none",
                       transform: active ? "translateY(-1px)" : "translateY(0)",
                       transition:
                         "transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease, border-color 0.12s ease",
@@ -633,9 +586,8 @@ export default function StudioPage() {
                         color: active ? BLUE_DARK : INK,
                       }}
                     >
-                      {verse.reference}
+                      {displayReference(verse)}
                     </div>
-
                     <div
                       style={{
                         display: "flex",
@@ -652,14 +604,7 @@ export default function StudioPage() {
                         <Badge text={`best ${verse.best_score}`} />
                       ) : null}
                     </div>
-
-                    <div
-                      style={{
-                        fontSize: 13,
-                        color: SOFT,
-                        lineHeight: 1.45,
-                      }}
-                    >
+                    <div style={{ fontSize: 13, color: SOFT, lineHeight: 1.45 }}>
                       {sourceLabel(verse.sources)}
                       <br />
                       {formatDate(verse.last_activity_at)}
@@ -698,9 +643,8 @@ export default function StudioPage() {
                     'ui-serif, Georgia, "Iowan Old Style", "Times New Roman", serif',
                 }}
               >
-                {selectedReference || "Карточки стиха"}
+                {selectedVerse ? displayReference(selectedVerse) : "Карточки стиха"}
               </h2>
-
               {selectedVerse ? (
                 <span style={{ fontSize: 13, color: SOFT }}>
                   {formatDate(selectedVerse.last_activity_at)}
@@ -709,14 +653,7 @@ export default function StudioPage() {
             </div>
 
             {cardsSummary ? (
-              <div
-                style={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: 8,
-                  marginBottom: 13,
-                }}
-              >
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 13 }}>
                 <Badge text={`${cardsSummary.featured} featured`} strong />
                 {cardsSummary.reserve > 0 ? (
                   <Badge text={`${cardsSummary.reserve} reserve`} />
@@ -770,10 +707,7 @@ export default function StudioPage() {
               </div>
             ) : null}
 
-            {!loadingCards &&
-            !cardsError &&
-            selectedReference &&
-            cards.length === 0 ? (
+            {!loadingCards && !cardsError && selectedReference && cards.length === 0 ? (
               <div
                 style={{
                   padding: 14,
@@ -820,7 +754,6 @@ export default function StudioPage() {
                     >
                       {card.title}
                     </h3>
-
                     {card.score_total !== null ? (
                       <span
                         style={{
@@ -838,18 +771,9 @@ export default function StudioPage() {
                     ) : null}
                   </div>
 
-                  <div
-                    style={{
-                      display: "flex",
-                      flexWrap: "wrap",
-                      gap: 7,
-                      marginBottom: 9,
-                    }}
-                  >
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginBottom: 9 }}>
                     <Badge text={statusLabel(card.status)} strong />
-                    {card.coverage_type ? (
-                      <Badge text={card.coverage_type} />
-                    ) : null}
+                    {card.coverage_type ? <Badge text={card.coverage_type} /> : null}
                     <Badge text={getCardSource(card)} />
                   </div>
 
@@ -863,17 +787,11 @@ export default function StudioPage() {
                         fontStyle: "italic",
                       }}
                     >
-                      “{card.anchor}”
+                      "{card.anchor}"
                     </p>
                   ) : null}
 
-                  <p
-                    style={{
-                      margin: "0 0 10px",
-                      fontSize: 14,
-                      lineHeight: 1.62,
-                    }}
-                  >
+                  <p style={{ margin: "0 0 10px", fontSize: 14, lineHeight: 1.62 }}>
                     {card.teaser}
                   </p>
 
@@ -896,22 +814,12 @@ export default function StudioPage() {
                   {card.angle_summary ? (
                     <details style={{ marginTop: 10 }}>
                       <summary
-                        style={{
-                          cursor: "pointer",
-                          color: BLUE_DARK,
-                          fontSize: 13,
-                          fontWeight: 800,
-                        }}
+                        style={{ cursor: "pointer", color: BLUE_DARK, fontSize: 13, fontWeight: 800 }}
                       >
                         Оценка / угол
                       </summary>
                       <p
-                        style={{
-                          margin: "8px 0 0",
-                          color: SOFT,
-                          fontSize: 13,
-                          lineHeight: 1.5,
-                        }}
+                        style={{ margin: "8px 0 0", color: SOFT, fontSize: 13, lineHeight: 1.5 }}
                       >
                         {card.angle_summary}
                       </p>
@@ -923,16 +831,9 @@ export default function StudioPage() {
           </section>
         </div>
 
-        <p
-          style={{
-            margin: "18px 0 0",
-            color: SOFT,
-            fontSize: 12,
-            textAlign: "center",
-          }}
-        >
-          MVP Studio: read-only режим. Следующий этап — “Доработать карточку” и
-          “Добавить материал”.
+        <p style={{ margin: "18px 0 0", color: SOFT, fontSize: 12, textAlign: "center" }}>
+          MVP Studio: read-only режим. Следующий этап — "Доработать карточку" и
+          "Добавить материал".
         </p>
       </div>
     </main>
