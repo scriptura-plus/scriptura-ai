@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { runAI } from "@/lib/ai/runAI";
-import { isProvider, defaultProvider } from "@/lib/ai/providers";
+import { isProvider, defaultProvider, type Provider } from "@/lib/ai/providers";
 import { normalizeReference } from "@/lib/bible/normalizeReference";
 import { translateAngleCard } from "@/lib/angles/translateAngleCard";
 import { buildEvaluateAnglePrompt } from "@/lib/prompts/buildEvaluateAnglePrompt";
@@ -88,6 +88,7 @@ type SaveOneCardArgs = {
   rewritten: boolean;
   sourceProvider: string | null;
   sourceModel: string | null;
+  editorProvider: Provider;
   candidate: CandidateCard;
   replace_card_id: string | null;
 };
@@ -652,6 +653,38 @@ function getModelName(provider: string): string {
   return provider;
 }
 
+function chooseEditorProvider(body: unknown): Provider {
+  if (!isRecord(body)) {
+    return "gemini";
+  }
+
+  if (isProvider(body.editor_provider)) {
+    return body.editor_provider;
+  }
+
+  if (isProvider(body.evaluator_provider)) {
+    return body.evaluator_provider;
+  }
+
+  if (isProvider(body.provider) && body.provider !== "openai") {
+    return body.provider;
+  }
+
+  const envProvider = process.env.ANGLE_EDITOR_PROVIDER;
+
+  if (isProvider(envProvider)) {
+    return envProvider;
+  }
+
+  const fallback = defaultProvider();
+
+  if (fallback !== "openai") {
+    return fallback;
+  }
+
+  return "gemini";
+}
+
 async function evaluateCandidate(args: {
   reference: string;
   verseText: string;
@@ -661,9 +694,8 @@ async function evaluateCandidate(args: {
   reserveCards: AngleCardRow[];
   sourceArticle?: string;
   targetFeaturedCount: number;
+  editorProvider: Provider;
 }): Promise<Evaluation> {
-  const editorProvider = isProvider("openai") ? "openai" : defaultProvider();
-
   const prompt = buildEvaluateAnglePrompt({
     reference: args.reference,
     verseText: args.verseText,
@@ -675,7 +707,7 @@ async function evaluateCandidate(args: {
     targetFeaturedCount: args.targetFeaturedCount,
   });
 
-  const text = await runAI(editorProvider, prompt, args.lang, true);
+  const text = await runAI(args.editorProvider, prompt, args.lang, true);
   const parsed = extractJsonObject(text);
 
   return normalizeEvaluation(parsed);
@@ -688,9 +720,8 @@ async function rewriteCandidate(args: {
   candidate: CandidateCard;
   evaluation: Evaluation;
   sourceArticle?: string;
+  editorProvider: Provider;
 }): Promise<CandidateCard> {
-  const editorProvider = isProvider("openai") ? "openai" : defaultProvider();
-
   const prompt = buildRewriteAnglePrompt({
     reference: args.reference,
     verseText: args.verseText,
@@ -700,7 +731,7 @@ async function rewriteCandidate(args: {
     sourceArticle: args.sourceArticle,
   });
 
-  const text = await runAI(editorProvider, prompt, args.lang, true);
+  const text = await runAI(args.editorProvider, prompt, args.lang, true);
   const parsed = extractJsonObject(text);
 
   if (!isRecord(parsed) || !isRecord(parsed.card)) {
@@ -766,8 +797,8 @@ async function saveOneCard(args: SaveOneCardArgs): Promise<{
     source_provider: args.sourceProvider,
     source_model: args.sourceModel,
 
-    editor_provider: "openai",
-    editor_model: getModelName("openai"),
+    editor_provider: args.editorProvider,
+    editor_model: getModelName(args.editorProvider),
 
     original_card: args.candidate,
     rewritten_from_card_id: null,
@@ -798,6 +829,8 @@ export async function POST(req: Request) {
     const candidate = body?.candidate;
     const sourceArticle = getString(body?.sourceArticle) ?? undefined;
     const targetFeaturedCount = getNumber(body?.targetFeaturedCount) ?? 12;
+
+    const editorProvider = chooseEditorProvider(body);
 
     const sourceProvider = isProvider(body?.source_provider)
       ? body.source_provider
@@ -849,6 +882,7 @@ export async function POST(req: Request) {
       reserveCards,
       sourceArticle,
       targetFeaturedCount,
+      editorProvider,
     });
 
     if (shouldSkipMatchedDuplicate(firstEvaluation)) {
@@ -863,6 +897,8 @@ export async function POST(req: Request) {
         score_total: getNumber(firstEvaluation.score_total),
         canonical_ref: normalizedReference.canonical_ref,
         book_key: normalizedReference.book_key,
+        editor_provider: editorProvider,
+        editor_model: getModelName(editorProvider),
         first_evaluation: firstEvaluation,
         final_card: candidate,
         final_evaluation: firstEvaluation,
@@ -882,6 +918,7 @@ export async function POST(req: Request) {
         candidate,
         evaluation: firstEvaluation,
         sourceArticle,
+        editorProvider,
       });
 
       rewritten = true;
@@ -896,6 +933,7 @@ export async function POST(req: Request) {
         reserveCards,
         sourceArticle,
         targetFeaturedCount,
+        editorProvider,
       });
 
       if (shouldSkipMatchedDuplicate(finalEvaluation)) {
@@ -910,6 +948,8 @@ export async function POST(req: Request) {
           score_total: getNumber(finalEvaluation.score_total),
           canonical_ref: normalizedReference.canonical_ref,
           book_key: normalizedReference.book_key,
+          editor_provider: editorProvider,
+          editor_model: getModelName(editorProvider),
           first_evaluation: firstEvaluation,
           rewritten_card: rewrittenCard,
           final_card: finalCard,
@@ -932,6 +972,8 @@ export async function POST(req: Request) {
         score_total: getNumber(finalEvaluation.score_total),
         canonical_ref: normalizedReference.canonical_ref,
         book_key: normalizedReference.book_key,
+        editor_provider: editorProvider,
+        editor_model: getModelName(editorProvider),
         first_evaluation: firstEvaluation,
         rewritten_card: rewrittenCard,
         final_card: finalCard,
@@ -948,6 +990,7 @@ export async function POST(req: Request) {
     const translationResult = await translateAngleCard({
       reference,
       originLang: lang,
+      provider: editorProvider,
       card: {
         title: cardForSave.title,
         anchor: cardForSave.anchor,
@@ -964,6 +1007,8 @@ export async function POST(req: Request) {
             "Failed to translate approved angle card",
           canonical_ref: normalizedReference.canonical_ref,
           book_key: normalizedReference.book_key,
+          editor_provider: editorProvider,
+          editor_model: getModelName(editorProvider),
           first_evaluation: firstEvaluation,
           final_card: finalCard,
           final_evaluation: finalEvaluation,
@@ -1003,6 +1048,7 @@ export async function POST(req: Request) {
         rewritten,
         sourceProvider,
         sourceModel,
+        editorProvider,
         candidate,
         replace_card_id: getString(finalEvaluation.replace_card_id),
       });
@@ -1035,6 +1081,8 @@ export async function POST(req: Request) {
       score_total: scoreTotal,
       canonical_ref: normalizedReference.canonical_ref,
       book_key: normalizedReference.book_key,
+      editor_provider: editorProvider,
+      editor_model: getModelName(editorProvider),
       first_evaluation: firstEvaluation,
       rewritten_card: rewrittenCard,
       final_card: finalCard,
