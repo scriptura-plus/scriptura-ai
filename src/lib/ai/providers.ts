@@ -12,6 +12,8 @@ export function isProvider(v: unknown): v is Provider {
 
 export function defaultProvider(): Provider {
   const env = process.env.DEFAULT_AI_PROVIDER;
+
   if (isProvider(env)) return env;
-  return "openai";
+
+  return "gemini";
 }
