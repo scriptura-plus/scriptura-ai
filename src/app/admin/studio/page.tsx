@@ -117,6 +117,25 @@ type ApplyEvaluationResponse = {
   card?: Partial<StudioCard>;
 };
 
+type RetranslateCardResponse = {
+  ok?: boolean;
+  error?: string;
+  changed_database?: boolean;
+  card_id?: string;
+  target_lang?: Lang;
+  source_card_id?: string;
+  source_lang?: Lang;
+  translation_group_id?: string;
+  updated_fields?: {
+    title?: string;
+    anchor?: string | null;
+    teaser?: string;
+    why_it_matters?: string | null;
+    updated_at?: string;
+  };
+  card?: Partial<StudioCard>;
+};
+
 type ReEvaluateState = {
   loading: boolean;
   applying: boolean;
@@ -124,6 +143,12 @@ type ReEvaluateState = {
   error: string;
   applyError: string;
   result: ReEvaluateResponse | null;
+};
+
+type RetranslateState = {
+  loading: boolean;
+  applied: boolean;
+  error: string;
 };
 
 const BLUE = "#5f7890";
@@ -238,6 +263,23 @@ function getApplyButtonStyle(disabled = false) {
   } as const;
 }
 
+function getRepairButtonStyle(disabled = false) {
+  return {
+    border: `1px solid ${disabled ? "rgba(138, 99, 48, 0.2)" : "rgba(138, 99, 48, 0.38)"}`,
+    borderRadius: 999,
+    background: disabled ? "#eee8dc" : WARNING_BG,
+    color: WARNING_TEXT,
+    padding: "8px 11px",
+    cursor: disabled ? "not-allowed" : "pointer",
+    fontSize: 13,
+    fontWeight: 800,
+    fontFamily: "inherit",
+    opacity: disabled ? 0.62 : 1,
+    transition:
+      "transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease, border-color 0.12s ease, opacity 0.12s ease",
+  } as const;
+}
+
 function getEvaluationScore(result: ReEvaluateResponse | null): number | null {
   const score = result?.evaluation?.score_total;
   return typeof score === "number" && Number.isFinite(score) ? score : null;
@@ -268,6 +310,14 @@ function createEmptyReEvaluateState(
     error: "",
     applyError: "",
     result: previous?.result ?? null,
+  };
+}
+
+function createEmptyRetranslateState(): RetranslateState {
+  return {
+    loading: false,
+    applied: false,
+    error: "",
   };
 }
 
@@ -329,6 +379,10 @@ export default function StudioPage() {
 
   const [reEvaluations, setReEvaluations] = useState<
     Record<string, ReEvaluateState>
+  >({});
+
+  const [retranslations, setRetranslations] = useState<
+    Record<string, RetranslateState>
   >({});
 
   const selectedVerse = useMemo(() => {
@@ -426,6 +480,7 @@ export default function StudioPage() {
     setLoadingCards(true);
     setCardsError("");
     setReEvaluations({});
+    setRetranslations({});
     setNotice(`Открываю ${displayReference(verse)}...`);
     try {
       const params = new URLSearchParams({
@@ -650,6 +705,108 @@ export default function StudioPage() {
             error instanceof Error
               ? error.message
               : "Не удалось применить оценку.",
+        },
+      }));
+      setNotice("");
+    }
+  }
+
+  async function retranslateCard(card: StudioCard) {
+    if (!adminSecret.trim()) {
+      setCardsError("Вставь Admin Secret.");
+      return;
+    }
+
+    setRetranslations((prev) => ({
+      ...prev,
+      [card.id]: {
+        loading: true,
+        applied: false,
+        error: "",
+      },
+    }));
+
+    setNotice(`Перевожу заново карточку: ${card.title}`);
+
+    try {
+      const response = await fetch("/api/admin/studio/retranslate-card", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-secret": adminSecret,
+        },
+        body: JSON.stringify({
+          card_id: card.id,
+          target_lang: lang,
+        }),
+      });
+
+      const data = (await response.json()) as RetranslateCardResponse;
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || "Не удалось перевести карточку заново.");
+      }
+
+      setCards((prevCards) => {
+        const nextCards = prevCards.map((current) => {
+          if (current.id !== card.id) return current;
+
+          return {
+            ...current,
+            title:
+              typeof data.updated_fields?.title === "string"
+                ? data.updated_fields.title
+                : typeof data.card?.title === "string"
+                  ? data.card.title
+                  : current.title,
+            anchor:
+              data.updated_fields?.anchor !== undefined
+                ? data.updated_fields.anchor ?? null
+                : data.card?.anchor !== undefined
+                  ? data.card.anchor ?? null
+                  : current.anchor,
+            teaser:
+              typeof data.updated_fields?.teaser === "string"
+                ? data.updated_fields.teaser
+                : typeof data.card?.teaser === "string"
+                  ? data.card.teaser
+                  : current.teaser,
+            why_it_matters:
+              data.updated_fields?.why_it_matters !== undefined
+                ? data.updated_fields.why_it_matters ?? null
+                : data.card?.why_it_matters !== undefined
+                  ? data.card.why_it_matters ?? null
+                  : current.why_it_matters,
+            updated_at:
+              typeof data.card?.updated_at === "string"
+                ? data.card.updated_at
+                : new Date().toISOString(),
+          };
+        });
+
+        return nextCards;
+      });
+
+      setRetranslations((prev) => ({
+        ...prev,
+        [card.id]: {
+          loading: false,
+          applied: true,
+          error: "",
+        },
+      }));
+
+      setNotice("Карточка переведена заново. Текст обновлён.");
+    } catch (error) {
+      setRetranslations((prev) => ({
+        ...prev,
+        [card.id]: {
+          loading: false,
+          applied: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Не удалось перевести карточку заново.",
         },
       }));
       setNotice("");
@@ -1115,6 +1272,8 @@ export default function StudioPage() {
             <div style={{ display: "grid", gap: 12 }}>
               {cards.map((card) => {
                 const reEval = reEvaluations[card.id] ?? createEmptyReEvaluateState();
+                const retranslation =
+                  retranslations[card.id] ?? createEmptyRetranslateState();
 
                 const newScore = getEvaluationScore(reEval.result);
                 const newPlacement = getEvaluationPlacement(reEval.result);
@@ -1250,18 +1409,79 @@ export default function StudioPage() {
                           }}
                         >
                           Нажми «Переоценить», чтобы проверить карточку новым
-                          редакционным стандартом. База не изменится, пока ты не
-                          нажмёшь «Применить новую оценку».
+                          редакционным стандартом. Если карточка сохранена не на том
+                          языке, нажми «Перевести заново».
                         </p>
 
-                        <button
-                          type="button"
-                          disabled={reEval.loading || reEval.applying}
-                          onClick={() => reEvaluateCard(card)}
-                          style={getSmallButtonStyle(reEval.loading || reEval.applying)}
-                        >
-                          {reEval.loading ? "Оцениваю..." : "Переоценить"}
-                        </button>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                          <button
+                            type="button"
+                            disabled={
+                              reEval.loading ||
+                              reEval.applying ||
+                              retranslation.loading
+                            }
+                            onClick={() => reEvaluateCard(card)}
+                            style={getSmallButtonStyle(
+                              reEval.loading ||
+                                reEval.applying ||
+                                retranslation.loading,
+                            )}
+                          >
+                            {reEval.loading ? "Оцениваю..." : "Переоценить"}
+                          </button>
+
+                          <button
+                            type="button"
+                            disabled={
+                              retranslation.loading ||
+                              reEval.loading ||
+                              reEval.applying
+                            }
+                            onClick={() => retranslateCard(card)}
+                            style={getRepairButtonStyle(
+                              retranslation.loading ||
+                                reEval.loading ||
+                                reEval.applying,
+                            )}
+                          >
+                            {retranslation.loading
+                              ? "Перевожу..."
+                              : "Перевести заново"}
+                          </button>
+                        </div>
+
+                        {retranslation.error ? (
+                          <div
+                            style={{
+                              marginTop: 10,
+                              padding: "9px 10px",
+                              borderRadius: 12,
+                              background: ERROR_BG,
+                              color: ERROR_TEXT,
+                              fontSize: 13,
+                              fontWeight: 700,
+                            }}
+                          >
+                            {retranslation.error}
+                          </div>
+                        ) : null}
+
+                        {retranslation.applied ? (
+                          <div
+                            style={{
+                              marginTop: 10,
+                              padding: "9px 10px",
+                              borderRadius: 12,
+                              background: SUCCESS_BG,
+                              color: SUCCESS_TEXT,
+                              fontSize: 13,
+                              fontWeight: 800,
+                            }}
+                          >
+                            Карточка переведена заново. Текст обновлён.
+                          </div>
+                        ) : null}
 
                         {reEval.error ? (
                           <div
@@ -1388,9 +1608,9 @@ export default function StudioPage() {
                                 lineHeight: 1.45,
                               }}
                             >
-                              Применение меняет только оценочные поля: score,
-                              status, тип угла, evaluation и summary. Текст
-                              карточки не меняется.
+                              Переоценка меняет score, status, тип угла,
+                              evaluation и summary. Перевод заново меняет только
+                              текстовые поля карточки.
                             </p>
                           </div>
                         ) : null}
@@ -1404,8 +1624,8 @@ export default function StudioPage() {
         </div>
 
         <p style={{ margin: "18px 0 0", color: SOFT, fontSize: 12, textAlign: "center" }}>
-          MVP Studio: переоценка и применение оценки. Следующий этап — доработать
-          карточку и добавить материал.
+          MVP Studio: переоценка, применение оценки и ремонт перевода. Следующий
+          этап — доработать карточку и добавить материал.
         </p>
       </div>
     </main>
