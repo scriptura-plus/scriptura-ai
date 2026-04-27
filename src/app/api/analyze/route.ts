@@ -49,6 +49,14 @@ type AngleCardLike = {
   source?: string | null;
 };
 
+type ResearchArticleRecord = {
+  id: string;
+  raw_text: string;
+  title: string | null;
+  raw_json: unknown | null;
+  extraction_status: string | null;
+};
+
 function getString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
@@ -118,6 +126,28 @@ function getModelName(provider: string): string {
   }
 
   return provider;
+}
+
+function getExtraArticleTitle(id: ExtraId, lang: Lang): string {
+  const labels: Record<Lang, Record<ExtraId, string>> = {
+    en: {
+      text_findings: "Textual Discoveries",
+      historical_scene: "Historical Scene",
+      scripture_links: "Scripture Links",
+    },
+    ru: {
+      text_findings: "Текстовые находки",
+      historical_scene: "Историческая сцена",
+      scripture_links: "Связи с другими стихами",
+    },
+    es: {
+      text_findings: "Hallazgos textuales",
+      historical_scene: "Escena histórica",
+      scripture_links: "Conexiones bíblicas",
+    },
+  };
+
+  return labels[lang][id] ?? String(id);
 }
 
 function stripCodeFence(text: string): string {
@@ -247,6 +277,202 @@ function toCandidate(card: AngleCardLike, index: number) {
   };
 }
 
+function getSupabaseRestConfig(): { url: string; key: string } | null {
+  const url =
+    process.env.SUPABASE_URL ||
+    process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    process.env.SUPABASE_PROJECT_URL;
+
+  const key =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_SERVICE_KEY ||
+    process.env.SUPABASE_SERVICE_ROLE;
+
+  if (!url || !key) {
+    console.warn("[RESEARCH_ARTICLES] Supabase REST env vars missing");
+    return null;
+  }
+
+  return {
+    url: url.replace(/\/$/, ""),
+    key,
+  };
+}
+
+function getSupabaseHeaders(key: string, prefer?: string) {
+  return {
+    apikey: key,
+    Authorization: `Bearer ${key}`,
+    "Content-Type": "application/json",
+    ...(prefer ? { Prefer: prefer } : {}),
+  };
+}
+
+async function getResearchArticle(args: {
+  reference: string;
+  lang: Lang;
+  provider: string;
+  articleType: ExtraId;
+}): Promise<ResearchArticleRecord | null> {
+  const config = getSupabaseRestConfig();
+
+  if (!config) return null;
+
+  const url = new URL(`${config.url}/rest/v1/research_articles`);
+  url.searchParams.set(
+    "select",
+    "id,raw_text,title,raw_json,extraction_status",
+  );
+  url.searchParams.set("reference", `eq.${args.reference}`);
+  url.searchParams.set("lang", `eq.${args.lang}`);
+  url.searchParams.set("provider", `eq.${args.provider}`);
+  url.searchParams.set("article_type", `eq.${args.articleType}`);
+  url.searchParams.set("status", "eq.active");
+  url.searchParams.set("order", "created_at.desc");
+  url.searchParams.set("limit", "1");
+
+  try {
+    const response = await fetch(url.toString(), {
+      method: "GET",
+      headers: getSupabaseHeaders(config.key),
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      console.warn("[RESEARCH_ARTICLES] lookup failed", {
+        status: response.status,
+        text,
+      });
+      return null;
+    }
+
+    const rows = (await response.json()) as ResearchArticleRecord[];
+
+    return rows[0] ?? null;
+  } catch (error) {
+    console.warn("[RESEARCH_ARTICLES] lookup crashed", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
+async function saveResearchArticle(args: {
+  reference: string;
+  canonicalRef: string | null;
+  lang: Lang;
+  provider: string;
+  model: string;
+  articleType: ExtraId;
+  title: string;
+  rawText: string;
+}): Promise<ResearchArticleRecord | null> {
+  const config = getSupabaseRestConfig();
+
+  if (!config) return null;
+
+  const parsedReference = parseReference(args.reference);
+  const rawJson = parseCacheableJson(args.rawText);
+
+  const url = new URL(`${config.url}/rest/v1/research_articles`);
+  url.searchParams.set(
+    "on_conflict",
+    "reference,lang,provider,article_type",
+  );
+
+  const payload = {
+    reference: args.reference,
+    canonical_ref: args.canonicalRef,
+    book: parsedReference.book,
+    chapter: parsedReference.chapter,
+    verse: parsedReference.verse,
+    lang: args.lang,
+    provider: args.provider,
+    model: args.model,
+    article_type: args.articleType,
+    title: args.title,
+    raw_text: args.rawText,
+    raw_json: rawJson,
+    status: "active",
+    extraction_status: "pending",
+    extraction_error: null,
+    updated_at: new Date().toISOString(),
+  };
+
+  try {
+    const response = await fetch(url.toString(), {
+      method: "POST",
+      headers: getSupabaseHeaders(
+        config.key,
+        "resolution=merge-duplicates,return=representation",
+      ),
+      body: JSON.stringify(payload),
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      console.warn("[RESEARCH_ARTICLES] save failed", {
+        status: response.status,
+        text,
+      });
+      return null;
+    }
+
+    const rows = (await response.json()) as ResearchArticleRecord[];
+
+    return rows[0] ?? null;
+  } catch (error) {
+    console.warn("[RESEARCH_ARTICLES] save crashed", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
+async function updateResearchArticleExtractionStatus(args: {
+  articleId: string;
+  status: "pending" | "processing" | "extracted" | "failed";
+  error?: string | null;
+}) {
+  const config = getSupabaseRestConfig();
+
+  if (!config) return;
+
+  const url = new URL(`${config.url}/rest/v1/research_articles`);
+  url.searchParams.set("id", `eq.${args.articleId}`);
+
+  try {
+    const response = await fetch(url.toString(), {
+      method: "PATCH",
+      headers: getSupabaseHeaders(config.key),
+      body: JSON.stringify({
+        extraction_status: args.status,
+        extraction_error: args.error ?? null,
+        updated_at: new Date().toISOString(),
+      }),
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      console.warn("[RESEARCH_ARTICLES] extraction status update failed", {
+        articleId: args.articleId,
+        status: args.status,
+        responseStatus: response.status,
+        text,
+      });
+    }
+  } catch (error) {
+    console.warn("[RESEARCH_ARTICLES] extraction status update crashed", {
+      articleId: args.articleId,
+      status: args.status,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 async function buildAnglesResponseFromCards(args: {
   reference: string;
   lang: Lang;
@@ -320,25 +546,29 @@ async function autoIntakeArticle(args: {
   sourceType: string;
   sourceLens: string;
   sourceArticle: string;
-}) {
+}): Promise<{ ok: boolean; error: string | null }> {
   const adminSecret = process.env.ADMIN_SECRET;
 
   if (!adminSecret) {
-    console.warn("[AUTO_INTAKE] skipped: ADMIN_SECRET is not configured", {
+    const error = "ADMIN_SECRET is not configured";
+    console.warn("[AUTO_INTAKE] skipped", {
       reference: args.reference,
       sourceType: args.sourceType,
       sourceLens: args.sourceLens,
+      error,
     });
-    return;
+    return { ok: false, error };
   }
 
   if (!args.sourceArticle.trim()) {
-    console.warn("[AUTO_INTAKE] skipped: empty sourceArticle", {
+    const error = "empty sourceArticle";
+    console.warn("[AUTO_INTAKE] skipped", {
       reference: args.reference,
       sourceType: args.sourceType,
       sourceLens: args.sourceLens,
+      error,
     });
-    return;
+    return { ok: false, error };
   }
 
   try {
@@ -370,6 +600,7 @@ async function autoIntakeArticle(args: {
     const data = await response.json().catch(() => null);
 
     if (!response.ok) {
+      const error = `Extractor failed with status ${response.status}`;
       console.warn("[AUTO_INTAKE] extractor failed", {
         reference: args.reference,
         sourceType: args.sourceType,
@@ -377,7 +608,7 @@ async function autoIntakeArticle(args: {
         status: response.status,
         data,
       });
-      return;
+      return { ok: false, error };
     }
 
     console.log("[AUTO_INTAKE] extractor finished", {
@@ -386,12 +617,57 @@ async function autoIntakeArticle(args: {
       sourceLens: args.sourceLens,
       data,
     });
+
+    return { ok: true, error: null };
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
     console.warn("[AUTO_INTAKE] extractor request crashed", {
       reference: args.reference,
       sourceType: args.sourceType,
       sourceLens: args.sourceLens,
-      error: error instanceof Error ? error.message : String(error),
+      error: message,
+    });
+    return { ok: false, error: message };
+  }
+}
+
+async function runArticleExtractorAndTrack(args: {
+  articleId: string | null;
+  req: Request;
+  reference: string;
+  verseText: string;
+  lang: Lang;
+  provider: string;
+  sourceTitle: string;
+  sourceType: string;
+  sourceLens: string;
+  sourceArticle: string;
+}) {
+  if (args.articleId) {
+    await updateResearchArticleExtractionStatus({
+      articleId: args.articleId,
+      status: "processing",
+      error: null,
+    });
+  }
+
+  const result = await autoIntakeArticle({
+    req: args.req,
+    reference: args.reference,
+    verseText: args.verseText,
+    lang: args.lang,
+    provider: args.provider,
+    sourceTitle: args.sourceTitle,
+    sourceType: args.sourceType,
+    sourceLens: args.sourceLens,
+    sourceArticle: args.sourceArticle,
+  });
+
+  if (args.articleId) {
+    await updateResearchArticleExtractionStatus({
+      articleId: args.articleId,
+      status: result.ok ? "extracted" : "failed",
+      error: result.error,
     });
   }
 }
@@ -576,10 +852,53 @@ export async function POST(req: Request) {
       }
     }
 
+    if (kind === "extra" && isExtraId(id)) {
+      const title = getExtraArticleTitle(id, lang);
+
+      const cachedArticle = await getResearchArticle({
+        reference,
+        lang,
+        provider,
+        articleType: id,
+      });
+
+      if (cachedArticle?.raw_text) {
+        if (
+          cachedArticle.extraction_status === "pending" ||
+          cachedArticle.extraction_status === "failed"
+        ) {
+          after(() =>
+            runArticleExtractorAndTrack({
+              articleId: cachedArticle.id,
+              req,
+              reference,
+              verseText,
+              lang,
+              provider,
+              sourceTitle: title,
+              sourceType: "extra_analysis_article",
+              sourceLens: String(id),
+              sourceArticle: cachedArticle.raw_text,
+            }),
+          );
+        }
+
+        return NextResponse.json({
+          text: cachedArticle.raw_text,
+          cached: true,
+          source: "research_articles",
+          article_id: cachedArticle.id,
+          extraction_status: cachedArticle.extraction_status,
+          canonical_ref: normalizedReference.canonical_ref,
+        });
+      }
+    }
+
     let prompt: string;
     let expectJSON = false;
     let autoIntake:
       | {
+          articleId: string | null;
           sourceTitle: string;
           sourceType: string;
           sourceLens: string;
@@ -594,7 +913,8 @@ export async function POST(req: Request) {
       expectJSON = true;
 
       autoIntake = {
-        sourceTitle: `Углублённый анализ: ${String(id)}`,
+        articleId: null,
+        sourceTitle: getExtraArticleTitle(id, lang),
         sourceType: "extra_analysis_article",
         sourceLens: String(id),
       };
@@ -625,6 +945,7 @@ export async function POST(req: Request) {
       });
 
       autoIntake = {
+        articleId: null,
         sourceTitle: angleTitle,
         sourceType: getString(body?.sourceType) ?? "expanded_article",
         sourceLens: getString(body?.sourceLens) ?? "expand-angle",
@@ -650,6 +971,23 @@ export async function POST(req: Request) {
         last: text[text.length - 1] ?? "(empty)",
         preview: text.slice(0, 2000),
       });
+    }
+
+    if (kind === "extra" && isExtraId(id)) {
+      const savedArticle = await saveResearchArticle({
+        reference,
+        canonicalRef: normalizedReference.canonical_ref,
+        lang,
+        provider,
+        model: getModelName(provider),
+        articleType: id,
+        title: getExtraArticleTitle(id, lang),
+        rawText: text,
+      });
+
+      if (autoIntake && savedArticle?.id) {
+        autoIntake.articleId = savedArticle.id;
+      }
     }
 
     if (shouldUseAnglesCache) {
@@ -693,7 +1031,8 @@ export async function POST(req: Request) {
 
     if (autoIntake) {
       after(() =>
-        autoIntakeArticle({
+        runArticleExtractorAndTrack({
+          articleId: autoIntake.articleId,
           req,
           reference,
           verseText,
@@ -711,6 +1050,7 @@ export async function POST(req: Request) {
       text,
       cached: false,
       canonical_ref: normalizedReference.canonical_ref,
+      article_id: autoIntake?.articleId ?? null,
     });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : "Analysis failed";
