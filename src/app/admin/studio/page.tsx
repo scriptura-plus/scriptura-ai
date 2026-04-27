@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { formatReference } from "@/lib/bible/formatReference";
 
 type Lang = "ru" | "en" | "es";
+type RewriteMode = "polish" | "from_idea";
 
 type VerseSummary = {
   reference: string;
@@ -147,6 +148,7 @@ type RewriteCardResponse = {
   ok?: boolean;
   error?: string;
   mode?: string;
+  rewrite_mode?: RewriteMode;
   changed_database?: boolean;
   card_id?: string;
   reference?: string;
@@ -196,6 +198,7 @@ type RetranslateState = {
 };
 
 type RewriteState = {
+  rewriteMode: RewriteMode;
   instruction: string;
   extraMaterial: string;
   loading: boolean;
@@ -266,6 +269,10 @@ function readableSourceLabel(source: string): string {
   }
 
   if (cleaned.startsWith("initial_angles:openai")) {
+    return "Источник: первичная генерация OpenAI";
+  }
+
+  if (cleaned.startsWith("initial_angles:gpt")) {
     return "Источник: первичная генерация OpenAI";
   }
 
@@ -401,6 +408,22 @@ function getRepairButtonStyle(disabled = false) {
   } as const;
 }
 
+function getModeButtonStyle(active = false, disabled = false) {
+  return {
+    border: `1px solid ${active ? BLUE : "rgba(95, 120, 144, 0.24)"}`,
+    borderRadius: 12,
+    background: active ? BLUE : "#fffaf0",
+    color: active ? "#ffffff" : BLUE_DARK,
+    padding: "9px 10px",
+    cursor: disabled ? "not-allowed" : "pointer",
+    fontSize: 13,
+    fontWeight: 850,
+    fontFamily: "inherit",
+    opacity: disabled ? 0.62 : 1,
+    boxShadow: active ? "0 5px 14px rgba(95, 120, 144, 0.18)" : "none",
+  } as const;
+}
+
 function getEvaluationScore(result: ReEvaluateResponse | RewriteCardResponse | null): number | null {
   const score = result?.evaluation?.score_total;
   return typeof score === "number" && Number.isFinite(score) ? score : null;
@@ -444,6 +467,7 @@ function createEmptyRetranslateState(): RetranslateState {
 
 function createEmptyRewriteState(previous?: RewriteState): RewriteState {
   return {
+    rewriteMode: previous?.rewriteMode ?? "polish",
     instruction: previous?.instruction ?? "",
     extraMaterial: previous?.extraMaterial ?? "",
     loading: false,
@@ -950,6 +974,20 @@ export default function StudioPage() {
     }
   }
 
+  function updateRewriteMode(cardId: string, rewriteMode: RewriteMode) {
+    setRewrites((prev) => ({
+      ...prev,
+      [cardId]: {
+        ...createEmptyRewriteState(prev[cardId]),
+        rewriteMode,
+        result: null,
+        applied: false,
+        error: "",
+        applyError: "",
+      },
+    }));
+  }
+
   function updateRewriteInstruction(cardId: string, instruction: string) {
     setRewrites((prev) => ({
       ...prev,
@@ -987,6 +1025,7 @@ export default function StudioPage() {
       ...prev,
       [card.id]: {
         ...createEmptyRewriteState(prev[card.id]),
+        rewriteMode: state.rewriteMode,
         instruction: state.instruction,
         extraMaterial: state.extraMaterial,
         loading: true,
@@ -1007,6 +1046,7 @@ export default function StudioPage() {
           card_id: card.id,
           lang,
           provider: "openai",
+          rewrite_mode: state.rewriteMode,
           instruction: state.instruction,
           extra_material: state.extraMaterial,
         }),
@@ -1021,6 +1061,7 @@ export default function StudioPage() {
       setRewrites((prev) => ({
         ...prev,
         [card.id]: {
+          rewriteMode: state.rewriteMode,
           instruction: state.instruction,
           extraMaterial: state.extraMaterial,
           loading: false,
@@ -1044,6 +1085,7 @@ export default function StudioPage() {
         ...prev,
         [card.id]: {
           ...createEmptyRewriteState(prev[card.id]),
+          rewriteMode: state.rewriteMode,
           instruction: state.instruction,
           extraMaterial: state.extraMaterial,
           loading: false,
@@ -1074,6 +1116,7 @@ export default function StudioPage() {
       ...prev,
       [card.id]: {
         ...createEmptyRewriteState(prev[card.id]),
+        rewriteMode: prev[card.id]?.rewriteMode ?? "polish",
         instruction: prev[card.id]?.instruction ?? "",
         extraMaterial: prev[card.id]?.extraMaterial ?? "",
         result: prev[card.id]?.result ?? null,
@@ -1157,6 +1200,7 @@ export default function StudioPage() {
       setRewrites((prev) => ({
         ...prev,
         [card.id]: {
+          rewriteMode: prev[card.id]?.rewriteMode ?? "polish",
           instruction: prev[card.id]?.instruction ?? "",
           extraMaterial: prev[card.id]?.extraMaterial ?? "",
           loading: false,
@@ -1174,6 +1218,7 @@ export default function StudioPage() {
         ...prev,
         [card.id]: {
           ...createEmptyRewriteState(prev[card.id]),
+          rewriteMode: prev[card.id]?.rewriteMode ?? "polish",
           instruction: prev[card.id]?.instruction ?? "",
           extraMaterial: prev[card.id]?.extraMaterial ?? "",
           result: prev[card.id]?.result ?? null,
@@ -2020,12 +2065,62 @@ export default function StudioPage() {
                             Доработать карточку
                           </div>
 
+                          <div
+                            style={{
+                              display: "grid",
+                              gridTemplateColumns: "1fr 1fr",
+                              gap: 8,
+                              marginBottom: 9,
+                            }}
+                          >
+                            <button
+                              type="button"
+                              disabled={rewrite.loading || rewrite.applying}
+                              onClick={() => updateRewriteMode(card.id, "polish")}
+                              style={getModeButtonStyle(
+                                rewrite.rewriteMode === "polish",
+                                rewrite.loading || rewrite.applying,
+                              )}
+                            >
+                              Улучшить этот угол
+                            </button>
+
+                            <button
+                              type="button"
+                              disabled={rewrite.loading || rewrite.applying}
+                              onClick={() => updateRewriteMode(card.id, "from_idea")}
+                              style={getModeButtonStyle(
+                                rewrite.rewriteMode === "from_idea",
+                                rewrite.loading || rewrite.applying,
+                              )}
+                            >
+                              Сделать из моей мысли
+                            </button>
+                          </div>
+
+                          <p
+                            style={{
+                              margin: "0 0 9px",
+                              color: SOFT,
+                              fontSize: 12,
+                              lineHeight: 1.45,
+                            }}
+                          >
+                            {rewrite.rewriteMode === "from_idea"
+                              ? "В этом режиме твоя мысль главнее старой карточки. Старая карточка используется только как контекст."
+                              : "В этом режиме главный угол сохраняется, а AI усиливает ясность, текстовую опору и эффект открытия."}
+                          </p>
+
                           <textarea
                             value={rewrite.instruction}
                             onChange={(event) =>
                               updateRewriteInstruction(card.id, event.target.value)
                             }
-                            placeholder="Например: усили вау-эффект, сделай менее очевидно, точнее привяжи к словам стиха, убери общий вывод..."
+                            placeholder={
+                              rewrite.rewriteMode === "from_idea"
+                                ? "Опиши мысль, которую нужно сохранить. Например: главная идея такая-то; нельзя потерять такой-то образ; не уводи мысль в такую-то сторону..."
+                                : "Например: сохрани этот угол, но усили вау-эффект, сделай менее очевидно, точнее привяжи к словам стиха..."
+                            }
                             rows={3}
                             style={{
                               width: "100%",
@@ -2049,7 +2144,11 @@ export default function StudioPage() {
                             onChange={(event) =>
                               updateRewriteExtraMaterial(card.id, event.target.value)
                             }
-                            placeholder="Дополнительный материал необязательно: можно вставить цитату, заметку или мысль, которую надо учесть."
+                            placeholder={
+                              rewrite.rewriteMode === "from_idea"
+                                ? "Текстовая опора / цитата / лексическая заметка / материал для аргументации."
+                                : "Дополнительный материал необязательно: можно вставить цитату, заметку или мысль, которую надо учесть."
+                            }
                             rows={2}
                             style={{
                               width: "100%",
@@ -2124,6 +2223,17 @@ export default function StudioPage() {
                                 }}
                               >
                                 Новый вариант
+                              </div>
+
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginBottom: 8 }}>
+                                <Badge
+                                  text={
+                                    rewrite.rewriteMode === "from_idea"
+                                      ? "Режим: из моей мысли"
+                                      : "Режим: улучшение угла"
+                                  }
+                                  strong
+                                />
                               </div>
 
                               <h4
