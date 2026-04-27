@@ -18,6 +18,11 @@ import {
   getAngleCards,
   getAngleCardsByCanonicalRef,
 } from "@/lib/cache/angleCards";
+import {
+  getResearchArticle,
+  saveResearchArticle,
+  updateResearchArticleExtractionStatus,
+} from "@/lib/cache/researchArticles";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -47,14 +52,6 @@ type AngleCardLike = {
   status?: string | null;
   coverage_type?: string | null;
   source?: string | null;
-};
-
-type ResearchArticleRecord = {
-  id: string;
-  raw_text: string;
-  title: string | null;
-  raw_json: unknown | null;
-  extraction_status: string | null;
 };
 
 function getString(value: unknown): string | null {
@@ -275,202 +272,6 @@ function toCandidate(card: AngleCardLike, index: number) {
     why_it_matters: card.why_it_matters ?? null,
     body: card.body ?? null,
   };
-}
-
-function getSupabaseRestConfig(): { url: string; key: string } | null {
-  const url =
-    process.env.SUPABASE_URL ||
-    process.env.NEXT_PUBLIC_SUPABASE_URL ||
-    process.env.SUPABASE_PROJECT_URL;
-
-  const key =
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.SUPABASE_SERVICE_KEY ||
-    process.env.SUPABASE_SERVICE_ROLE;
-
-  if (!url || !key) {
-    console.warn("[RESEARCH_ARTICLES] Supabase REST env vars missing");
-    return null;
-  }
-
-  return {
-    url: url.replace(/\/$/, ""),
-    key,
-  };
-}
-
-function getSupabaseHeaders(key: string, prefer?: string) {
-  return {
-    apikey: key,
-    Authorization: `Bearer ${key}`,
-    "Content-Type": "application/json",
-    ...(prefer ? { Prefer: prefer } : {}),
-  };
-}
-
-async function getResearchArticle(args: {
-  reference: string;
-  lang: Lang;
-  provider: string;
-  articleType: ExtraId;
-}): Promise<ResearchArticleRecord | null> {
-  const config = getSupabaseRestConfig();
-
-  if (!config) return null;
-
-  const url = new URL(`${config.url}/rest/v1/research_articles`);
-  url.searchParams.set(
-    "select",
-    "id,raw_text,title,raw_json,extraction_status",
-  );
-  url.searchParams.set("reference", `eq.${args.reference}`);
-  url.searchParams.set("lang", `eq.${args.lang}`);
-  url.searchParams.set("provider", `eq.${args.provider}`);
-  url.searchParams.set("article_type", `eq.${args.articleType}`);
-  url.searchParams.set("status", "eq.active");
-  url.searchParams.set("order", "created_at.desc");
-  url.searchParams.set("limit", "1");
-
-  try {
-    const response = await fetch(url.toString(), {
-      method: "GET",
-      headers: getSupabaseHeaders(config.key),
-      cache: "no-store",
-    });
-
-    if (!response.ok) {
-      const text = await response.text().catch(() => "");
-      console.warn("[RESEARCH_ARTICLES] lookup failed", {
-        status: response.status,
-        text,
-      });
-      return null;
-    }
-
-    const rows = (await response.json()) as ResearchArticleRecord[];
-
-    return rows[0] ?? null;
-  } catch (error) {
-    console.warn("[RESEARCH_ARTICLES] lookup crashed", {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return null;
-  }
-}
-
-async function saveResearchArticle(args: {
-  reference: string;
-  canonicalRef: string | null;
-  lang: Lang;
-  provider: string;
-  model: string;
-  articleType: ExtraId;
-  title: string;
-  rawText: string;
-}): Promise<ResearchArticleRecord | null> {
-  const config = getSupabaseRestConfig();
-
-  if (!config) return null;
-
-  const parsedReference = parseReference(args.reference);
-  const rawJson = parseCacheableJson(args.rawText);
-
-  const url = new URL(`${config.url}/rest/v1/research_articles`);
-  url.searchParams.set(
-    "on_conflict",
-    "reference,lang,provider,article_type",
-  );
-
-  const payload = {
-    reference: args.reference,
-    canonical_ref: args.canonicalRef,
-    book: parsedReference.book,
-    chapter: parsedReference.chapter,
-    verse: parsedReference.verse,
-    lang: args.lang,
-    provider: args.provider,
-    model: args.model,
-    article_type: args.articleType,
-    title: args.title,
-    raw_text: args.rawText,
-    raw_json: rawJson,
-    status: "active",
-    extraction_status: "pending",
-    extraction_error: null,
-    updated_at: new Date().toISOString(),
-  };
-
-  try {
-    const response = await fetch(url.toString(), {
-      method: "POST",
-      headers: getSupabaseHeaders(
-        config.key,
-        "resolution=merge-duplicates,return=representation",
-      ),
-      body: JSON.stringify(payload),
-      cache: "no-store",
-    });
-
-    if (!response.ok) {
-      const text = await response.text().catch(() => "");
-      console.warn("[RESEARCH_ARTICLES] save failed", {
-        status: response.status,
-        text,
-      });
-      return null;
-    }
-
-    const rows = (await response.json()) as ResearchArticleRecord[];
-
-    return rows[0] ?? null;
-  } catch (error) {
-    console.warn("[RESEARCH_ARTICLES] save crashed", {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return null;
-  }
-}
-
-async function updateResearchArticleExtractionStatus(args: {
-  articleId: string;
-  status: "pending" | "processing" | "extracted" | "failed";
-  error?: string | null;
-}) {
-  const config = getSupabaseRestConfig();
-
-  if (!config) return;
-
-  const url = new URL(`${config.url}/rest/v1/research_articles`);
-  url.searchParams.set("id", `eq.${args.articleId}`);
-
-  try {
-    const response = await fetch(url.toString(), {
-      method: "PATCH",
-      headers: getSupabaseHeaders(config.key),
-      body: JSON.stringify({
-        extraction_status: args.status,
-        extraction_error: args.error ?? null,
-        updated_at: new Date().toISOString(),
-      }),
-      cache: "no-store",
-    });
-
-    if (!response.ok) {
-      const text = await response.text().catch(() => "");
-      console.warn("[RESEARCH_ARTICLES] extraction status update failed", {
-        articleId: args.articleId,
-        status: args.status,
-        responseStatus: response.status,
-        text,
-      });
-    }
-  } catch (error) {
-    console.warn("[RESEARCH_ARTICLES] extraction status update crashed", {
-      articleId: args.articleId,
-      status: args.status,
-      error: error instanceof Error ? error.message : String(error),
-    });
-  }
 }
 
 async function buildAnglesResponseFromCards(args: {
@@ -974,15 +775,22 @@ export async function POST(req: Request) {
     }
 
     if (kind === "extra" && isExtraId(id)) {
+      const parsedReference = parseReference(reference);
+      const rawJson = parseCacheableJson(text);
+
       const savedArticle = await saveResearchArticle({
         reference,
         canonicalRef: normalizedReference.canonical_ref,
+        book: parsedReference.book,
+        chapter: parsedReference.chapter,
+        verse: parsedReference.verse,
         lang,
         provider,
         model: getModelName(provider),
         articleType: id,
         title: getExtraArticleTitle(id, lang),
         rawText: text,
+        rawJson,
       });
 
       if (autoIntake && savedArticle?.id) {
