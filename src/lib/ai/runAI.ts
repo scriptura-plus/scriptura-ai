@@ -4,6 +4,8 @@ import type { Lang } from "../i18n/dictionary";
 const MISSING_KEY = (envName: string) =>
   `${envName} is not set on the server. Add it to your environment (e.g. .env.local or your Vercel project settings) and restart.`;
 
+const SAFE_OPENAI_MODEL = "gpt-4o-mini";
+
 const LANG_NAME: Record<Lang, string> = {
   en: "English",
   ru: "Russian",
@@ -19,6 +21,24 @@ function systemInstruction(lang: Lang): string {
     `Every sentence of your response must be in ${name}. ` +
     `This rule overrides everything else.`
   );
+}
+
+function getOpenAIModel(): string {
+  const envModel = process.env.OPENAI_MODEL?.trim();
+
+  // Cost-control safety:
+  // GPT-5.5 was useful for quality tests, but it is too expensive for automatic flows.
+  // Even if Vercel still has OPENAI_MODEL=gpt-5.5, do not use it accidentally.
+  if (!envModel) return SAFE_OPENAI_MODEL;
+
+  if (envModel === "gpt-5.5") {
+    console.warn(
+      `[OpenAI] OPENAI_MODEL is set to gpt-5.5, but automatic use is blocked. Falling back to ${SAFE_OPENAI_MODEL}.`,
+    );
+    return SAFE_OPENAI_MODEL;
+  }
+
+  return envModel;
 }
 
 export async function runAI(
@@ -37,10 +57,8 @@ async function runOpenAI(prompt: string, lang: Lang): Promise<string> {
   const key = process.env.OPENAI_API_KEY;
   if (!key) throw new Error(MISSING_KEY("OPENAI_API_KEY"));
 
-  const model = process.env.OPENAI_MODEL || "gpt-5.5";
+  const model = getOpenAIModel();
 
-  // GPT-5-family models require the Responses API (/v1/responses).
-  // Chat Completions rejects temperature != 1 and other legacy params for these models.
   const res = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
@@ -57,8 +75,15 @@ async function runOpenAI(prompt: string, lang: Lang): Promise<string> {
   if (!res.ok) {
     const errBody = await res.text();
     let parsed: Record<string, unknown> = {};
-    try { parsed = JSON.parse(errBody); } catch { /* ignore */ }
+
+    try {
+      parsed = JSON.parse(errBody);
+    } catch {
+      // ignore
+    }
+
     const err = (parsed.error ?? {}) as Record<string, unknown>;
+
     console.error("[OpenAI] API error:", {
       model,
       endpoint: "/v1/responses",
@@ -68,14 +93,15 @@ async function runOpenAI(prompt: string, lang: Lang): Promise<string> {
       code: err.code,
       type: err.type,
     });
+
     throw new Error(`OpenAI error ${res.status}: ${errBody.slice(0, 400)}`);
   }
 
   const data = await res.json();
 
-  // Responses API shape: output[].content[] where type === "output_text"
   type OutputContent = { type?: string; text?: string };
   type OutputItem = { content?: OutputContent[] };
+
   const text = ((data?.output ?? []) as OutputItem[])
     .flatMap((item) => item?.content ?? [])
     .filter((c) => c.type === "output_text")
@@ -84,8 +110,10 @@ async function runOpenAI(prompt: string, lang: Lang): Promise<string> {
     .trim();
 
   if (!text) {
-    console.error("[OpenAI] Empty response from Responses API. output:",
-      JSON.stringify(data?.output).slice(0, 400));
+    console.error(
+      "[OpenAI] Empty response from Responses API. output:",
+      JSON.stringify(data?.output).slice(0, 400),
+    );
   }
 
   return text;
@@ -114,34 +142,36 @@ async function runClaude(prompt: string, lang: Lang): Promise<string> {
     const body = await res.text();
     throw new Error(`Claude error ${res.status}: ${body.slice(0, 400)}`);
   }
+
   const data = await res.json();
   const blocks: Array<{ type?: string; text?: string }> = data?.content ?? [];
   const text = blocks.map((b) => b.text ?? "").join("\n").trim();
+
   return text;
 }
 
-async function runGemini(prompt: string, lang: Lang, expectJSON = false): Promise<string> {
+async function runGemini(
+  prompt: string,
+  lang: Lang,
+  expectJSON = false,
+): Promise<string> {
   const key = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
   if (!key) throw new Error(MISSING_KEY("GEMINI_API_KEY / GOOGLE_API_KEY"));
 
   const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`;
 
-  // Append a strict JSON reminder when structured output is expected
   const finalPrompt = expectJSON
     ? prompt +
       "\n\nCRITICAL: Return ONLY valid JSON. No markdown. No code fences. " +
       "No explanation before or after. The first character must be { or [. The last character must be } or ]."
     : prompt;
 
-  // Structured JSON lenses need more room — angles alone can be ~1500 tokens of JSON.
   const maxOutputTokens = expectJSON ? 8000 : 3000;
+
   const generationConfig: Record<string, unknown> = {
     temperature: 0.7,
     maxOutputTokens,
-    // NOTE: responseMimeType "application/json" is intentionally NOT used here.
-    // Gemini 2.5-flash in JSON mode with complex multi-step prompts often returns
-    // empty parts. We rely on the CRITICAL prompt suffix + fence stripping instead.
   };
 
   const res = await fetch(url, {
@@ -158,35 +188,54 @@ async function runGemini(prompt: string, lang: Lang, expectJSON = false): Promis
     const body = await res.text();
     throw new Error(`Gemini error ${res.status}: ${body.slice(0, 400)}`);
   }
+
   const data = await res.json();
 
-  // Log full response shape for debugging
   const finishReason = data?.candidates?.[0]?.finishReason;
   const blockReason = data?.promptFeedback?.blockReason;
+
   if (finishReason && finishReason !== "STOP") {
-    console.error("[Gemini] Non-STOP finishReason:", finishReason, "blockReason:", blockReason);
+    console.error(
+      "[Gemini] Non-STOP finishReason:",
+      finishReason,
+      "blockReason:",
+      blockReason,
+    );
   }
 
-  // Filter out Gemini 2.5 thinking parts (thought:true) — only keep actual output parts
   const parts: Array<{ text?: string; thought?: boolean }> =
     data?.candidates?.[0]?.content?.parts ?? [];
-  let text = parts.filter((p) => !p.thought).map((p) => p.text ?? "").join("").trim();
+
+  let text = parts
+    .filter((p) => !p.thought)
+    .map((p) => p.text ?? "")
+    .join("")
+    .trim();
 
   if (!text) {
-    console.error("[Gemini] Empty text. finishReason:", finishReason,
-      "blockReason:", blockReason,
-      "candidates:", JSON.stringify(data?.candidates?.slice(0, 1)).slice(0, 400));
+    console.error(
+      "[Gemini] Empty text. finishReason:",
+      finishReason,
+      "blockReason:",
+      blockReason,
+      "candidates:",
+      JSON.stringify(data?.candidates?.slice(0, 1)).slice(0, 400),
+    );
   }
 
-  // Strip any markdown fences Gemini may still include
   if (expectJSON) {
     text = text
       .replace(/^```(?:json)?\s*/im, "")
       .replace(/\s*```\s*$/m, "")
       .trim();
+
     if (text && text[0] !== "{" && text[0] !== "[") {
-      console.error("[Gemini] Expected JSON, unexpected start char:", JSON.stringify(text[0]),
-        "preview:", text.slice(0, 300));
+      console.error(
+        "[Gemini] Expected JSON, unexpected start char:",
+        JSON.stringify(text[0]),
+        "preview:",
+        text.slice(0, 300),
+      );
     }
   }
 
