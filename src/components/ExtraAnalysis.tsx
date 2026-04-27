@@ -189,39 +189,6 @@ function ExtraItem({
 
           {!loading && !error && text ? (
             <>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  marginBottom: 14,
-                }}
-              >
-                <button
-                  type="button"
-                  onClick={shareAnalysis}
-                  style={{
-                    border: "1px solid rgba(95, 120, 144, 0.32)",
-                    borderRadius: 999,
-                    background: "rgba(95, 120, 144, 0.09)",
-                    color: "var(--ink)",
-                    padding: "8px 12px",
-                    cursor: "pointer",
-                    fontSize: 13,
-                    fontWeight: 700,
-                    fontFamily: "inherit",
-                  }}
-                >
-                  {T.share}
-                </button>
-
-                {shareNotice ? (
-                  <span className="muted" style={{ fontSize: 13 }}>
-                    {shareNotice}
-                  </span>
-                ) : null}
-              </div>
-
               {(() => {
                 const blocks = extractBlocks(text);
 
@@ -251,6 +218,41 @@ function ExtraItem({
                   </div>
                 );
               })()}
+
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  marginTop: 18,
+                  paddingTop: 14,
+                  borderTop: "1px solid rgba(120, 91, 54, 0.18)",
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={shareAnalysis}
+                  style={{
+                    border: "1px solid rgba(95, 120, 144, 0.32)",
+                    borderRadius: 999,
+                    background: "rgba(95, 120, 144, 0.09)",
+                    color: "var(--ink)",
+                    padding: "8px 12px",
+                    cursor: "pointer",
+                    fontSize: 13,
+                    fontWeight: 700,
+                    fontFamily: "inherit",
+                  }}
+                >
+                  {T.share}
+                </button>
+
+                {shareNotice ? (
+                  <span className="muted" style={{ fontSize: 13 }}>
+                    {shareNotice}
+                  </span>
+                ) : null}
+              </div>
             </>
           ) : null}
         </div>
