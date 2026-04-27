@@ -1,5 +1,5 @@
 import { runAI } from "@/lib/ai/runAI";
-import { isProvider, defaultProvider } from "@/lib/ai/providers";
+import { isProvider, defaultProvider, type Provider } from "@/lib/ai/providers";
 
 export type AngleCardLang = "ru" | "en" | "es";
 
@@ -60,6 +60,26 @@ function languageName(lang: AngleCardLang): string {
   if (lang === "ru") return "Russian";
   if (lang === "en") return "English";
   return "Spanish";
+}
+
+function chooseTranslationProvider(provider?: Provider): Provider {
+  if (provider && isProvider(provider)) {
+    return provider;
+  }
+
+  const envProvider = process.env.ANGLE_TRANSLATION_PROVIDER;
+
+  if (isProvider(envProvider)) {
+    return envProvider;
+  }
+
+  const fallback = defaultProvider();
+
+  if (fallback !== "openai") {
+    return fallback;
+  }
+
+  return "gemini";
 }
 
 function buildSingleTranslationPrompt(args: {
@@ -139,9 +159,8 @@ async function translateOneLanguage(args: {
   originLang: AngleCardLang;
   targetLang: AngleCardLang;
   card: TranslatableAngleCard;
+  provider: Provider;
 }): Promise<TranslatedAngleCard> {
-  const provider = isProvider("openai") ? "openai" : defaultProvider();
-
   const prompt = buildSingleTranslationPrompt({
     reference: args.reference,
     originLang: args.originLang,
@@ -149,7 +168,7 @@ async function translateOneLanguage(args: {
     card: args.card,
   });
 
-  const text = await runAI(provider, prompt, args.targetLang, true);
+  const text = await runAI(args.provider, prompt, args.targetLang, true);
   const parsed = extractJsonObject(text);
 
   return normalizeSingleTranslatedCard(parsed, args.targetLang);
@@ -158,6 +177,7 @@ async function translateOneLanguage(args: {
 export async function translateAngleCard(args: {
   reference: string;
   originLang: AngleCardLang;
+  provider?: Provider;
   card: TranslatableAngleCard;
 }): Promise<{
   ok: boolean;
@@ -166,6 +186,7 @@ export async function translateAngleCard(args: {
   raw?: unknown;
 }> {
   try {
+    const provider = chooseTranslationProvider(args.provider);
     const cards: TranslatedAngleCard[] = [];
 
     for (const targetLang of TARGET_LANGS) {
@@ -174,6 +195,7 @@ export async function translateAngleCard(args: {
         originLang: args.originLang,
         targetLang,
         card: args.card,
+        provider,
       });
 
       cards.push(translated);
@@ -183,7 +205,10 @@ export async function translateAngleCard(args: {
       ok: true,
       cards,
       error: null,
-      raw: cards,
+      raw: {
+        provider,
+        cards,
+      },
     };
   } catch (error) {
     return {
