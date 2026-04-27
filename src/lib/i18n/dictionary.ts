@@ -26,7 +26,7 @@ export const dictionary = {
       translations: "Translations",
     },
     extra: {
-      title: "Deeper discovery",
+      title: "Explore Deeper",
       text_findings: "Textual Discoveries",
       historical_scene: "Historical Scene",
       scripture_links: "Scripture Links",
@@ -69,7 +69,7 @@ export const dictionary = {
       translations: "Переводы",
     },
     extra: {
-      title: "Глубже найти углы",
+      title: "Исследовать глубже",
       text_findings: "Текстовые находки",
       historical_scene: "Историческая сцена",
       scripture_links: "Связи с другими стихами",
@@ -112,7 +112,7 @@ export const dictionary = {
       translations: "Traducciones",
     },
     extra: {
-      title: "Buscar ángulos más profundos",
+      title: "Explorar más a fondo",
       text_findings: "Hallazgos textuales",
       historical_scene: "Escena histórica",
       scripture_links: "Conexiones bíblicas",
