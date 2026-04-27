@@ -1,103 +1,110 @@
 import {
   LANG_NAME,
   LANG_FENCE,
-  LANG_TAIL,
   EDITORIAL_VOICE,
   JARGON_BAN,
-  OUTPUT_STRUCTURE,
 } from "./editorial";
 import type { Lang } from "./editorial";
 
 export type ExtraId =
-  | "genre"
-  | "rhetorical"
-  | "structure"
-  | "socio"
-  | "intertext"
-  | "linguistic";
+  | "text_findings"
+  | "historical_scene"
+  | "scripture_links";
 
 export const EXTRA_ORDER: ExtraId[] = [
-  "genre",
-  "rhetorical",
-  "structure",
-  "socio",
-  "intertext",
-  "linguistic",
+  "text_findings",
+  "historical_scene",
+  "scripture_links",
 ];
 
 const TASKS: Record<ExtraId, string> = {
-
-  genre:
-    `Task: Analyze the literary genre of this verse in 2–3 discovery blocks.\n\n` +
+  text_findings:
+    `Task: Find the most interesting textual discoveries inside this verse.\n\n` +
+    `This replaces separate genre, rhetoric, structure, and linguistic analysis.\n` +
+    `Do NOT write academic analysis for its own sake.\n` +
+    `Your goal is to find details that could become strong Scriptura AI insight cards.\n\n` +
+    `Look for any of these ONLY if they produce a real discovery:\n` +
+    `- unusual words or phrases\n` +
+    `- Greek/Hebrew words, roots, or idioms\n` +
+    `- word order or sentence movement\n` +
+    `- repetition, contrast, reversal, or tension\n` +
+    `- small connectors such as "for", "but", "therefore", "so that"\n` +
+    `- rhetorical pressure or a hidden turn in the phrase\n` +
+    `- structure that changes meaning\n` +
+    `- a translation gap that hides something interesting\n\n` +
     `For each block:\n` +
-    `- Find one specific thing the genre does in this verse that would surprise a modern reader\n` +
-    `- Show what the genre promises its original audience — and where this verse fulfills or breaks that promise\n` +
-    `- Write in dinner-table style: smart, direct, no academic throat-clearing\n\n` +
-    `REJECT any block that could be written without knowing this specific verse.\n\n` +
+    `- Lead with one concrete textual observation\n` +
+    `- Anchor it in an exact word or phrase from the verse\n` +
+    `- Explain why it is surprising or easy to miss\n` +
+    `- Show what meaning shift it creates\n` +
+    `- If Greek/Hebrew is used, be cautious: do not overclaim beyond what the word can support\n` +
+    `- End with a possible insight-card angle in plain language\n\n` +
+    `REJECT anything that sounds like:\n` +
+    `- "the genre is..." without a discovery\n` +
+    `- "the structure emphasizes..." without showing exactly how\n` +
+    `- "this rhetorical device creates emphasis" without a concrete effect\n` +
+    `- a grammar note that does not change how the verse reads\n\n` +
+    `If only one strong textual finding exists, give one block. Do not pad.\n` +
+    `If no strong textual finding exists, return one honest block explaining that no strong textual discovery was found.\n\n` +
     `Return JSON only:\n` +
     `{"blocks":[{"title":"...","body":"..."},{"title":"...","body":"..."}]}\n` +
-    `2–3 blocks. All strings in TARGET_LANGUAGE. JSON only, no markdown fences.`,
+    `1–5 blocks. All strings in TARGET_LANGUAGE. JSON only, no markdown fences.`,
 
-  rhetorical:
-    `Task: Find 2–3 rhetorical devices in this verse that actually do something surprising.\n\n` +
+  historical_scene:
+    `Task: Find social, historical, or cultural details that make this verse sharper.\n\n` +
+    `Do NOT give general background.\n` +
+    `Do NOT write an encyclopedia paragraph.\n` +
+    `Your goal is to reconstruct the scene only where it changes how a specific word, phrase, action, or conflict in this verse is heard.\n\n` +
+    `Look for details such as:\n` +
+    `- social status of the people involved\n` +
+    `- customs, public expectations, shame/honor, table fellowship, family roles, legal settings, temple/synagogue setting\n` +
+    `- political or economic pressure\n` +
+    `- the original audience's assumptions\n` +
+    `- what would have sounded scandalous, comforting, sharp, or unexpected\n\n` +
     `For each block:\n` +
-    `- Name the exact phrase where the device operates\n` +
-    `- Show what the device produces — not "this creates emphasis" but precisely how it shifts the reader's experience\n` +
-    `- Go deep on 1 device rather than listing many shallowly\n` +
-    `- Write in dinner-table style: smart, direct, concrete\n\n` +
-    `REJECT any block that names a device without showing its specific effect in this verse.\n\n` +
+    `- Lead with one precise scene-detail\n` +
+    `- Connect it to an exact word, phrase, action, or conflict in the verse\n` +
+    `- Explain what a modern reader would likely miss\n` +
+    `- Show how the detail changes the force of the verse\n` +
+    `- End with a possible insight-card angle in plain language\n\n` +
+    `REJECT any block that gives background without changing how this verse reads.\n` +
+    `REJECT vague lines like "in ancient times people valued..." unless tied to a precise phrase.\n\n` +
+    `If only one strong scene-detail exists, give one block. Do not pad.\n` +
+    `If no strong historical scene-detail exists, return one honest block explaining that no strong scene-based discovery was found.\n\n` +
     `Return JSON only:\n` +
     `{"blocks":[{"title":"...","body":"..."},{"title":"...","body":"..."}]}\n` +
-    `2–3 blocks. All strings in TARGET_LANGUAGE. JSON only, no markdown fences.`,
+    `1–5 blocks. All strings in TARGET_LANGUAGE. JSON only, no markdown fences.`,
 
-  structure:
-    `Task: Map the internal structure of this verse in 2–3 discovery blocks.\n\n` +
+  scripture_links:
+    `Task: Find Scripture-to-Scripture connections that illuminate this verse.\n\n` +
+    `Do NOT drift into a separate topic.\n` +
+    `The purpose is not to list cross-references.\n` +
+    `The purpose is to find links that reveal something about THIS verse.\n\n` +
+    `Look for different kinds of biblical links:\n` +
+    `- direct quotation\n` +
+    `- clear allusion\n` +
+    `- repeated phrase or formula\n` +
+    `- shared image or motif\n` +
+    `- contrastive episode\n` +
+    `- earlier/later development of the same theme\n` +
+    `- a character or event that makes this verse more vivid\n` +
+    `- a biblical example where the same principle is embodied or ignored\n\n` +
     `For each block:\n` +
-    `- Show what the arrangement produces — not "first this, then that" but why the order matters\n` +
-    `- Ask: what would the verse lose if reordered? What does the structure make feel inevitable?\n` +
-    `- Zoom out: what structural work does this verse do inside the larger argument?\n` +
-    `- Write in dinner-table style: smart, direct, concrete\n\n` +
-    `REJECT any block that describes structure without connecting it to meaning.\n\n` +
+    `- Name the linked passage clearly\n` +
+    `- Identify the type of link\n` +
+    `- Show the exact point of contact with this verse\n` +
+    `- Explain what becomes clearer in this verse when the texts are heard together\n` +
+    `- End with a possible insight-card angle in plain language\n\n` +
+    `Strict filter:\n` +
+    `A link is useful only if it opens a detail of the starting verse.\n` +
+    `If the linked passage becomes the main topic, reject it.\n` +
+    `If the connection is generic, reject it.\n\n` +
+    `Give as many strong links as exist, but do not pad.\n` +
+    `Usually 2–7 blocks is enough.\n` +
+    `If no strong link exists, return one honest block explaining that no strong Scripture-link was found.\n\n` +
     `Return JSON only:\n` +
     `{"blocks":[{"title":"...","body":"..."},{"title":"...","body":"..."}]}\n` +
-    `2–3 blocks. All strings in TARGET_LANGUAGE. JSON only, no markdown fences.`,
-
-  socio:
-    `Task: Reconstruct 2–3 things the original audience knew that a modern reader misses.\n\n` +
-    `For each block:\n` +
-    `- Lead with one precise social, historical, or cultural detail\n` +
-    `- Show exactly how it lands on a specific word or phrase in this verse\n` +
-    `- Make it feel revelatory — not encyclopedic\n` +
-    `- Write in dinner-table style: "here's what's interesting — ancient readers would have heard X"\n\n` +
-    `REJECT any block that gives generic historical background without changing how a specific word reads.\n\n` +
-    `Return JSON only:\n` +
-    `{"blocks":[{"title":"...","body":"..."},{"title":"...","body":"..."}]}\n` +
-    `2–3 blocks. All strings in TARGET_LANGUAGE. JSON only, no markdown fences.`,
-
-  intertext:
-    `Task: Find 2–3 intertextual connections that actually change how this verse reads.\n\n` +
-    `For each block:\n` +
-    `- Name the connection clearly\n` +
-    `- Show what new meaning emerges when the two texts are heard together\n` +
-    `- Do not settle for "this echoes Genesis" — show what the echo does\n` +
-    `- Write in dinner-table style: smart, direct, surprising\n\n` +
-    `REJECT any connection that does not change how the verse reads.\n\n` +
-    `Return JSON only:\n` +
-    `{"blocks":[{"title":"...","body":"..."},{"title":"...","body":"..."}]}\n` +
-    `2–3 blocks. All strings in TARGET_LANGUAGE. JSON only, no markdown fences.`,
-
-  linguistic:
-    `Task: Do a close linguistic analysis in 2–3 discovery blocks.\n\n` +
-    `For each block:\n` +
-    `- Cite the original Greek or Hebrew word with transliteration\n` +
-    `- Show what it carries that the translation cannot capture\n` +
-    `- Show how that gap changes what a reader understands\n` +
-    `- Write as discoveries, not grammar notes\n` +
-    `- Dinner-table style: "the translation gives you X — the Greek says something closer to Y"\n\n` +
-    `REJECT any block that describes a word without showing what the translation loses.\n\n` +
-    `Return JSON only:\n` +
-    `{"blocks":[{"title":"...","body":"..."},{"title":"...","body":"..."}]}\n` +
-    `2–3 blocks. All strings in TARGET_LANGUAGE. JSON only, no markdown fences.`,
+    `1–7 blocks. All strings in TARGET_LANGUAGE. JSON only, no markdown fences.`,
 };
 
 export function buildExtraPrompt(args: {
