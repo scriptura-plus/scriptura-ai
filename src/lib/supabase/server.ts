@@ -16,7 +16,11 @@ export function createPublicClient() {
 // Never use this client in client components.
 export function createAdminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  const key =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_ROLE_KEY ||
+    process.env.SUPABASE_SERVICE_KEY;
 
   if (!url || !key) return null;
 
