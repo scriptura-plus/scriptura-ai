@@ -136,6 +136,50 @@ type RetranslateCardResponse = {
   card?: Partial<StudioCard>;
 };
 
+type RewrittenCard = {
+  title: string;
+  anchor: string | null;
+  teaser: string;
+  why_it_matters: string | null;
+};
+
+type RewriteCardResponse = {
+  ok?: boolean;
+  error?: string;
+  mode?: string;
+  changed_database?: boolean;
+  card_id?: string;
+  reference?: string;
+  canonical_ref?: string | null;
+  lang?: Lang;
+  verse_text_source?: "request" | "getVerseText";
+  verse_text_preview?: string;
+  instruction?: string;
+  original_card?: Partial<StudioCard>;
+  rewritten_card?: RewrittenCard;
+  evaluation?: ReEvaluation;
+};
+
+type ApplyRewriteResponse = {
+  ok?: boolean;
+  error?: string;
+  changed_database?: boolean;
+  mode?: string;
+  card_id?: string;
+  translation_group_id?: string;
+  origin_lang?: Lang;
+  updated_ids?: string[];
+  inserted_ids?: string[];
+  applied?: {
+    score_total?: number | null;
+    status?: string;
+    rank?: number | null;
+    coverage_type?: string | null;
+    angle_summary?: string | null;
+  };
+  card?: Partial<StudioCard>;
+};
+
 type ReEvaluateState = {
   loading: boolean;
   applying: boolean;
@@ -149,6 +193,17 @@ type RetranslateState = {
   loading: boolean;
   applied: boolean;
   error: string;
+};
+
+type RewriteState = {
+  instruction: string;
+  extraMaterial: string;
+  loading: boolean;
+  applying: boolean;
+  applied: boolean;
+  error: string;
+  applyError: string;
+  result: RewriteCardResponse | null;
 };
 
 const BLUE = "#5f7890";
@@ -191,22 +246,86 @@ function cleanSource(source: string): string {
     .replace("word_card_article", "word");
 }
 
+function readableSourceLabel(source: string): string {
+  const cleaned = cleanSource(source);
+
+  if (cleaned === "word") return "Источник: Word Lens";
+  if (cleaned === "context") return "Источник: Context Lens";
+  if (cleaned === "intertext") return "Источник: межтекстовая линза";
+  if (cleaned === "socio") return "Источник: социально-историческая линза";
+  if (cleaned === "genre") return "Источник: жанровая линза";
+  if (cleaned === "rhetoric") return "Источник: риторическая линза";
+  if (cleaned === "structure") return "Источник: структурная линза";
+
+  if (cleaned.startsWith("initial_angles:gemini")) {
+    return "Источник: первичная генерация Gemini";
+  }
+
+  if (cleaned.startsWith("initial_angles:claude")) {
+    return "Источник: первичная генерация Claude";
+  }
+
+  if (cleaned.startsWith("initial_angles:openai")) {
+    return "Источник: первичная генерация OpenAI";
+  }
+
+  if (cleaned === "generated_candidates_v2") {
+    return "Источник: ручная генерация кандидатов";
+  }
+
+  if (cleaned === "generated_candidates_v1") {
+    return "Источник: старая генерация кандидатов";
+  }
+
+  if (cleaned === "manual") return "Источник: ручная обработка";
+  if (cleaned === "manual_test") return "Источник: ручной тест";
+  if (cleaned === "studio_rewrite") return "Источник: доработка в Studio";
+  if (cleaned === "unknown") return "Источник: неизвестно";
+
+  return `Источник: ${cleaned}`;
+}
+
 function sourceLabel(sources: string[]): string {
-  if (!sources.length) return "unknown";
-  return sources.map(cleanSource).join(", ");
+  if (!sources.length) return "Источник: неизвестно";
+  return sources.map(readableSourceLabel).join(", ");
 }
 
 function statusLabel(status: string): string {
-  if (status === "featured") return "featured";
-  if (status === "reserve") return "reserve";
-  if (status === "hidden") return "hidden";
-  if (status === "rejected") return "rejected";
-  if (status === "rewrite") return "rewrite";
+  if (status === "featured") return "Статус: активная";
+  if (status === "reserve") return "Статус: запас";
+  if (status === "hidden") return "Статус: скрыта";
+  if (status === "rejected") return "Статус: отклонена";
+  if (status === "rewrite") return "Статус: на доработку";
+  return `Статус: ${status}`;
+}
+
+function shortStatusLabel(status: string): string {
+  if (status === "featured") return "активных";
+  if (status === "reserve") return "в запасе";
+  if (status === "hidden") return "скрытых";
+  if (status === "rejected") return "отклонённых";
+  if (status === "rewrite") return "на доработке";
   return status;
 }
 
+function coverageLabel(type: string | null): string | null {
+  if (!type) return null;
+
+  if (type === "lexical") return "Тип: слово / лексика";
+  if (type === "grammatical") return "Тип: грамматика";
+  if (type === "structural") return "Тип: структура";
+  if (type === "contextual") return "Тип: контекст";
+  if (type === "translation") return "Тип: перевод";
+  if (type === "rhetorical") return "Тип: риторика";
+  if (type === "historical") return "Тип: история";
+  if (type === "conceptual") return "Тип: идея";
+  if (type === "other") return "Тип: другое";
+
+  return `Тип: ${type}`;
+}
+
 function getCardSource(card: StudioCard): string {
-  return cleanSource(card.source_model || card.source_type || "unknown");
+  return readableSourceLabel(card.source_model || card.source_type || "unknown");
 }
 
 function getButtonStyle(active = false, disabled = false) {
@@ -265,7 +384,9 @@ function getApplyButtonStyle(disabled = false) {
 
 function getRepairButtonStyle(disabled = false) {
   return {
-    border: `1px solid ${disabled ? "rgba(138, 99, 48, 0.2)" : "rgba(138, 99, 48, 0.38)"}`,
+    border: `1px solid ${
+      disabled ? "rgba(138, 99, 48, 0.2)" : "rgba(138, 99, 48, 0.38)"
+    }`,
     borderRadius: 999,
     background: disabled ? "#eee8dc" : WARNING_BG,
     color: WARNING_TEXT,
@@ -280,22 +401,22 @@ function getRepairButtonStyle(disabled = false) {
   } as const;
 }
 
-function getEvaluationScore(result: ReEvaluateResponse | null): number | null {
+function getEvaluationScore(result: ReEvaluateResponse | RewriteCardResponse | null): number | null {
   const score = result?.evaluation?.score_total;
   return typeof score === "number" && Number.isFinite(score) ? score : null;
 }
 
-function getEvaluationPlacement(result: ReEvaluateResponse | null): string | null {
+function getEvaluationPlacement(result: ReEvaluateResponse | RewriteCardResponse | null): string | null {
   const placement = result?.evaluation?.placement;
   return typeof placement === "string" && placement.trim() ? placement.trim() : null;
 }
 
-function getEvaluationReason(result: ReEvaluateResponse | null): string | null {
+function getEvaluationReason(result: ReEvaluateResponse | RewriteCardResponse | null): string | null {
   const reason = result?.evaluation?.reason;
   return typeof reason === "string" && reason.trim() ? reason.trim() : null;
 }
 
-function getEvaluationRisk(result: ReEvaluateResponse | null): string | null {
+function getEvaluationRisk(result: ReEvaluateResponse | RewriteCardResponse | null): string | null {
   const risk = result?.evaluation?.risk;
   return typeof risk === "string" && risk.trim() ? risk.trim() : null;
 }
@@ -318,6 +439,19 @@ function createEmptyRetranslateState(): RetranslateState {
     loading: false,
     applied: false,
     error: "",
+  };
+}
+
+function createEmptyRewriteState(previous?: RewriteState): RewriteState {
+  return {
+    instruction: previous?.instruction ?? "",
+    extraMaterial: previous?.extraMaterial ?? "",
+    loading: false,
+    applying: false,
+    applied: false,
+    error: "",
+    applyError: "",
+    result: previous?.result ?? null,
   };
 }
 
@@ -384,6 +518,8 @@ export default function StudioPage() {
   const [retranslations, setRetranslations] = useState<
     Record<string, RetranslateState>
   >({});
+
+  const [rewrites, setRewrites] = useState<Record<string, RewriteState>>({});
 
   const selectedVerse = useMemo(() => {
     return verses.find((verse) => verse.reference === selectedReference) ?? null;
@@ -481,6 +617,7 @@ export default function StudioPage() {
     setCardsError("");
     setReEvaluations({});
     setRetranslations({});
+    setRewrites({});
     setNotice(`Открываю ${displayReference(verse)}...`);
     try {
       const params = new URLSearchParams({
@@ -807,6 +944,244 @@ export default function StudioPage() {
             error instanceof Error
               ? error.message
               : "Не удалось перевести карточку заново.",
+        },
+      }));
+      setNotice("");
+    }
+  }
+
+  function updateRewriteInstruction(cardId: string, instruction: string) {
+    setRewrites((prev) => ({
+      ...prev,
+      [cardId]: {
+        ...createEmptyRewriteState(prev[cardId]),
+        instruction,
+      },
+    }));
+  }
+
+  function updateRewriteExtraMaterial(cardId: string, extraMaterial: string) {
+    setRewrites((prev) => ({
+      ...prev,
+      [cardId]: {
+        ...createEmptyRewriteState(prev[cardId]),
+        extraMaterial,
+      },
+    }));
+  }
+
+  async function previewRewrite(card: StudioCard) {
+    const state = rewrites[card.id] ?? createEmptyRewriteState();
+
+    if (!state.instruction.trim()) {
+      setCardsError("Напиши инструкцию для доработки карточки.");
+      return;
+    }
+
+    if (!adminSecret.trim()) {
+      setCardsError("Вставь Admin Secret.");
+      return;
+    }
+
+    setRewrites((prev) => ({
+      ...prev,
+      [card.id]: {
+        ...createEmptyRewriteState(prev[card.id]),
+        instruction: state.instruction,
+        extraMaterial: state.extraMaterial,
+        loading: true,
+        applied: false,
+      },
+    }));
+
+    setNotice(`Готовлю доработку карточки: ${card.title}`);
+
+    try {
+      const response = await fetch("/api/admin/studio/rewrite-card", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-secret": adminSecret,
+        },
+        body: JSON.stringify({
+          card_id: card.id,
+          lang,
+          provider: "openai",
+          instruction: state.instruction,
+          extra_material: state.extraMaterial,
+        }),
+      });
+
+      const data = (await response.json()) as RewriteCardResponse;
+
+      if (!response.ok || !data.ok || !data.rewritten_card || !data.evaluation) {
+        throw new Error(data.error || "Не удалось подготовить доработку.");
+      }
+
+      setRewrites((prev) => ({
+        ...prev,
+        [card.id]: {
+          instruction: state.instruction,
+          extraMaterial: state.extraMaterial,
+          loading: false,
+          applying: false,
+          applied: false,
+          error: "",
+          applyError: "",
+          result: data,
+        },
+      }));
+
+      const newScore = getEvaluationScore(data);
+      const placement = getEvaluationPlacement(data);
+      setNotice(
+        `Доработка готова: ${
+          newScore === null ? "без score" : `score ${newScore}`
+        }${placement ? ` / ${placement}` : ""}.`,
+      );
+    } catch (error) {
+      setRewrites((prev) => ({
+        ...prev,
+        [card.id]: {
+          ...createEmptyRewriteState(prev[card.id]),
+          instruction: state.instruction,
+          extraMaterial: state.extraMaterial,
+          loading: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Не удалось подготовить доработку.",
+        },
+      }));
+      setNotice("");
+    }
+  }
+
+  async function applyRewrite(card: StudioCard) {
+    const state = rewrites[card.id];
+
+    if (!state?.result?.rewritten_card || !state.result.evaluation) {
+      setCardsError("Сначала сделай вариант доработки.");
+      return;
+    }
+
+    if (!adminSecret.trim()) {
+      setCardsError("Вставь Admin Secret.");
+      return;
+    }
+
+    setRewrites((prev) => ({
+      ...prev,
+      [card.id]: {
+        ...createEmptyRewriteState(prev[card.id]),
+        instruction: prev[card.id]?.instruction ?? "",
+        extraMaterial: prev[card.id]?.extraMaterial ?? "",
+        result: prev[card.id]?.result ?? null,
+        applying: true,
+      },
+    }));
+
+    setNotice(`Применяю доработку RU/EN/ES: ${card.title}`);
+
+    try {
+      const response = await fetch("/api/admin/studio/apply-card-rewrite", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-secret": adminSecret,
+        },
+        body: JSON.stringify({
+          card_id: card.id,
+          lang,
+          rewritten_card: state.result.rewritten_card,
+          evaluation: state.result.evaluation,
+        }),
+      });
+
+      const data = (await response.json()) as ApplyRewriteResponse;
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || "Не удалось применить доработку.");
+      }
+
+      setCards((prevCards) => {
+        const nextCards = prevCards.map((current) => {
+          if (current.id !== card.id) return current;
+
+          return {
+            ...current,
+            title:
+              typeof data.card?.title === "string"
+                ? data.card.title
+                : state.result?.rewritten_card?.title ?? current.title,
+            anchor:
+              data.card?.anchor !== undefined
+                ? data.card.anchor ?? null
+                : state.result?.rewritten_card?.anchor ?? current.anchor,
+            teaser:
+              typeof data.card?.teaser === "string"
+                ? data.card.teaser
+                : state.result?.rewritten_card?.teaser ?? current.teaser,
+            why_it_matters:
+              data.card?.why_it_matters !== undefined
+                ? data.card.why_it_matters ?? null
+                : state.result?.rewritten_card?.why_it_matters ?? current.why_it_matters,
+            score_total:
+              typeof data.applied?.score_total === "number"
+                ? data.applied.score_total
+                : current.score_total,
+            status: data.applied?.status ?? current.status,
+            rank:
+              typeof data.applied?.rank === "number" || data.applied?.rank === null
+                ? data.applied.rank
+                : current.rank,
+            coverage_type:
+              data.applied?.coverage_type === undefined
+                ? current.coverage_type
+                : data.applied.coverage_type,
+            angle_summary:
+              data.applied?.angle_summary === undefined
+                ? current.angle_summary
+                : data.applied.angle_summary,
+            updated_at:
+              typeof data.card?.updated_at === "string"
+                ? data.card.updated_at
+                : new Date().toISOString(),
+          };
+        });
+
+        setCardsSummary(summarizeCards(nextCards));
+        return nextCards;
+      });
+
+      setRewrites((prev) => ({
+        ...prev,
+        [card.id]: {
+          instruction: prev[card.id]?.instruction ?? "",
+          extraMaterial: prev[card.id]?.extraMaterial ?? "",
+          loading: false,
+          applying: false,
+          applied: true,
+          error: "",
+          applyError: "",
+          result: prev[card.id]?.result ?? null,
+        },
+      }));
+
+      setNotice("Доработка применена. RU/EN/ES версии обновлены.");
+    } catch (error) {
+      setRewrites((prev) => ({
+        ...prev,
+        [card.id]: {
+          ...createEmptyRewriteState(prev[card.id]),
+          instruction: prev[card.id]?.instruction ?? "",
+          extraMaterial: prev[card.id]?.extraMaterial ?? "",
+          result: prev[card.id]?.result ?? null,
+          applying: false,
+          applyError:
+            error instanceof Error
+              ? error.message
+              : "Не удалось применить доработку.",
         },
       }));
       setNotice("");
@@ -1142,12 +1517,12 @@ export default function StudioPage() {
                         marginBottom: 7,
                       }}
                     >
-                      <Badge text={`${verse.featured_count} featured`} />
+                      <Badge text={`${verse.featured_count} ${shortStatusLabel("featured")}`} />
                       {verse.reserve_count > 0 ? (
-                        <Badge text={`${verse.reserve_count} reserve`} />
+                        <Badge text={`${verse.reserve_count} ${shortStatusLabel("reserve")}`} />
                       ) : null}
                       {verse.best_score !== null ? (
-                        <Badge text={`best ${verse.best_score}`} />
+                        <Badge text={`лучшая оценка: ${verse.best_score}`} />
                       ) : null}
                     </div>
                     <div style={{ fontSize: 13, color: SOFT, lineHeight: 1.45 }}>
@@ -1200,15 +1575,15 @@ export default function StudioPage() {
 
             {cardsSummary ? (
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 13 }}>
-                <Badge text={`${cardsSummary.featured} featured`} strong />
+                <Badge text={`${cardsSummary.featured} ${shortStatusLabel("featured")}`} strong />
                 {cardsSummary.reserve > 0 ? (
-                  <Badge text={`${cardsSummary.reserve} reserve`} />
+                  <Badge text={`${cardsSummary.reserve} ${shortStatusLabel("reserve")}`} />
                 ) : null}
                 {cardsSummary.hidden > 0 ? (
-                  <Badge text={`${cardsSummary.hidden} hidden`} />
+                  <Badge text={`${cardsSummary.hidden} ${shortStatusLabel("hidden")}`} />
                 ) : null}
                 {cardsSummary.best_score !== null ? (
-                  <Badge text={`best ${cardsSummary.best_score}`} />
+                  <Badge text={`лучшая оценка: ${cardsSummary.best_score}`} />
                 ) : null}
                 <Badge text={sourceLabel(cardsSummary.sources)} />
               </div>
@@ -1274,12 +1649,23 @@ export default function StudioPage() {
                 const reEval = reEvaluations[card.id] ?? createEmptyReEvaluateState();
                 const retranslation =
                   retranslations[card.id] ?? createEmptyRetranslateState();
+                const rewrite = rewrites[card.id] ?? createEmptyRewriteState();
 
                 const newScore = getEvaluationScore(reEval.result);
                 const newPlacement = getEvaluationPlacement(reEval.result);
                 const reason = getEvaluationReason(reEval.result);
                 const risk = getEvaluationRisk(reEval.result);
                 const canApply = Boolean(reEval.result?.evaluation && !reEval.applied);
+
+                const rewriteScore = getEvaluationScore(rewrite.result);
+                const rewritePlacement = getEvaluationPlacement(rewrite.result);
+                const rewriteReason = getEvaluationReason(rewrite.result);
+                const rewriteRisk = getEvaluationRisk(rewrite.result);
+                const canApplyRewrite = Boolean(
+                  rewrite.result?.rewritten_card &&
+                    rewrite.result.evaluation &&
+                    !rewrite.applied,
+                );
 
                 return (
                   <article
@@ -1330,7 +1716,9 @@ export default function StudioPage() {
 
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginBottom: 9 }}>
                       <Badge text={statusLabel(card.status)} strong />
-                      {card.coverage_type ? <Badge text={card.coverage_type} /> : null}
+                      {coverageLabel(card.coverage_type) ? (
+                        <Badge text={coverageLabel(card.coverage_type) ?? ""} />
+                      ) : null}
                       <Badge text={getCardSource(card)} />
                     </div>
 
@@ -1391,13 +1779,15 @@ export default function StudioPage() {
                       >
                         <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginBottom: 9 }}>
                           <Badge
-                            text={`текущая: ${
+                            text={`Текущая оценка: ${
                               card.score_total === null ? "—" : card.score_total
                             }`}
                             strong
                           />
-                          <Badge text={`статус: ${statusLabel(card.status)}`} />
-                          {card.coverage_type ? <Badge text={`тип: ${card.coverage_type}`} /> : null}
+                          <Badge text={statusLabel(card.status)} />
+                          {coverageLabel(card.coverage_type) ? (
+                            <Badge text={coverageLabel(card.coverage_type) ?? ""} />
+                          ) : null}
                         </div>
 
                         <p
@@ -1419,13 +1809,17 @@ export default function StudioPage() {
                             disabled={
                               reEval.loading ||
                               reEval.applying ||
-                              retranslation.loading
+                              retranslation.loading ||
+                              rewrite.loading ||
+                              rewrite.applying
                             }
                             onClick={() => reEvaluateCard(card)}
                             style={getSmallButtonStyle(
                               reEval.loading ||
                                 reEval.applying ||
-                                retranslation.loading,
+                                retranslation.loading ||
+                                rewrite.loading ||
+                                rewrite.applying,
                             )}
                           >
                             {reEval.loading ? "Оцениваю..." : "Переоценить"}
@@ -1436,13 +1830,17 @@ export default function StudioPage() {
                             disabled={
                               retranslation.loading ||
                               reEval.loading ||
-                              reEval.applying
+                              reEval.applying ||
+                              rewrite.loading ||
+                              rewrite.applying
                             }
                             onClick={() => retranslateCard(card)}
                             style={getRepairButtonStyle(
                               retranslation.loading ||
                                 reEval.loading ||
-                                reEval.applying,
+                                reEval.applying ||
+                                rewrite.loading ||
+                                rewrite.applying,
                             )}
                           >
                             {retranslation.loading
@@ -1518,12 +1916,12 @@ export default function StudioPage() {
                               }}
                             >
                               <Badge
-                                text={`новая: ${newScore === null ? "—" : newScore}`}
+                                text={`Новая оценка: ${newScore === null ? "—" : newScore}`}
                                 strong
                               />
-                              {newPlacement ? <Badge text={`предложение: ${newPlacement}`} /> : null}
+                              {newPlacement ? <Badge text={`Предложение: ${newPlacement}`} /> : null}
                               {reEval.result.verse_text_source ? (
-                                <Badge text={`verse: ${reEval.result.verse_text_source}`} />
+                                <Badge text={`Текст стиха: ${reEval.result.verse_text_source}`} />
                               ) : null}
                             </div>
 
@@ -1599,21 +1997,280 @@ export default function StudioPage() {
                                 {reEval.applyError}
                               </div>
                             ) : null}
-
-                            <p
-                              style={{
-                                margin: "10px 0 0",
-                                color: SOFT,
-                                fontSize: 12,
-                                lineHeight: 1.45,
-                              }}
-                            >
-                              Переоценка меняет score, status, тип угла,
-                              evaluation и summary. Перевод заново меняет только
-                              текстовые поля карточки.
-                            </p>
                           </div>
                         ) : null}
+
+                        <div
+                          style={{
+                            marginTop: 12,
+                            padding: 11,
+                            borderRadius: 13,
+                            background: "#fffaf0",
+                            border: `1px solid ${LINE}`,
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontSize: 13,
+                              fontWeight: 900,
+                              color: BLUE_DARK,
+                              marginBottom: 8,
+                            }}
+                          >
+                            Доработать карточку
+                          </div>
+
+                          <textarea
+                            value={rewrite.instruction}
+                            onChange={(event) =>
+                              updateRewriteInstruction(card.id, event.target.value)
+                            }
+                            placeholder="Например: усили вау-эффект, сделай менее очевидно, точнее привяжи к словам стиха, убери общий вывод..."
+                            rows={3}
+                            style={{
+                              width: "100%",
+                              boxSizing: "border-box",
+                              border: `1px solid ${LINE}`,
+                              borderRadius: 12,
+                              padding: "10px 11px",
+                              background: "#fffaf0",
+                              color: INK,
+                              fontSize: 13,
+                              lineHeight: 1.45,
+                              fontFamily: "inherit",
+                              resize: "vertical",
+                              outlineColor: BLUE,
+                              marginBottom: 8,
+                            }}
+                          />
+
+                          <textarea
+                            value={rewrite.extraMaterial}
+                            onChange={(event) =>
+                              updateRewriteExtraMaterial(card.id, event.target.value)
+                            }
+                            placeholder="Дополнительный материал необязательно: можно вставить цитату, заметку или мысль, которую надо учесть."
+                            rows={2}
+                            style={{
+                              width: "100%",
+                              boxSizing: "border-box",
+                              border: `1px solid ${LINE}`,
+                              borderRadius: 12,
+                              padding: "10px 11px",
+                              background: "#fffaf0",
+                              color: INK,
+                              fontSize: 13,
+                              lineHeight: 1.45,
+                              fontFamily: "inherit",
+                              resize: "vertical",
+                              outlineColor: BLUE,
+                              marginBottom: 9,
+                            }}
+                          />
+
+                          <button
+                            type="button"
+                            disabled={
+                              rewrite.loading ||
+                              rewrite.applying ||
+                              reEval.loading ||
+                              reEval.applying ||
+                              retranslation.loading
+                            }
+                            onClick={() => previewRewrite(card)}
+                            style={getSmallButtonStyle(
+                              rewrite.loading ||
+                                rewrite.applying ||
+                                reEval.loading ||
+                                reEval.applying ||
+                                retranslation.loading,
+                            )}
+                          >
+                            {rewrite.loading ? "Готовлю..." : "Сделать вариант"}
+                          </button>
+
+                          {rewrite.error ? (
+                            <div
+                              style={{
+                                marginTop: 10,
+                                padding: "9px 10px",
+                                borderRadius: 12,
+                                background: ERROR_BG,
+                                color: ERROR_TEXT,
+                                fontSize: 13,
+                                fontWeight: 700,
+                              }}
+                            >
+                              {rewrite.error}
+                            </div>
+                          ) : null}
+
+                          {rewrite.result?.rewritten_card ? (
+                            <div
+                              style={{
+                                marginTop: 10,
+                                padding: 11,
+                                borderRadius: 13,
+                                background: BLUE_PALE,
+                                border: `1px solid rgba(95, 120, 144, 0.22)`,
+                              }}
+                            >
+                              <div
+                                style={{
+                                  fontSize: 13,
+                                  fontWeight: 900,
+                                  color: BLUE_DARK,
+                                  marginBottom: 7,
+                                }}
+                              >
+                                Новый вариант
+                              </div>
+
+                              <h4
+                                style={{
+                                  margin: "0 0 7px",
+                                  fontSize: 16,
+                                  lineHeight: 1.25,
+                                  fontFamily:
+                                    'ui-serif, Georgia, "Iowan Old Style", "Times New Roman", serif',
+                                }}
+                              >
+                                {rewrite.result.rewritten_card.title}
+                              </h4>
+
+                              {rewrite.result.rewritten_card.anchor ? (
+                                <p
+                                  style={{
+                                    margin: "0 0 8px",
+                                    color: SOFT,
+                                    fontSize: 13,
+                                    lineHeight: 1.45,
+                                    fontStyle: "italic",
+                                  }}
+                                >
+                                  "{rewrite.result.rewritten_card.anchor}"
+                                </p>
+                              ) : null}
+
+                              <p
+                                style={{
+                                  margin: "0 0 8px",
+                                  color: INK,
+                                  fontSize: 13,
+                                  lineHeight: 1.55,
+                                }}
+                              >
+                                {rewrite.result.rewritten_card.teaser}
+                              </p>
+
+                              {rewrite.result.rewritten_card.why_it_matters ? (
+                                <p
+                                  style={{
+                                    margin: "0 0 10px",
+                                    color: SOFT,
+                                    fontSize: 13,
+                                    lineHeight: 1.5,
+                                  }}
+                                >
+                                  <strong style={{ color: BLUE_DARK }}>Почему важно: </strong>
+                                  {rewrite.result.rewritten_card.why_it_matters}
+                                </p>
+                              ) : null}
+
+                              <div
+                                style={{
+                                  display: "flex",
+                                  flexWrap: "wrap",
+                                  gap: 7,
+                                  marginBottom: 9,
+                                }}
+                              >
+                                <Badge
+                                  text={`Новая оценка: ${
+                                    rewriteScore === null ? "—" : rewriteScore
+                                  }`}
+                                  strong
+                                />
+                                {rewritePlacement ? (
+                                  <Badge text={`Предложение: ${rewritePlacement}`} />
+                                ) : null}
+                              </div>
+
+                              {rewriteReason ? (
+                                <p
+                                  style={{
+                                    margin: "0 0 8px",
+                                    color: SOFT,
+                                    fontSize: 13,
+                                    lineHeight: 1.5,
+                                  }}
+                                >
+                                  <strong style={{ color: BLUE_DARK }}>Причина: </strong>
+                                  {rewriteReason}
+                                </p>
+                              ) : null}
+
+                              {rewriteRisk ? (
+                                <p
+                                  style={{
+                                    margin: "0 0 8px",
+                                    color: WARNING_TEXT,
+                                    fontSize: 13,
+                                    lineHeight: 1.5,
+                                  }}
+                                >
+                                  <strong>Риск: </strong>
+                                  {rewriteRisk}
+                                </p>
+                              ) : null}
+
+                              {rewrite.applied ? (
+                                <div
+                                  style={{
+                                    marginTop: 10,
+                                    padding: "9px 10px",
+                                    borderRadius: 12,
+                                    background: SUCCESS_BG,
+                                    color: SUCCESS_TEXT,
+                                    fontSize: 13,
+                                    fontWeight: 800,
+                                  }}
+                                >
+                                  Доработка применена. RU/EN/ES версии обновлены.
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  disabled={!canApplyRewrite || rewrite.applying}
+                                  onClick={() => applyRewrite(card)}
+                                  style={getApplyButtonStyle(
+                                    !canApplyRewrite || rewrite.applying,
+                                  )}
+                                >
+                                  {rewrite.applying
+                                    ? "Применяю..."
+                                    : "Применить доработку RU/EN/ES"}
+                                </button>
+                              )}
+
+                              {rewrite.applyError ? (
+                                <div
+                                  style={{
+                                    marginTop: 10,
+                                    padding: "9px 10px",
+                                    borderRadius: 12,
+                                    background: ERROR_BG,
+                                    color: ERROR_TEXT,
+                                    fontSize: 13,
+                                    fontWeight: 700,
+                                  }}
+                                >
+                                  {rewrite.applyError}
+                                </div>
+                              ) : null}
+                            </div>
+                          ) : null}
+                        </div>
                       </div>
                     </details>
                   </article>
@@ -1624,8 +2281,8 @@ export default function StudioPage() {
         </div>
 
         <p style={{ margin: "18px 0 0", color: SOFT, fontSize: 12, textAlign: "center" }}>
-          MVP Studio: переоценка, применение оценки и ремонт перевода. Следующий
-          этап — доработать карточку и добавить материал.
+          MVP Studio: переоценка, применение оценки, ремонт перевода и доработка
+          карточки RU/EN/ES. Следующий этап — добавить материал.
         </p>
       </div>
     </main>
