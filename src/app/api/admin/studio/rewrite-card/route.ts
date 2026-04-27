@@ -168,22 +168,39 @@ function buildModeInstructions(mode: RewriteMode): string {
     return `
 REWRITE MODE: BUILD FROM MODERATOR IDEA
 
-The moderator's idea controls the new card.
+The moderator's idea is LOCKED.
 
-Use the old card only as background/context.
-You are allowed to change the main angle if the moderator's idea points to a stronger angle.
+The moderator's idea controls the new card.
+The old card is only background/context.
+You may change the main angle if the moderator's idea points to a stronger angle.
 Do not force the moderator's idea back into the old card's weak structure.
-Your job is to turn the moderator's idea into a strong Scriptura AI insight card.
+Do not drift back to the old card's angle unless the moderator explicitly asks for that.
 
 Priority order:
 1. Moderator instruction
-2. Verse text
-3. Concrete textual anchor
-4. Discovery / “I never noticed that before” effect
-5. Faithfulness and caution
-6. Old card as optional context only
+2. Moderator's required image/metaphor/example, if supplied
+3. Verse text
+4. Concrete textual anchor
+5. Discovery / “I never noticed that before” effect
+6. Faithfulness and caution
+7. Old card as optional context only
 
 If the old card and moderator idea conflict, follow the moderator idea.
+
+Before writing the card, internally extract:
+- The moderator's main thesis
+- The textual anchor
+- What must not be lost
+- What direction must be avoided
+- The intended discovery effect
+
+If the final card no longer clearly expresses the moderator's main thesis, the rewrite has failed, even if the prose is elegant.
+
+Forbidden drift:
+- Do not replace the moderator's idea with a more familiar interpretation.
+- Do not use the old card's frame as the default frame.
+- Do not reduce a concrete image/metaphor supplied by the moderator into an abstract summary.
+- If the moderator gives a strong image, preserve the force of that image unless it is factually unsafe.
 `.trim();
   }
 
@@ -192,6 +209,7 @@ REWRITE MODE: POLISH EXISTING ANGLE
 
 Preserve the same main angle of the existing card.
 Do not create a different angle unless the moderator explicitly demands it.
+
 Your job is to make the existing angle stronger:
 - clearer
 - less generic
@@ -201,6 +219,7 @@ Your job is to make the existing angle stronger:
 - safer and less overclaimed
 
 If the current card is weak because it is too obvious, sharpen the same angle until it has a real discovery effect.
+If the current card has a good idea but weak argumentation, rebuild the argument while preserving the idea.
 `.trim();
 }
 
@@ -254,6 +273,8 @@ Important:
 - Do not make the card long.
 - Do not write a mini-article.
 - The card must remain concise and suitable for a short insight card.
+- Preserve the moderator's required idea when rewrite_mode is from_idea.
+- If the moderator supplied an image/metaphor, do not silently discard it.
 
 Output language: ${outputLanguage}
 JSON keys must stay in English.
