@@ -13,6 +13,8 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+type RewriteMode = "polish" | "from_idea";
+
 type StudioCardRow = {
   id: string;
   reference: string;
@@ -75,6 +77,10 @@ function getString(value: unknown): string | null {
 
 function isLang(value: unknown): value is AngleCardLang {
   return value === "ru" || value === "en" || value === "es";
+}
+
+function isRewriteMode(value: unknown): value is RewriteMode {
+  return value === "polish" || value === "from_idea";
 }
 
 function stripCodeFence(text: string): string {
@@ -157,6 +163,47 @@ function normalizeRewrittenCard(value: unknown): RewrittenCard {
   };
 }
 
+function buildModeInstructions(mode: RewriteMode): string {
+  if (mode === "from_idea") {
+    return `
+REWRITE MODE: BUILD FROM MODERATOR IDEA
+
+The moderator's idea controls the new card.
+
+Use the old card only as background/context.
+You are allowed to change the main angle if the moderator's idea points to a stronger angle.
+Do not force the moderator's idea back into the old card's weak structure.
+Your job is to turn the moderator's idea into a strong Scriptura AI insight card.
+
+Priority order:
+1. Moderator instruction
+2. Verse text
+3. Concrete textual anchor
+4. Discovery / “I never noticed that before” effect
+5. Faithfulness and caution
+6. Old card as optional context only
+
+If the old card and moderator idea conflict, follow the moderator idea.
+`.trim();
+  }
+
+  return `
+REWRITE MODE: POLISH EXISTING ANGLE
+
+Preserve the same main angle of the existing card.
+Do not create a different angle unless the moderator explicitly demands it.
+Your job is to make the existing angle stronger:
+- clearer
+- less generic
+- more text-grounded
+- more memorable
+- more discovery-oriented
+- safer and less overclaimed
+
+If the current card is weak because it is too obvious, sharpen the same angle until it has a real discovery effect.
+`.trim();
+}
+
 function buildRewritePrompt(args: {
   reference: string;
   verseText: string;
@@ -164,30 +211,55 @@ function buildRewritePrompt(args: {
   currentCard: StudioCardRow;
   instruction: string;
   extraMaterial: string | null;
+  rewriteMode: RewriteMode;
 }): string {
   const outputLanguage = languageName(args.lang);
+  const modeInstructions = buildModeInstructions(args.rewriteMode);
 
   return `
 You are a senior Scriptura AI editor.
 
-Your task is to rewrite ONE existing insight card according to the moderator instruction.
+Your task is to produce ONE rewritten insight card.
 
-This is not a new angle search.
-Preserve the same main angle unless the moderator explicitly asks to sharpen it.
-Do not invent new facts.
-Do not add unsupported Greek/Hebrew claims.
-Do not make the card longer than necessary.
-Make the card stronger according to Scriptura AI standards:
-- concrete textual anchor
-- clear discovery / “I did not notice that before” effect
-- specific to this verse
-- faithful to the verse
-- not generic devotional wording
-- intellectually memorable but not overclaimed
+This is not a cosmetic rewrite.
+Your rewritten card will be evaluated immediately by the Scriptura AI evaluator.
+You must write the card so that it has the best possible chance to score highly, especially on DISCOVERY / WOW EFFECT.
+
+Scriptura AI's editorial goal:
+A strong card should make a serious Bible reader think:
+“I never noticed that before — and now I can see it in the verse.”
+
+Your rewritten card must aim for this chain:
+
+concrete textual anchor → unexpected observation → meaning shift
+
+Before returning the JSON, internally test your card:
+
+1. Is it anchored in a concrete word, phrase, structure, contrast, scene, or context of THIS verse?
+2. Would it feel like a real discovery to someone who already knows the Bible well?
+3. Is it specific to this verse, or could it be moved to many other verses?
+4. Does it avoid generic moralizing?
+5. Does it avoid unsupported Greek/Hebrew claims?
+6. Does it avoid overclaiming?
+7. Does it explain why the observation matters?
+8. Would it plausibly score 80+ under an evaluator that rewards discovery, specificity, textual grounding, faithfulness, and argument strength?
+
+If the card would only be a correct paraphrase, do NOT return it yet.
+Sharpen the angle until it has a clearer discovery effect.
+
+Important:
+- Do not invent facts.
+- Do not add claims not supported by the verse, immediate context, or supplied material.
+- Do not use vague phrases like “deeply important” unless you show why.
+- Do not make the card long.
+- Do not write a mini-article.
+- The card must remain concise and suitable for a short insight card.
 
 Output language: ${outputLanguage}
 JSON keys must stay in English.
 All user-visible string values must be in ${outputLanguage}.
+
+${modeInstructions}
 
 VERSE:
 Reference: ${args.reference}
@@ -231,7 +303,7 @@ JSON shape:
     "teaser": "string",
     "why_it_matters": "string or null"
   },
-  "editor_note": "short explanation of what was improved"
+  "editor_note": "short explanation of what was improved and why this version has stronger discovery"
 }
 `.trim();
 }
@@ -280,6 +352,10 @@ export async function POST(req: Request) {
     const instruction = getString(body?.instruction);
     const lang = isLang(body?.lang) ? body.lang : null;
     const extraMaterial = getString(body?.extra_material);
+    const rewriteMode: RewriteMode = isRewriteMode(body?.rewrite_mode)
+      ? body.rewrite_mode
+      : "polish";
+
     const targetFeaturedCount = 12;
 
     if (!cardId || !instruction || !lang) {
@@ -338,6 +414,7 @@ export async function POST(req: Request) {
       currentCard,
       instruction,
       extraMaterial,
+      rewriteMode,
     });
 
     const rewriteText = await runAI("openai", rewritePrompt, lang, true);
@@ -382,6 +459,7 @@ export async function POST(req: Request) {
     return NextResponse.json({
       ok: true,
       mode: "preview_only",
+      rewrite_mode: rewriteMode,
       changed_database: false,
       card_id: currentCard.id,
       reference: currentCard.reference,
