@@ -209,20 +209,22 @@ type RewriteState = {
   result: RewriteCardResponse | null;
 };
 
-const BLUE = "#5f7890";
-const BLUE_DARK = "#4d6478";
-const BLUE_SOFT = "#d8e4ee";
-const BLUE_PALE = "#edf4f8";
+const BLUE = "#6e86a0";
+const BLUE_DARK = "#536b83";
+const BLUE_SOFT = "#dce6f0";
+const BLUE_PALE = "#edf3f8";
+const BLUE_LINE = "rgba(110, 134, 160, 0.24)";
 
-const BG = "#f5efe2";
-const PAPER = "#fbf7ee";
-const CARD = "#fffaf0";
-const CARD_ALT = "#f8f1e4";
-const LINE = "#dacbaa";
-const LINE_SOFT = "rgba(216, 201, 168, 0.72)";
-const INK = "#2c241b";
-const SOFT = "#5f5140";
-const MUTED = "#8a7a67";
+const PAPER = "#fbf6ea";
+const PAPER_ELEVATED = "#fffaf1";
+const PAPER_SOFT = "#f8f1e3";
+const BG = "#f5eee0";
+
+const LINE = "#d8c8a8";
+const LINE_SOFT = "rgba(216, 200, 168, 0.58)";
+const INK = "#2f261c";
+const SOFT = "#64523f";
+const MUTED = "#8f7f6d";
 
 const WARNING_BG = "#f5e9c8";
 const WARNING_TEXT = "#8a6330";
@@ -263,11 +265,11 @@ function readableSourceLabel(source: string): string {
   if (cleaned === "intertext") return "Связи с другими стихами";
   if (cleaned === "socio") return "Социально-историческая линза";
   if (cleaned === "genre") return "Жанровая линза";
-  if (cleaned === "rhetoric") return "Риторическая линза";
+  if (cleaned === "rhetoric" || cleaned === "rhetorical") return "Риторическая линза";
   if (cleaned === "structure") return "Структурная линза";
-  if (cleaned === "scripture_links") return "Связи с другими стихами";
   if (cleaned === "historical_scene") return "Историческая сцена";
   if (cleaned === "text_findings") return "Текстовые находки";
+  if (cleaned === "scripture_links") return "Связи с другими стихами";
 
   if (cleaned.startsWith("initial_angles:gemini")) {
     return "Первичная генерация Gemini";
@@ -297,20 +299,29 @@ function readableSourceLabel(source: string): string {
   if (cleaned === "manual_test") return "Ручной тест";
   if (cleaned === "studio_rewrite") return "Доработка в Studio";
   if (cleaned === "cached_results:gpt-5.5") return "Сохранённая карточка (GPT-5.5)";
-  if (cleaned === "unknown") return "Неизвестно";
+  if (cleaned === "unknown") return "Неизвестный источник";
 
   return cleaned;
 }
 
 function sourceLabel(sources: string[]): string {
   if (!sources.length) return "Источник: неизвестно";
-  return `Источники: ${sources.map(readableSourceLabel).join(", ")}`;
+  return sources.map(readableSourceLabel).join(", ");
 }
 
-function compactSourceLabel(sources: string[]): string {
-  if (!sources.length) return "Источник: неизвестно";
-  if (sources.length === 1) return `Источник: ${readableSourceLabel(sources[0])}`;
-  return `Источники: ${sources.map(readableSourceLabel).join(", ")}`;
+function dedupeSources(sources: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  for (const source of sources) {
+    const label = readableSourceLabel(source);
+    if (!seen.has(label)) {
+      seen.add(label);
+      result.push(label);
+    }
+  }
+
+  return result;
 }
 
 function statusLabel(status: string): string {
@@ -348,22 +359,23 @@ function coverageLabel(type: string | null): string | null {
 }
 
 function getCardSource(card: StudioCard): string {
-  return `Источник: ${readableSourceLabel(card.source_model || card.source_type || "unknown")}`;
+  return readableSourceLabel(card.source_model || card.source_type || "unknown");
 }
 
 function getButtonStyle(active = false, disabled = false) {
   return {
-    border: `1px solid ${active ? BLUE : "rgba(95, 120, 144, 0.24)"}`,
+    border: `1px solid ${active ? BLUE : BLUE_LINE}`,
     borderRadius: 999,
     background: active ? BLUE : BLUE_PALE,
     color: active ? "#ffffff" : BLUE_DARK,
     padding: "10px 14px",
     cursor: disabled ? "not-allowed" : "pointer",
     fontSize: 14,
-    fontWeight: 800,
+    fontWeight: 700,
     fontFamily: "inherit",
     opacity: disabled ? 0.62 : 1,
-    boxShadow: active ? "0 8px 20px rgba(95, 120, 144, 0.20)" : "none",
+    transform: active ? "translateY(-1px)" : "translateY(0)",
+    boxShadow: active ? "0 8px 18px rgba(95, 120, 144, 0.18)" : "none",
     transition:
       "transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease, border-color 0.12s ease, opacity 0.12s ease",
   } as const;
@@ -371,11 +383,11 @@ function getButtonStyle(active = false, disabled = false) {
 
 function getSmallButtonStyle(disabled = false) {
   return {
-    border: `1px solid rgba(95, 120, 144, 0.26)`,
+    border: `1px solid rgba(95, 120, 144, 0.3)`,
     borderRadius: 999,
-    background: BLUE_PALE,
+    background: disabled ? "#edf0f2" : BLUE_PALE,
     color: BLUE_DARK,
-    padding: "8px 12px",
+    padding: "8px 11px",
     cursor: disabled ? "not-allowed" : "pointer",
     fontSize: 13,
     fontWeight: 800,
@@ -388,17 +400,17 @@ function getSmallButtonStyle(disabled = false) {
 
 function getApplyButtonStyle(disabled = false) {
   return {
-    border: `1px solid ${disabled ? "rgba(95, 120, 144, 0.26)" : BLUE}`,
+    border: `1px solid ${disabled ? "rgba(95, 120, 144, 0.28)" : BLUE}`,
     borderRadius: 999,
     background: disabled ? "#edf0f2" : BLUE,
     color: disabled ? BLUE_DARK : "#ffffff",
-    padding: "8px 12px",
+    padding: "8px 11px",
     cursor: disabled ? "not-allowed" : "pointer",
     fontSize: 13,
     fontWeight: 800,
     fontFamily: "inherit",
     opacity: disabled ? 0.62 : 1,
-    boxShadow: disabled ? "none" : "0 8px 18px rgba(95, 120, 144, 0.18)",
+    boxShadow: disabled ? "none" : "0 7px 16px rgba(95, 120, 144, 0.18)",
     transition:
       "transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease, border-color 0.12s ease, opacity 0.12s ease",
   } as const;
@@ -406,11 +418,13 @@ function getApplyButtonStyle(disabled = false) {
 
 function getRepairButtonStyle(disabled = false) {
   return {
-    border: `1px solid ${disabled ? "rgba(138, 99, 48, 0.18)" : "rgba(138, 99, 48, 0.30)"}`,
+    border: `1px solid ${
+      disabled ? "rgba(138, 99, 48, 0.2)" : "rgba(138, 99, 48, 0.36)"
+    }`,
     borderRadius: 999,
     background: disabled ? "#eee8dc" : WARNING_BG,
     color: WARNING_TEXT,
-    padding: "8px 12px",
+    padding: "8px 11px",
     cursor: disabled ? "not-allowed" : "pointer",
     fontSize: 13,
     fontWeight: 800,
@@ -425,15 +439,15 @@ function getModeButtonStyle(active = false, disabled = false) {
   return {
     border: `1px solid ${active ? BLUE : "rgba(95, 120, 144, 0.22)"}`,
     borderRadius: 12,
-    background: active ? BLUE : CARD,
+    background: active ? BLUE : PAPER_ELEVATED,
     color: active ? "#ffffff" : BLUE_DARK,
-    padding: "10px 12px",
+    padding: "9px 10px",
     cursor: disabled ? "not-allowed" : "pointer",
     fontSize: 13,
     fontWeight: 850,
     fontFamily: "inherit",
     opacity: disabled ? 0.62 : 1,
-    boxShadow: active ? "0 6px 14px rgba(95, 120, 144, 0.18)" : "none",
+    boxShadow: active ? "0 5px 14px rgba(95, 120, 144, 0.18)" : "none",
   } as const;
 }
 
@@ -621,7 +635,7 @@ export default function StudioPage() {
       }
     } catch (error) {
       setVersesError(
-        error instanceof Error ? error.message : "Не удалось загрузить активность.",
+        error instanceof Error ? error.message : "Не удалось загрузить активность."
       );
       setNotice("");
     } finally {
@@ -670,7 +684,7 @@ export default function StudioPage() {
       setCards([]);
       setCardsSummary(null);
       setCardsError(
-        error instanceof Error ? error.message : "Не удалось загрузить карточки.",
+        error instanceof Error ? error.message : "Не удалось загрузить карточки."
       );
       setNotice("");
     } finally {
@@ -750,7 +764,7 @@ export default function StudioPage() {
       setNotice(
         `Переоценка готова: ${
           newScore === null ? "без score" : `score ${newScore}`
-        }${placement ? ` / ${placement}` : ""}.`,
+        }${placement ? ` / ${placement}` : ""}.`
       );
     } catch (error) {
       setReEvaluations((prev) => ({
@@ -866,7 +880,9 @@ export default function StudioPage() {
           result: prev[card.id]?.result ?? null,
           applying: false,
           applyError:
-            error instanceof Error ? error.message : "Не удалось применить оценку.",
+            error instanceof Error
+              ? error.message
+              : "Не удалось применить оценку.",
         },
       }));
       setNotice("");
@@ -919,26 +935,26 @@ export default function StudioPage() {
               typeof data.updated_fields?.title === "string"
                 ? data.updated_fields.title
                 : typeof data.card?.title === "string"
-                  ? data.card.title
-                  : current.title,
+                ? data.card.title
+                : current.title,
             anchor:
               data.updated_fields?.anchor !== undefined
                 ? data.updated_fields.anchor ?? null
                 : data.card?.anchor !== undefined
-                  ? data.card.anchor ?? null
-                  : current.anchor,
+                ? data.card.anchor ?? null
+                : current.anchor,
             teaser:
               typeof data.updated_fields?.teaser === "string"
                 ? data.updated_fields.teaser
                 : typeof data.card?.teaser === "string"
-                  ? data.card.teaser
-                  : current.teaser,
+                ? data.card.teaser
+                : current.teaser,
             why_it_matters:
               data.updated_fields?.why_it_matters !== undefined
                 ? data.updated_fields.why_it_matters ?? null
                 : data.card?.why_it_matters !== undefined
-                  ? data.card.why_it_matters ?? null
-                  : current.why_it_matters,
+                ? data.card.why_it_matters ?? null
+                : current.why_it_matters,
             updated_at:
               typeof data.card?.updated_at === "string"
                 ? data.card.updated_at
@@ -1079,7 +1095,7 @@ export default function StudioPage() {
       setNotice(
         `Доработка готова: ${
           newScore === null ? "без score" : `score ${newScore}`
-        }${placement ? ` / ${placement}` : ""}.`,
+        }${placement ? ` / ${placement}` : ""}.`
       );
     } catch (error) {
       setRewrites((prev) => ({
@@ -1091,7 +1107,9 @@ export default function StudioPage() {
           extraMaterial: state.extraMaterial,
           loading: false,
           error:
-            error instanceof Error ? error.message : "Не удалось подготовить доработку.",
+            error instanceof Error
+              ? error.message
+              : "Не удалось подготовить доработку.",
         },
       }));
       setNotice("");
@@ -1223,7 +1241,9 @@ export default function StudioPage() {
           result: prev[card.id]?.result ?? null,
           applying: false,
           applyError:
-            error instanceof Error ? error.message : "Не удалось применить доработку.",
+            error instanceof Error
+              ? error.message
+              : "Не удалось применить доработку.",
         },
       }));
       setNotice("");
@@ -1251,8 +1271,7 @@ export default function StudioPage() {
     <main
       style={{
         minHeight: "100vh",
-        background:
-          "radial-gradient(circle at top, rgba(238,245,250,0.62) 0%, rgba(245,239,226,1) 28%, rgba(245,239,226,1) 100%)",
+        background: BG,
         color: INK,
         padding: "22px 14px 80px",
         fontFamily:
@@ -1264,60 +1283,37 @@ export default function StudioPage() {
           0% { background-position: 220% 0; }
           100% { background-position: -220% 0; }
         }
-
         .studio-layout {
           display: grid;
-          grid-template-columns: minmax(0, 0.78fr) minmax(0, 1.22fr);
-          gap: 16px;
-          align-items: start;
+          grid-template-columns: minmax(0, 0.86fr) minmax(0, 1.14fr);
+          gap: 14px;
         }
-
         @media (max-width: 760px) {
           .studio-layout {
             grid-template-columns: 1fr;
           }
         }
-
-        .studio-scroll {
-          scrollbar-width: thin;
-          scrollbar-color: rgba(95,120,144,0.35) transparent;
-        }
-
-        .studio-scroll::-webkit-scrollbar {
-          width: 8px;
-          height: 8px;
-        }
-
-        .studio-scroll::-webkit-scrollbar-thumb {
-          background: rgba(95,120,144,0.28);
-          border-radius: 999px;
-        }
-
-        .studio-scroll::-webkit-scrollbar-track {
-          background: transparent;
-        }
       `}</style>
 
-      <div style={{ maxWidth: 1120, margin: "0 auto" }}>
+      <div style={{ maxWidth: 980, margin: "0 auto" }}>
         <header style={{ marginBottom: 18 }}>
           <div
             style={{
               fontSize: 12,
               textTransform: "uppercase",
-              letterSpacing: "0.16em",
+              letterSpacing: "0.14em",
               color: BLUE_DARK,
               fontWeight: 900,
-              marginBottom: 8,
+              marginBottom: 6,
             }}
           >
             Scriptura Studio
           </div>
-
           <h1
             style={{
               fontFamily:
                 'ui-serif, Georgia, "Iowan Old Style", "Times New Roman", serif',
-              fontSize: 34,
+              fontSize: 32,
               lineHeight: 1.08,
               margin: 0,
               letterSpacing: "-0.03em",
@@ -1325,13 +1321,12 @@ export default function StudioPage() {
           >
             Живая работа системы
           </h1>
-
           <p
             style={{
               margin: "10px 0 0",
               color: SOFT,
-              fontSize: 16,
-              lineHeight: 1.6,
+              fontSize: 15,
+              lineHeight: 1.58,
               maxWidth: 760,
             }}
           >
@@ -1343,12 +1338,12 @@ export default function StudioPage() {
         <section
           style={{
             background: PAPER,
-            border: `1px solid ${LINE_SOFT}`,
-            borderRadius: 22,
-            padding: 18,
+            border: `1px solid ${LINE}`,
+            borderRadius: 20,
+            padding: 16,
             boxShadow:
-              "0 1px 2px rgba(60,40,20,0.04), 0 12px 32px rgba(60,40,20,0.08)",
-            marginBottom: 16,
+              "0 1px 2px rgba(60, 40, 20, 0.05), 0 10px 28px rgba(60, 40, 20, 0.07)",
+            marginBottom: 14,
           }}
         >
           <label
@@ -1356,15 +1351,14 @@ export default function StudioPage() {
               display: "block",
               fontSize: 12,
               fontWeight: 900,
-              letterSpacing: "0.11em",
+              letterSpacing: "0.1em",
               textTransform: "uppercase",
               color: SOFT,
-              marginBottom: 9,
+              marginBottom: 8,
             }}
           >
             Admin Secret
           </label>
-
           <input
             value={adminSecret}
             onChange={(event) => saveSecret(event.target.value)}
@@ -1374,15 +1368,14 @@ export default function StudioPage() {
               width: "100%",
               border: `1px solid ${LINE}`,
               borderRadius: 14,
-              padding: "13px 14px",
-              background: CARD,
+              padding: "12px 13px",
+              background: PAPER_ELEVATED,
               color: INK,
               fontSize: 15,
               boxSizing: "border-box",
               outlineColor: BLUE,
             }}
           />
-
           <div
             style={{
               display: "flex",
@@ -1400,7 +1393,6 @@ export default function StudioPage() {
             >
               Сегодня
             </button>
-
             <button
               type="button"
               disabled={loadingVerses}
@@ -1409,7 +1401,6 @@ export default function StudioPage() {
             >
               7 дней
             </button>
-
             <button
               type="button"
               disabled={loadingVerses}
@@ -1418,18 +1409,17 @@ export default function StudioPage() {
             >
               30 дней
             </button>
-
             <select
               value={lang}
               onChange={(event) => setLang(event.target.value as Lang)}
               disabled={loadingVerses}
               style={{
-                border: `1px solid rgba(95, 120, 144, 0.24)`,
+                border: `1px solid ${BLUE_LINE}`,
                 borderRadius: 999,
                 background: BLUE_PALE,
                 color: BLUE_DARK,
                 padding: "10px 12px",
-                fontWeight: 800,
+                fontWeight: 700,
                 fontFamily: "inherit",
                 cursor: loadingVerses ? "not-allowed" : "pointer",
               }}
@@ -1438,7 +1428,6 @@ export default function StudioPage() {
               <option value="en">EN</option>
               <option value="es">ES</option>
             </select>
-
             <button
               type="button"
               disabled={loadingVerses}
@@ -1453,12 +1442,12 @@ export default function StudioPage() {
             <div
               style={{
                 marginTop: 12,
-                padding: "10px 12px",
-                borderRadius: 14,
+                padding: "9px 11px",
+                borderRadius: 12,
                 background: BLUE_SOFT,
                 color: BLUE_DARK,
                 fontSize: 13,
-                fontWeight: 800,
+                fontWeight: 700,
               }}
             >
               {notice}
@@ -1469,12 +1458,12 @@ export default function StudioPage() {
             <div
               style={{
                 marginTop: 12,
-                padding: "10px 12px",
-                borderRadius: 14,
+                padding: "9px 11px",
+                borderRadius: 12,
                 background: ERROR_BG,
                 color: ERROR_TEXT,
                 fontSize: 13,
-                fontWeight: 800,
+                fontWeight: 700,
               }}
             >
               {versesError}
@@ -1484,15 +1473,14 @@ export default function StudioPage() {
 
         <div className="studio-layout">
           <section
-            className="studio-scroll"
             style={{
               background: PAPER,
-              border: `1px solid ${LINE_SOFT}`,
-              borderRadius: 22,
-              padding: 16,
+              border: `1px solid ${LINE}`,
+              borderRadius: 20,
+              padding: 14,
               boxShadow:
-                "0 1px 2px rgba(60,40,20,0.04), 0 12px 32px rgba(60,40,20,0.08)",
-              minHeight: 360,
+                "0 1px 2px rgba(60, 40, 20, 0.05), 0 10px 28px rgba(60, 40, 20, 0.07)",
+              minHeight: 320,
             }}
           >
             <div
@@ -1514,11 +1502,11 @@ export default function StudioPage() {
               >
                 Недавние стихи
               </h2>
-              <span style={{ fontSize: 13, color: MUTED }}>{verses.length} найдено</span>
+              <span style={{ fontSize: 13, color: SOFT }}>{verses.length} найдено</span>
             </div>
 
             {loadingVerses ? (
-              <div style={{ display: "grid", gap: 10 }}>
+              <div style={{ display: "grid", gap: 9 }}>
                 <Skeleton width="80%" />
                 <Skeleton width="92%" />
                 <Skeleton width="65%" />
@@ -1529,12 +1517,12 @@ export default function StudioPage() {
               <div
                 style={{
                   padding: 14,
-                  borderRadius: 16,
-                  background: CARD,
+                  borderRadius: 14,
+                  background: PAPER_ELEVATED,
                   border: `1px dashed ${LINE}`,
                   color: SOFT,
                   fontSize: 14,
-                  lineHeight: 1.55,
+                  lineHeight: 1.5,
                 }}
               >
                 Пока нет загруженной активности. Нажми «Обновить».
@@ -1544,6 +1532,8 @@ export default function StudioPage() {
             <div style={{ display: "grid", gap: 10 }}>
               {verses.map((verse) => {
                 const active = verse.reference === selectedReference;
+                const verseSources = dedupeSources(verse.sources);
+
                 return (
                   <button
                     key={`${verse.lang}-${verse.canonical_ref ?? verse.reference}`}
@@ -1552,16 +1542,14 @@ export default function StudioPage() {
                     disabled={loadingCards && active}
                     style={{
                       textAlign: "left",
-                      border: `1px solid ${active ? BLUE : LINE}`,
-                      background: active
-                        ? "linear-gradient(180deg, rgba(237,244,248,0.98) 0%, rgba(232,240,246,0.96) 100%)"
-                        : CARD,
-                      borderRadius: 18,
+                      border: `1px solid ${active ? BLUE : LINE_SOFT}`,
+                      background: active ? "#f2f6fa" : PAPER_ELEVATED,
+                      borderRadius: 17,
                       padding: 14,
                       cursor: "pointer",
                       color: INK,
                       fontFamily: "inherit",
-                      boxShadow: active ? "0 10px 22px rgba(95,120,144,0.14)" : "none",
+                      boxShadow: active ? "0 10px 22px rgba(95, 120, 144, 0.14)" : "none",
                       transform: active ? "translateY(-1px)" : "translateY(0)",
                       transition:
                         "transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease, border-color 0.12s ease",
@@ -1571,8 +1559,9 @@ export default function StudioPage() {
                       style={{
                         fontWeight: 900,
                         fontSize: 16,
-                        marginBottom: 7,
+                        marginBottom: 8,
                         color: active ? BLUE_DARK : INK,
+                        letterSpacing: "-0.01em",
                       }}
                     >
                       {displayReference(verse)}
@@ -1585,7 +1574,7 @@ export default function StudioPage() {
                             color: WARNING_TEXT,
                             background: WARNING_BG,
                             borderRadius: 999,
-                            padding: "2px 8px",
+                            padding: "2px 7px",
                             verticalAlign: "middle",
                           }}
                         >
@@ -1611,18 +1600,23 @@ export default function StudioPage() {
                       ) : null}
                     </div>
 
-                    <div style={{ fontSize: 13, color: SOFT, lineHeight: 1.5 }}>
-                      {compactSourceLabel(verse.sources)}
-                    </div>
-
                     <div
                       style={{
-                        marginTop: 6,
-                        fontSize: 13,
-                        color: MUTED,
-                        lineHeight: 1.4,
+                        display: "flex",
+                        flexWrap: "wrap",
+                        gap: 6,
+                        marginBottom: 8,
                       }}
                     >
+                      {verseSources.slice(0, 3).map((source) => (
+                        <SoftMiniTag key={source} text={source} />
+                      ))}
+                      {verseSources.length > 3 ? (
+                        <SoftMiniTag text={`+${verseSources.length - 3} ещё`} />
+                      ) : null}
+                    </div>
+
+                    <div style={{ fontSize: 13, color: MUTED, lineHeight: 1.45 }}>
                       {formatDate(verse.last_activity_at)}
                     </div>
                   </button>
@@ -1632,15 +1626,14 @@ export default function StudioPage() {
           </section>
 
           <section
-            className="studio-scroll"
             style={{
               background: PAPER,
-              border: `1px solid ${LINE_SOFT}`,
-              borderRadius: 22,
-              padding: 16,
+              border: `1px solid ${LINE}`,
+              borderRadius: 20,
+              padding: 14,
               boxShadow:
-                "0 1px 2px rgba(60,40,20,0.04), 0 12px 32px rgba(60,40,20,0.08)",
-              minHeight: 360,
+                "0 1px 2px rgba(60, 40, 20, 0.05), 0 10px 28px rgba(60, 40, 20, 0.07)",
+              minHeight: 320,
             }}
           >
             <div
@@ -1663,47 +1656,66 @@ export default function StudioPage() {
                 {selectedVerse ? displayReference(selectedVerse) : "Карточки стиха"}
               </h2>
               {selectedVerse ? (
-                <span style={{ fontSize: 13, color: MUTED }}>
+                <span style={{ fontSize: 13, color: SOFT }}>
                   {formatDate(selectedVerse.last_activity_at)}
                 </span>
               ) : null}
             </div>
 
             {cardsSummary ? (
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
-                <Badge text={`${cardsSummary.featured} ${shortStatusLabel("featured")}`} strong />
-                {cardsSummary.reserve > 0 ? (
-                  <Badge text={`${cardsSummary.reserve} ${shortStatusLabel("reserve")}`} />
-                ) : null}
-                {cardsSummary.hidden > 0 ? (
-                  <Badge text={`${cardsSummary.hidden} ${shortStatusLabel("hidden")}`} />
-                ) : null}
-                {cardsSummary.best_score !== null ? (
-                  <Badge text={`лучшая оценка: ${cardsSummary.best_score}`} />
-                ) : null}
-              </div>
-            ) : null}
-
-            {cardsSummary?.sources?.length ? (
               <div
                 style={{
                   marginBottom: 14,
-                  padding: "10px 12px",
-                  borderRadius: 14,
-                  border: `1px solid rgba(95, 120, 144, 0.14)`,
-                  background: "rgba(237,244,248,0.55)",
-                  color: BLUE_DARK,
-                  fontSize: 13,
-                  lineHeight: 1.45,
-                  fontWeight: 700,
+                  border: `1px solid ${LINE_SOFT}`,
+                  borderRadius: 16,
+                  background: PAPER_ELEVATED,
+                  padding: 12,
+                  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.55)",
                 }}
               >
-                {compactSourceLabel(cardsSummary.sources.map((item) => item.replace(/^Источник:\s*/, "")))}
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
+                  <Badge text={`${cardsSummary.featured} ${shortStatusLabel("featured")}`} strong />
+                  {cardsSummary.reserve > 0 ? (
+                    <Badge text={`${cardsSummary.reserve} ${shortStatusLabel("reserve")}`} />
+                  ) : null}
+                  {cardsSummary.hidden > 0 ? (
+                    <Badge text={`${cardsSummary.hidden} ${shortStatusLabel("hidden")}`} />
+                  ) : null}
+                  {cardsSummary.rewrite > 0 ? (
+                    <Badge text={`${cardsSummary.rewrite} ${shortStatusLabel("rewrite")}`} />
+                  ) : null}
+                  {cardsSummary.best_score !== null ? (
+                    <Badge text={`лучшая оценка: ${cardsSummary.best_score}`} />
+                  ) : null}
+                </div>
+
+                <div
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 900,
+                    letterSpacing: "0.1em",
+                    textTransform: "uppercase",
+                    color: MUTED,
+                    marginBottom: 7,
+                  }}
+                >
+                  Источники набора
+                </div>
+
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {dedupeSources(cardsSummary.sources).length > 0 ? (
+                    dedupeSources(cardsSummary.sources).map((source) => (
+                      <SourcePill key={source} text={source} />
+                    ))
+                  ) : (
+                    <SoftMiniTag text="Неизвестно" />
+                  )}
+                </div>
               </div>
             ) : null}
 
             {loadingCards ? (
-              <div style={{ display: "grid", gap: 10 }}>
+              <div style={{ display: "grid", gap: 9 }}>
                 <Skeleton width="75%" />
                 <Skeleton width="95%" />
                 <Skeleton width="62%" />
@@ -1714,11 +1726,11 @@ export default function StudioPage() {
               <div
                 style={{
                   padding: 12,
-                  borderRadius: 14,
+                  borderRadius: 12,
                   background: ERROR_BG,
                   color: ERROR_TEXT,
                   fontSize: 13,
-                  fontWeight: 800,
+                  fontWeight: 700,
                 }}
               >
                 {cardsError}
@@ -1729,12 +1741,12 @@ export default function StudioPage() {
               <div
                 style={{
                   padding: 14,
-                  borderRadius: 16,
-                  background: CARD,
+                  borderRadius: 14,
+                  background: PAPER_ELEVATED,
                   border: `1px dashed ${LINE}`,
                   color: SOFT,
                   fontSize: 14,
-                  lineHeight: 1.55,
+                  lineHeight: 1.5,
                 }}
               >
                 Выбери стих слева, чтобы увидеть карточки.
@@ -1745,12 +1757,12 @@ export default function StudioPage() {
               <div
                 style={{
                   padding: 14,
-                  borderRadius: 16,
-                  background: CARD,
+                  borderRadius: 14,
+                  background: PAPER_ELEVATED,
                   border: `1px dashed ${LINE}`,
                   color: SOFT,
                   fontSize: 14,
-                  lineHeight: 1.55,
+                  lineHeight: 1.5,
                 }}
               >
                 По этому стиху карточки не найдены.
@@ -1760,7 +1772,8 @@ export default function StudioPage() {
             <div style={{ display: "grid", gap: 14 }}>
               {cards.map((card) => {
                 const reEval = reEvaluations[card.id] ?? createEmptyReEvaluateState();
-                const retranslation = retranslations[card.id] ?? createEmptyRetranslateState();
+                const retranslation =
+                  retranslations[card.id] ?? createEmptyRetranslateState();
                 const rewrite = rewrites[card.id] ?? createEmptyRewriteState();
 
                 const newScore = getEvaluationScore(reEval.result);
@@ -1776,73 +1789,62 @@ export default function StudioPage() {
                 const canApplyRewrite = Boolean(
                   rewrite.result?.rewritten_card &&
                     rewrite.result.evaluation &&
-                    !rewrite.applied,
+                    !rewrite.applied
                 );
 
                 return (
                   <article
                     key={card.id}
                     style={{
+                      position: "relative",
                       border: `1px solid ${LINE}`,
                       borderRadius: 18,
                       padding: 16,
-                      background: CARD,
-                      boxShadow: "0 1px 0 rgba(255,255,255,0.45) inset",
+                      background:
+                        "linear-gradient(180deg, rgba(255,250,241,0.98) 0%, rgba(250,244,232,0.96) 100%)",
+                      boxShadow:
+                        "0 1px 0 rgba(255,255,255,0.55) inset, 0 8px 24px rgba(60,40,20,0.06)",
                     }}
                   >
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        gap: 12,
-                        alignItems: "flex-start",
-                        marginBottom: 10,
-                      }}
-                    >
+                    {card.score_total !== null ? (
+                      <div
+                        style={{
+                          position: "absolute",
+                          top: 14,
+                          right: 14,
+                          width: 42,
+                          height: 42,
+                          borderRadius: "999px",
+                          background: BLUE,
+                          color: "#fff",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontSize: 16,
+                          fontWeight: 900,
+                          boxShadow: "0 10px 20px rgba(95, 120, 144, 0.18)",
+                        }}
+                      >
+                        {card.score_total}
+                      </div>
+                    ) : null}
+
+                    <div style={{ paddingRight: 56 }}>
                       <h3
                         style={{
-                          margin: 0,
+                          margin: "0 0 10px",
                           fontSize: 17,
                           lineHeight: 1.2,
-                          letterSpacing: "-0.01em",
+                          letterSpacing: "-0.015em",
                           fontFamily:
                             'ui-serif, Georgia, "Iowan Old Style", "Times New Roman", serif',
-                          maxWidth: "calc(100% - 58px)",
                         }}
                       >
                         {card.title}
                       </h3>
-
-                      {card.score_total !== null ? (
-                        <span
-                          style={{
-                            background: BLUE,
-                            color: "#fff",
-                            borderRadius: 999,
-                            minWidth: 38,
-                            height: 38,
-                            display: "inline-flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            fontSize: 14,
-                            fontWeight: 900,
-                            flexShrink: 0,
-                            boxShadow: "0 8px 18px rgba(95,120,144,0.18)",
-                          }}
-                        >
-                          {card.score_total}
-                        </span>
-                      ) : null}
                     </div>
 
-                    <div
-                      style={{
-                        display: "flex",
-                        flexWrap: "wrap",
-                        gap: 7,
-                        marginBottom: 10,
-                      }}
-                    >
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginBottom: 10 }}>
                       <Badge text={statusLabel(card.status)} strong />
                       {coverageLabel(card.coverage_type) ? (
                         <Badge text={coverageLabel(card.coverage_type) ?? ""} />
@@ -1852,13 +1854,34 @@ export default function StudioPage() {
                     <div
                       style={{
                         marginBottom: 10,
-                        color: BLUE_DARK,
-                        fontSize: 13,
-                        lineHeight: 1.45,
-                        fontWeight: 700,
+                        padding: "8px 10px",
+                        borderRadius: 12,
+                        background: "#f4f7fa",
+                        border: `1px solid ${BLUE_LINE}`,
                       }}
                     >
-                      {getCardSource(card)}
+                      <div
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 900,
+                          letterSpacing: "0.08em",
+                          textTransform: "uppercase",
+                          color: MUTED,
+                          marginBottom: 4,
+                        }}
+                      >
+                        Источник
+                      </div>
+                      <div
+                        style={{
+                          color: BLUE_DARK,
+                          fontSize: 13,
+                          lineHeight: 1.45,
+                          fontWeight: 700,
+                        }}
+                      >
+                        {getCardSource(card)}
+                      </div>
                     </div>
 
                     {card.anchor ? (
@@ -1878,8 +1901,8 @@ export default function StudioPage() {
                     <p
                       style={{
                         margin: "0 0 12px",
-                        fontSize: 15,
-                        lineHeight: 1.7,
+                        fontSize: 14,
+                        lineHeight: 1.72,
                         color: INK,
                       }}
                     >
@@ -1889,17 +1912,17 @@ export default function StudioPage() {
                     {card.why_it_matters ? (
                       <div
                         style={{
-                          marginTop: 10,
-                          paddingTop: 10,
                           borderTop: `1px solid ${LINE}`,
+                          paddingTop: 10,
+                          marginBottom: 4,
                         }}
                       >
                         <p
                           style={{
                             margin: 0,
                             color: SOFT,
-                            fontSize: 14,
-                            lineHeight: 1.6,
+                            fontSize: 13,
+                            lineHeight: 1.58,
                           }}
                         >
                           <strong style={{ color: BLUE_DARK }}>Почему важно: </strong>
@@ -1915,7 +1938,6 @@ export default function StudioPage() {
                           color: BLUE_DARK,
                           fontSize: 13,
                           fontWeight: 900,
-                          listStyle: "none",
                         }}
                       >
                         Оценка / угол
@@ -1926,8 +1948,9 @@ export default function StudioPage() {
                           marginTop: 12,
                           padding: 12,
                           borderRadius: 16,
-                          border: `1px solid rgba(95,120,144,0.16)`,
-                          background: "linear-gradient(180deg, rgba(237,244,248,0.45) 0%, rgba(251,247,238,0.92) 100%)",
+                          border: `1px solid ${BLUE_LINE}`,
+                          background: "linear-gradient(180deg,#f6f9fc 0%, #eef4f8 100%)",
+                          boxShadow: "inset 0 1px 0 rgba(255,255,255,0.6)",
                         }}
                       >
                         <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginBottom: 10 }}>
@@ -1945,14 +1968,15 @@ export default function StudioPage() {
 
                         <p
                           style={{
-                            margin: "0 0 12px",
+                            margin: "0 0 10px",
                             color: SOFT,
                             fontSize: 13,
                             lineHeight: 1.55,
                           }}
                         >
-                          Нажми «Переоценить», чтобы проверить карточку новым редакционным стандартом.
-                          Если карточка сохранена не на том языке, нажми «Перевести заново».
+                          Нажми «Переоценить», чтобы проверить карточку новым редакционным
+                          стандартом. Если карточка сохранена не на том языке, нажми
+                          «Перевести заново».
                         </p>
 
                         <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
@@ -1971,7 +1995,7 @@ export default function StudioPage() {
                                 reEval.applying ||
                                 retranslation.loading ||
                                 rewrite.loading ||
-                                rewrite.applying,
+                                rewrite.applying
                             )}
                           >
                             {reEval.loading ? "Оцениваю..." : "Переоценить"}
@@ -1992,7 +2016,7 @@ export default function StudioPage() {
                                 reEval.loading ||
                                 reEval.applying ||
                                 rewrite.loading ||
-                                rewrite.applying,
+                                rewrite.applying
                             )}
                           >
                             {retranslation.loading ? "Перевожу..." : "Перевести заново"}
@@ -2003,12 +2027,12 @@ export default function StudioPage() {
                           <div
                             style={{
                               marginTop: 10,
-                              padding: "10px 11px",
+                              padding: "9px 10px",
                               borderRadius: 12,
                               background: ERROR_BG,
                               color: ERROR_TEXT,
                               fontSize: 13,
-                              fontWeight: 800,
+                              fontWeight: 700,
                             }}
                           >
                             {retranslation.error}
@@ -2019,7 +2043,7 @@ export default function StudioPage() {
                           <div
                             style={{
                               marginTop: 10,
-                              padding: "10px 11px",
+                              padding: "9px 10px",
                               borderRadius: 12,
                               background: SUCCESS_BG,
                               color: SUCCESS_TEXT,
@@ -2035,12 +2059,12 @@ export default function StudioPage() {
                           <div
                             style={{
                               marginTop: 10,
-                              padding: "10px 11px",
+                              padding: "9px 10px",
                               borderRadius: 12,
                               background: ERROR_BG,
                               color: ERROR_TEXT,
                               fontSize: 13,
-                              fontWeight: 800,
+                              fontWeight: 700,
                             }}
                           >
                             {reEval.error}
@@ -2050,11 +2074,11 @@ export default function StudioPage() {
                         {reEval.result ? (
                           <div
                             style={{
-                              marginTop: 12,
-                              padding: 12,
+                              marginTop: 10,
+                              padding: 11,
                               borderRadius: 14,
-                              background: CARD,
-                              border: `1px solid ${LINE}`,
+                              background: PAPER_ELEVATED,
+                              border: `1px solid ${LINE_SOFT}`,
                             }}
                           >
                             <div
@@ -2062,7 +2086,7 @@ export default function StudioPage() {
                                 display: "flex",
                                 flexWrap: "wrap",
                                 gap: 7,
-                                marginBottom: 10,
+                                marginBottom: 9,
                               }}
                             >
                               <Badge
@@ -2081,7 +2105,7 @@ export default function StudioPage() {
                                   margin: "0 0 8px",
                                   color: SOFT,
                                   fontSize: 13,
-                                  lineHeight: 1.55,
+                                  lineHeight: 1.5,
                                 }}
                               >
                                 <strong style={{ color: BLUE_DARK }}>Причина: </strong>
@@ -2095,7 +2119,7 @@ export default function StudioPage() {
                                   margin: "0 0 8px",
                                   color: WARNING_TEXT,
                                   fontSize: 13,
-                                  lineHeight: 1.55,
+                                  lineHeight: 1.5,
                                 }}
                               >
                                 <strong>Риск: </strong>
@@ -2107,7 +2131,7 @@ export default function StudioPage() {
                               <div
                                 style={{
                                   marginTop: 10,
-                                  padding: "10px 11px",
+                                  padding: "9px 10px",
                                   borderRadius: 12,
                                   background: SUCCESS_BG,
                                   color: SUCCESS_TEXT,
@@ -2134,12 +2158,12 @@ export default function StudioPage() {
                               <div
                                 style={{
                                   marginTop: 10,
-                                  padding: "10px 11px",
+                                  padding: "9px 10px",
                                   borderRadius: 12,
                                   background: ERROR_BG,
                                   color: ERROR_TEXT,
                                   fontSize: 13,
-                                  fontWeight: 800,
+                                  fontWeight: 700,
                                 }}
                               >
                                 {reEval.applyError}
@@ -2152,9 +2176,10 @@ export default function StudioPage() {
                           style={{
                             marginTop: 12,
                             padding: 12,
-                            borderRadius: 16,
-                            background: CARD_ALT,
-                            border: `1px solid rgba(95,120,144,0.16)`,
+                            borderRadius: 15,
+                            background: "linear-gradient(180deg,#fffaf1 0%, #fbf4e7 100%)",
+                            border: `1px solid ${LINE_SOFT}`,
+                            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.6)",
                           }}
                         >
                           <div
@@ -2182,7 +2207,7 @@ export default function StudioPage() {
                               onClick={() => updateRewriteMode(card.id, "polish")}
                               style={getModeButtonStyle(
                                 rewrite.rewriteMode === "polish",
-                                rewrite.loading || rewrite.applying,
+                                rewrite.loading || rewrite.applying
                               )}
                             >
                               Улучшить этот угол
@@ -2194,7 +2219,7 @@ export default function StudioPage() {
                               onClick={() => updateRewriteMode(card.id, "from_idea")}
                               style={getModeButtonStyle(
                                 rewrite.rewriteMode === "from_idea",
-                                rewrite.loading || rewrite.applying,
+                                rewrite.loading || rewrite.applying
                               )}
                             >
                               Сделать из моей мысли
@@ -2203,7 +2228,7 @@ export default function StudioPage() {
 
                           <p
                             style={{
-                              margin: "0 0 10px",
+                              margin: "0 0 9px",
                               color: SOFT,
                               fontSize: 12,
                               lineHeight: 1.5,
@@ -2231,7 +2256,7 @@ export default function StudioPage() {
                               border: `1px solid ${LINE}`,
                               borderRadius: 12,
                               padding: "10px 11px",
-                              background: CARD,
+                              background: PAPER_ELEVATED,
                               color: INK,
                               fontSize: 13,
                               lineHeight: 1.5,
@@ -2259,14 +2284,14 @@ export default function StudioPage() {
                               border: `1px solid ${LINE}`,
                               borderRadius: 12,
                               padding: "10px 11px",
-                              background: CARD,
+                              background: PAPER_ELEVATED,
                               color: INK,
                               fontSize: 13,
                               lineHeight: 1.5,
                               fontFamily: "inherit",
                               resize: "vertical",
                               outlineColor: BLUE,
-                              marginBottom: 9,
+                              marginBottom: 10,
                             }}
                           />
 
@@ -2280,13 +2305,16 @@ export default function StudioPage() {
                               retranslation.loading
                             }
                             onClick={() => previewRewrite(card)}
-                            style={getSmallButtonStyle(
-                              rewrite.loading ||
-                                rewrite.applying ||
-                                reEval.loading ||
-                                reEval.applying ||
-                                retranslation.loading,
-                            )}
+                            style={{
+                              ...getApplyButtonStyle(
+                                rewrite.loading ||
+                                  rewrite.applying ||
+                                  reEval.loading ||
+                                  reEval.applying ||
+                                  retranslation.loading
+                              ),
+                              padding: "10px 14px",
+                            }}
                           >
                             {rewrite.loading ? "Готовлю..." : "Сделать вариант"}
                           </button>
@@ -2295,12 +2323,12 @@ export default function StudioPage() {
                             <div
                               style={{
                                 marginTop: 10,
-                                padding: "10px 11px",
+                                padding: "9px 10px",
                                 borderRadius: 12,
                                 background: ERROR_BG,
                                 color: ERROR_TEXT,
                                 fontSize: 13,
-                                fontWeight: 800,
+                                fontWeight: 700,
                               }}
                             >
                               {rewrite.error}
@@ -2313,8 +2341,8 @@ export default function StudioPage() {
                                 marginTop: 12,
                                 padding: 12,
                                 borderRadius: 14,
-                                background: CARD,
-                                border: `1px solid rgba(95,120,144,0.18)`,
+                                background: BLUE_PALE,
+                                border: `1px solid rgba(95, 120, 144, 0.2)`,
                               }}
                             >
                               <div
@@ -2322,7 +2350,7 @@ export default function StudioPage() {
                                   fontSize: 13,
                                   fontWeight: 900,
                                   color: BLUE_DARK,
-                                  marginBottom: 8,
+                                  marginBottom: 7,
                                 }}
                               >
                                 Новый вариант
@@ -2364,7 +2392,7 @@ export default function StudioPage() {
                                     margin: "0 0 8px",
                                     color: SOFT,
                                     fontSize: 13,
-                                    lineHeight: 1.5,
+                                    lineHeight: 1.45,
                                     fontStyle: "italic",
                                   }}
                                 >
@@ -2376,8 +2404,8 @@ export default function StudioPage() {
                                 style={{
                                   margin: "0 0 8px",
                                   color: INK,
-                                  fontSize: 14,
-                                  lineHeight: 1.6,
+                                  fontSize: 13,
+                                  lineHeight: 1.55,
                                 }}
                               >
                                 {rewrite.result.rewritten_card.teaser}
@@ -2448,7 +2476,7 @@ export default function StudioPage() {
                                 <div
                                   style={{
                                     marginTop: 10,
-                                    padding: "10px 11px",
+                                    padding: "9px 10px",
                                     borderRadius: 12,
                                     background: SUCCESS_BG,
                                     color: SUCCESS_TEXT,
@@ -2465,7 +2493,9 @@ export default function StudioPage() {
                                   onClick={() => applyRewrite(card)}
                                   style={getApplyButtonStyle(!canApplyRewrite || rewrite.applying)}
                                 >
-                                  {rewrite.applying ? "Применяю..." : "Применить доработку RU/EN/ES"}
+                                  {rewrite.applying
+                                    ? "Применяю..."
+                                    : "Применить доработку RU/EN/ES"}
                                 </button>
                               )}
 
@@ -2473,12 +2503,12 @@ export default function StudioPage() {
                                 <div
                                   style={{
                                     marginTop: 10,
-                                    padding: "10px 11px",
+                                    padding: "9px 10px",
                                     borderRadius: 12,
                                     background: ERROR_BG,
                                     color: ERROR_TEXT,
                                     fontSize: 13,
-                                    fontWeight: 800,
+                                    fontWeight: 700,
                                   }}
                                 >
                                   {rewrite.applyError}
@@ -2499,13 +2529,12 @@ export default function StudioPage() {
         <p
           style={{
             margin: "18px 0 0",
-            color: MUTED,
+            color: SOFT,
             fontSize: 12,
             textAlign: "center",
           }}
         >
           MVP Studio: переоценка, применение оценки, ремонт перевода и доработка карточки RU/EN/ES.
-          Следующий этап — добавить материал.
         </p>
       </div>
     </main>
@@ -2520,11 +2549,52 @@ function Badge({ text, strong = false }: { text: string; strong?: boolean }) {
         alignItems: "center",
         borderRadius: 999,
         padding: "5px 9px",
-        background: strong ? BLUE_SOFT : "rgba(95, 120, 144, 0.10)",
+        background: strong ? BLUE_SOFT : "rgba(95, 120, 144, 0.1)",
         color: BLUE_DARK,
         fontSize: 12,
-        fontWeight: strong ? 850 : 750,
+        fontWeight: strong ? 800 : 700,
         lineHeight: 1,
+      }}
+    >
+      {text}
+    </span>
+  );
+}
+
+function SoftMiniTag({ text }: { text: string }) {
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        borderRadius: 999,
+        padding: "4px 8px",
+        background: "rgba(95, 120, 144, 0.08)",
+        color: BLUE_DARK,
+        fontSize: 11,
+        fontWeight: 700,
+        lineHeight: 1.2,
+      }}
+    >
+      {text}
+    </span>
+  );
+}
+
+function SourcePill({ text }: { text: string }) {
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        borderRadius: 999,
+        padding: "6px 10px",
+        background: "#f3f7fb",
+        color: BLUE_DARK,
+        border: `1px solid ${BLUE_LINE}`,
+        fontSize: 12,
+        fontWeight: 700,
+        lineHeight: 1.15,
       }}
     >
       {text}
