@@ -19,9 +19,13 @@ export function ExtraAnalysis({
   provider: Provider;
 }) {
   const t = dictionary[lang].extra;
+
   return (
     <section>
-      <h2 className="h2" style={{ marginTop: 28 }}>{t.title}</h2>
+      <h2 className="h2" style={{ marginTop: 28 }}>
+        {t.title}
+      </h2>
+
       <div style={{ display: "grid", gap: 12 }}>
         {EXTRA_ORDER.map((id) => (
           <ExtraItem
@@ -55,29 +59,67 @@ function ExtraItem({
   provider: Provider;
 }) {
   const T = dictionary[lang];
+
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [shareNotice, setShareNotice] = useState("");
 
   type ExtraBlock = { title: string; body: string };
 
   function extractBlocks(raw: string): ExtraBlock[] | null {
     const parsed = extractJSONObject<{ blocks: ExtraBlock[] }>(raw);
+
     if (!parsed || !Array.isArray(parsed.blocks)) return null;
+
     return parsed.blocks.filter(
       (b: unknown) =>
         typeof b === "object" &&
         b !== null &&
         typeof (b as ExtraBlock).title === "string" &&
-        typeof (b as ExtraBlock).body === "string"
+        typeof (b as ExtraBlock).body === "string",
     );
+  }
+
+  function buildShareText(raw: string): string {
+    const blocks = extractBlocks(raw);
+
+    const body = blocks
+      ? blocks.map((block) => `${block.title}\n\n${block.body}`).join("\n\n")
+      : raw;
+
+    return `${reference}\n${title}\n\n${body}\n\n${T.shareFrom}`;
+  }
+
+  async function shareAnalysis() {
+    if (!text) return;
+
+    const shareText = buildShareText(text);
+
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: `${reference} — ${title}`,
+          text: shareText,
+        });
+        return;
+      }
+
+      await navigator.clipboard.writeText(shareText);
+      setShareNotice(T.copied);
+      window.setTimeout(() => setShareNotice(""), 2500);
+    } catch {
+      setShareNotice("");
+    }
   }
 
   async function load() {
     if (text || loading) return;
+
     setLoading(true);
     setError("");
+
     try {
       const r = await fetch("/api/analyze", {
         method: "POST",
@@ -91,8 +133,11 @@ function ExtraItem({
           provider,
         }),
       });
+
       const j = await r.json();
+
       if (!r.ok) throw new Error(j?.error || T.error);
+
       setText(j.text ?? "");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : T.error);
@@ -104,6 +149,7 @@ function ExtraItem({
   function toggle() {
     const next = !open;
     setOpen(next);
+
     if (next) void load();
   }
 
@@ -138,28 +184,75 @@ function ExtraItem({
               <div className="skeleton" style={{ width: "65%" }} />
             </>
           )}
+
           {error && <div className="error">{error}</div>}
-          {!loading && !error && text && (() => {
-            const blocks = extractBlocks(text);
-            if (!blocks) {
-              return (
-                <div className="prose">
-                  <MarkdownText text={text} />
-                </div>
-              );
-            }
-            return (
-              <div style={{ display: "grid", gap: 0 }}>
-                {blocks.map((block, i) => (
-                  <div key={i}>
-                    {i > 0 && <div className="angle-card-divider" style={{ margin: "16px 0" }} />}
-                    <div className="extra-block-title">{block.title}</div>
-                    <p className="extra-block-body">{block.body}</p>
-                  </div>
-                ))}
+
+          {!loading && !error && text ? (
+            <>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  marginBottom: 14,
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={shareAnalysis}
+                  style={{
+                    border: "1px solid rgba(95, 120, 144, 0.32)",
+                    borderRadius: 999,
+                    background: "rgba(95, 120, 144, 0.09)",
+                    color: "var(--ink)",
+                    padding: "8px 12px",
+                    cursor: "pointer",
+                    fontSize: 13,
+                    fontWeight: 700,
+                    fontFamily: "inherit",
+                  }}
+                >
+                  {T.share}
+                </button>
+
+                {shareNotice ? (
+                  <span className="muted" style={{ fontSize: 13 }}>
+                    {shareNotice}
+                  </span>
+                ) : null}
               </div>
-            );
-          })()}
+
+              {(() => {
+                const blocks = extractBlocks(text);
+
+                if (!blocks) {
+                  return (
+                    <div className="prose">
+                      <MarkdownText text={text} />
+                    </div>
+                  );
+                }
+
+                return (
+                  <div style={{ display: "grid", gap: 0 }}>
+                    {blocks.map((block, i) => (
+                      <div key={i}>
+                        {i > 0 && (
+                          <div
+                            className="angle-card-divider"
+                            style={{ margin: "16px 0" }}
+                          />
+                        )}
+
+                        <div className="extra-block-title">{block.title}</div>
+                        <p className="extra-block-body">{block.body}</p>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </>
+          ) : null}
         </div>
       )}
     </div>
