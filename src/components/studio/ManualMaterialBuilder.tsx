@@ -29,6 +29,53 @@ type RejectedIdea = {
   reason: string;
 };
 
+type DuplicateCard = {
+  id: string | null;
+  title: string;
+  anchor: string | null;
+  teaser: string;
+  why_it_matters: string | null;
+  angle_summary?: string | null;
+  coverage_type?: string | null;
+  score_total: number | null;
+  status?: string | null;
+  is_locked?: boolean | null;
+  source_type?: string | null;
+  source_provider?: string | null;
+  source_model?: string | null;
+  editor_model?: string | null;
+  moderator_boost?: number | null;
+};
+
+type DuplicatePayload = {
+  reason?: string | null;
+  matched_card_id?: string | null;
+  existing_card?: DuplicateCard | null;
+  candidate_card?: {
+    id?: string | null;
+    title: string;
+    anchor: string | null;
+    teaser: string;
+    why_it_matters: string | null;
+    original_candidate?: unknown;
+  } | null;
+  existing_score?: number | null;
+  candidate_score?: number | null;
+  same_angle?: boolean | null;
+  similarity_confidence?: number | null;
+  battle?: {
+    required?: boolean;
+    old_card_id?: string | null;
+    old_score?: number;
+    new_score?: number;
+    winner?: string | null;
+    score_delta?: number;
+    battle_action?: string | null;
+    battle_reason?: string | null;
+  } | null;
+  evaluation?: unknown;
+};
+
 type ManualExtractResponse = {
   ok?: boolean;
   error?: string;
@@ -63,6 +110,7 @@ type ProcessCandidateResponse = {
   book_key?: string | null;
   editor_provider?: string;
   editor_model?: string;
+  duplicate?: DuplicatePayload | null;
 };
 
 type SaveState = {
@@ -70,6 +118,7 @@ type SaveState = {
   saved: boolean;
   error: string;
   message: string;
+  duplicate: DuplicatePayload | null;
 };
 
 type Props = {
@@ -92,6 +141,7 @@ const SLATE = "#6f7b88";
 const SLATE_DARK = "#5b6672";
 const SLATE_SOFT = "#eef2f5";
 const WARM_ACCENT = "#9a8061";
+const WARM_SOFT = "#f4ede3";
 const WARNING_BG = "#f5ebd5";
 const WARNING_TEXT = "#8a6330";
 const ERROR_BG = "#f5dfd7";
@@ -120,7 +170,7 @@ function buttonStyle(primary = false, disabled = false): CSSProperties {
 }
 
 function scorePill(score: number | null) {
-  if (score === null) return null;
+  if (score === null || !Number.isFinite(score)) return null;
 
   return (
     <span
@@ -179,17 +229,18 @@ function createEmptySaveState(previous?: SaveState): SaveState {
     saved: previous?.saved ?? false,
     error: "",
     message: previous?.message ?? "",
+    duplicate: previous?.duplicate ?? null,
   };
 }
 
 function getCandidateSaveMessage(data: ProcessCandidateResponse): string {
   if (data.skipped) {
     if (data.skip_reason === "matched_duplicate") {
-      return "Не сохранено: система сочла это дублем уже существующей карточки.";
+      return "Найден похожий угол. Ниже показано сравнение старой и новой карточки.";
     }
 
     if (data.skip_reason === "matched_duplicate_after_rewrite") {
-      return "Не сохранено: после доработки система всё равно сочла это дублем.";
+      return "После доработки система всё равно нашла похожий угол. Ниже показано сравнение.";
     }
 
     if (data.skip_reason === "score_below_save_threshold") {
@@ -211,6 +262,327 @@ function getCandidateSaveMessage(data: ProcessCandidateResponse): string {
   const status = data.status ? ` Статус: ${data.status}.` : "";
 
   return `Карточка сохранена в RU/EN/ES.${score}${status}`;
+}
+
+function statusLabel(status?: string | null): string {
+  if (!status) return "—";
+  if (status === "featured") return "активная";
+  if (status === "reserve") return "запас";
+  if (status === "hidden") return "скрыта";
+  if (status === "rejected") return "отклонена";
+  if (status === "rewrite") return "на доработку";
+  return status;
+}
+
+function readableSourceLabel(source?: string | null): string {
+  if (!source) return "Неизвестно";
+
+  const cleaned = source
+    .replace("article_extractor_v1:", "")
+    .replace("admin_process_candidate", "manual")
+    .replace("extra_analysis_article", "extra")
+    .replace("context_card_article", "context")
+    .replace("word_card_article", "word");
+
+  if (cleaned === "word") return "Word Lens";
+  if (cleaned === "context") return "Context Lens";
+  if (cleaned === "intertext") return "Связи с другими стихами";
+  if (cleaned === "historical_scene") return "Историческая сцена";
+  if (cleaned === "text_findings") return "Текстовые находки";
+  if (cleaned === "scripture_links") return "Связи с другими стихами";
+  if (cleaned.startsWith("manual_material:")) return "Ручной материал";
+  if (cleaned.startsWith("initial_angles:gemini")) return "Первичная генерация Gemini";
+  if (cleaned.startsWith("initial_angles:claude")) return "Первичная генерация Claude";
+  if (cleaned.startsWith("initial_angles:openai")) return "Первичная генерация OpenAI";
+  if (cleaned === "manual") return "Ручная обработка";
+  if (cleaned === "manual_test") return "Ручной тест";
+  if (cleaned === "studio_rewrite") return "Доработка в Studio";
+
+  return cleaned;
+}
+
+function CardPreview({
+  label,
+  card,
+  score,
+  accent,
+}: {
+  label: string;
+  card: {
+    title: string;
+    anchor: string | null;
+    teaser: string;
+    why_it_matters: string | null;
+    status?: string | null;
+    source_model?: string | null;
+  };
+  score: number | null;
+  accent: "old" | "new";
+}) {
+  const isNew = accent === "new";
+
+  return (
+    <div
+      style={{
+        border: `1px solid ${isNew ? "rgba(111, 123, 136, 0.30)" : LINE}`,
+        borderRadius: 16,
+        background: isNew ? SLATE_SOFT : CARD,
+        padding: 12,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          gap: 10,
+          alignItems: "flex-start",
+          marginBottom: 8,
+        }}
+      >
+        <div>
+          <div
+            style={{
+              fontSize: 11,
+              fontWeight: 900,
+              letterSpacing: "0.14em",
+              textTransform: "uppercase",
+              color: isNew ? SLATE_DARK : WARM_ACCENT,
+              marginBottom: 6,
+            }}
+          >
+            {label}
+          </div>
+
+          <h5
+            style={{
+              margin: 0,
+              fontSize: 16,
+              lineHeight: 1.25,
+              fontFamily:
+                'ui-serif, Georgia, "Iowan Old Style", "Times New Roman", serif',
+              color: INK,
+            }}
+          >
+            {card.title}
+          </h5>
+        </div>
+
+        {scorePill(score)}
+      </div>
+
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginBottom: 8 }}>
+        {card.status ? (
+          <span
+            style={{
+              borderRadius: 999,
+              background: isNew ? CARD : SLATE_SOFT,
+              color: SLATE_DARK,
+              padding: "5px 8px",
+              fontSize: 12,
+              fontWeight: 800,
+            }}
+          >
+            {statusLabel(card.status)}
+          </span>
+        ) : null}
+
+        {card.source_model ? (
+          <span
+            style={{
+              borderRadius: 999,
+              background: isNew ? CARD : SLATE_SOFT,
+              color: SLATE_DARK,
+              padding: "5px 8px",
+              fontSize: 12,
+              fontWeight: 800,
+            }}
+          >
+            {readableSourceLabel(card.source_model)}
+          </span>
+        ) : null}
+      </div>
+
+      {card.anchor ? (
+        <p
+          style={{
+            margin: "0 0 8px",
+            color: MUTED,
+            fontSize: 13,
+            lineHeight: 1.5,
+            fontStyle: "italic",
+          }}
+        >
+          "{card.anchor}"
+        </p>
+      ) : null}
+
+      <p
+        style={{
+          margin: 0,
+          color: TEXT,
+          fontSize: 13,
+          lineHeight: 1.6,
+        }}
+      >
+        {card.teaser}
+      </p>
+
+      {card.why_it_matters ? (
+        <p
+          style={{
+            margin: "9px 0 0",
+            color: MUTED,
+            fontSize: 13,
+            lineHeight: 1.55,
+          }}
+        >
+          <strong style={{ color: SLATE_DARK }}>Почему важно: </strong>
+          {card.why_it_matters}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function DuplicateBattleView({ duplicate }: { duplicate: DuplicatePayload }) {
+  const existing = duplicate.existing_card;
+  const candidate = duplicate.candidate_card;
+
+  if (!existing || !candidate) {
+    return (
+      <MessageBox
+        kind="info"
+        text="Система нашла похожий угол, но не вернула полные данные для сравнения."
+        style={{ marginTop: 10 }}
+      />
+    );
+  }
+
+  const battleReason =
+    duplicate.battle?.battle_reason ||
+    duplicate.reason ||
+    "Система считает, что обе карточки раскрывают один и тот же угол.";
+
+  const existingScore =
+    typeof duplicate.existing_score === "number"
+      ? duplicate.existing_score
+      : existing.score_total;
+
+  const candidateScore =
+    typeof duplicate.candidate_score === "number"
+      ? duplicate.candidate_score
+      : null;
+
+  return (
+    <div
+      style={{
+        marginTop: 12,
+        border: `1px solid rgba(138, 99, 48, 0.22)`,
+        borderRadius: 18,
+        background: `linear-gradient(180deg, ${WARNING_BG} 0%, #fff8eb 100%)`,
+        padding: 13,
+      }}
+    >
+      <div
+        style={{
+          fontSize: 12,
+          textTransform: "uppercase",
+          letterSpacing: "0.16em",
+          color: WARNING_TEXT,
+          fontWeight: 900,
+          marginBottom: 8,
+        }}
+      >
+        Похожий угол найден
+      </div>
+
+      <p
+        style={{
+          margin: "0 0 12px",
+          color: WARNING_TEXT,
+          fontSize: 13,
+          lineHeight: 1.55,
+          fontWeight: 750,
+        }}
+      >
+        {battleReason}
+      </p>
+
+      <div style={{ display: "grid", gap: 10 }}>
+        <CardPreview
+          label="Существующая карточка"
+          card={{
+            title: existing.title,
+            anchor: existing.anchor,
+            teaser: existing.teaser,
+            why_it_matters: existing.why_it_matters,
+            status: existing.status,
+            source_model: existing.source_model,
+          }}
+          score={existingScore}
+          accent="old"
+        />
+
+        <CardPreview
+          label="Новый кандидат"
+          card={{
+            title: candidate.title,
+            anchor: candidate.anchor,
+            teaser: candidate.teaser,
+            why_it_matters: candidate.why_it_matters,
+            status: "manual",
+            source_model: "manual_material",
+          }}
+          score={candidateScore}
+          accent="new"
+        />
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gap: 7,
+          marginTop: 12,
+          paddingTop: 12,
+          borderTop: `1px solid rgba(138, 99, 48, 0.18)`,
+          color: WARNING_TEXT,
+          fontSize: 12,
+          lineHeight: 1.45,
+        }}
+      >
+        {typeof duplicate.similarity_confidence === "number" ? (
+          <div>
+            <strong>Уверенность сходства: </strong>
+            {duplicate.similarity_confidence}
+          </div>
+        ) : null}
+
+        {duplicate.battle?.winner ? (
+          <div>
+            <strong>Выбор AI: </strong>
+            {duplicate.battle.winner === "matched"
+              ? "оставить существующую"
+              : duplicate.battle.winner === "candidate"
+                ? "выбрать нового кандидата"
+                : duplicate.battle.winner}
+          </div>
+        ) : null}
+
+        {duplicate.battle?.score_delta !== undefined ? (
+          <div>
+            <strong>Разница оценки: </strong>
+            {duplicate.battle.score_delta}
+          </div>
+        ) : null}
+      </div>
+
+      <MessageBox
+        kind="info"
+        text="Следующий шаг: добавим кнопки модератора — сохранить нового кандидата в запас, сделать активным или заменить существующую карточку."
+        style={{ marginTop: 12 }}
+      />
+    </div>
+  );
 }
 
 export function ManualMaterialBuilder({
@@ -334,6 +706,7 @@ export function ManualMaterialBuilder({
         saved: false,
         error: "",
         message: "",
+        duplicate: null,
       },
     }));
 
@@ -382,6 +755,7 @@ export function ManualMaterialBuilder({
           saved: !data.skipped,
           error: "",
           message,
+          duplicate: data.duplicate ?? null,
         },
       }));
 
@@ -397,6 +771,7 @@ export function ManualMaterialBuilder({
           loading: false,
           saved: false,
           error: message,
+          duplicate: null,
         },
       }));
 
@@ -681,6 +1056,10 @@ export function ManualMaterialBuilder({
                     text={saveState.message}
                     style={{ marginTop: 10 }}
                   />
+                ) : null}
+
+                {saveState.duplicate ? (
+                  <DuplicateBattleView duplicate={saveState.duplicate} />
                 ) : null}
               </div>
             );
