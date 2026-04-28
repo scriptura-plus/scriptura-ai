@@ -558,7 +558,6 @@ export function ManualMaterialBuilder({
         <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
           {candidates.map((candidate) => {
             const saveState = saveStates[candidate.id] ?? createEmptySaveState();
-            const saveDisabled = saveState.loading || saveState.saved;
 
             return (
               <div
@@ -660,14 +659,14 @@ export function ManualMaterialBuilder({
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 11 }}>
                   <button
                     type="button"
-                    disabled={saveDisabled}
+                    disabled={saveState.loading}
                     onClick={() => saveCandidate(candidate)}
-                    style={buttonStyle(true, saveDisabled)}
+                    style={buttonStyle(true, saveState.loading)}
                   >
                     {saveState.loading
                       ? "Оцениваю..."
                       : saveState.saved
-                        ? "Сохранено"
+                        ? "Сохранить ещё раз"
                         : "Оценить и сохранить"}
                   </button>
                 </div>
