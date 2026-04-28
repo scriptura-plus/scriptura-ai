@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { formatReference } from "@/lib/bible/formatReference";
+import { ManualMaterialBuilder } from "@/components/studio/ManualMaterialBuilder";
 
 type Lang = "ru" | "en" | "es";
 type RewriteMode = "polish" | "from_idea";
@@ -1930,6 +1931,14 @@ export default function StudioPage() {
               <EmptyBox text="По этому стиху карточки не найдены." />
             ) : null}
 
+            <ManualMaterialBuilder
+              selectedVerse={selectedVerse}
+              lang={lang}
+              adminSecret={adminSecret}
+              onNotice={setNotice}
+              onError={setCardsError}
+            />
+
             <div style={{ display: "grid", gap: 14 }}>
               {cards.map((card) => {
                 const reEval = reEvaluations[card.id] ?? createEmptyReEvaluateState();
@@ -2848,7 +2857,7 @@ export default function StudioPage() {
           }}
         >
           MVP Studio: переоценка, применение оценки, ремонт перевода, доработка
-          карточки и ручной редакторский приоритет RU/EN/ES.
+          карточки, ручной редакторский приоритет и ручной материал RU/EN/ES.
         </p>
       </div>
     </main>
