@@ -1,36 +1,34 @@
 import {
   LANG_NAME,
   LANG_FENCE,
-  LANG_TAIL,
   EDITORIAL_VOICE,
   JARGON_BAN,
-  OUTPUT_STRUCTURE,
 } from "./editorial";
 import type { Lang } from "./editorial";
 
 export type { Lang };
+
 export type LensId = "angles" | "word" | "context" | "translations";
-export const LENS_ORDER: LensId[] = ["angles", "word", "context", "translations"];
+
+export const LENS_ORDER: LensId[] = [
+  "angles",
+  "word",
+  "context",
+  "translations",
+];
 
 export function buildLensPrompt(args: {
   lens: LensId;
   reference: string;
   verseText: string;
   lang: Lang;
+  chapterText?: string | null;
+  chapterReference?: string | null;
 }): string {
   const langName = LANG_NAME[args.lang];
   const fence = LANG_FENCE(langName);
-  const tail = LANG_TAIL(langName);
-
-  const header = (extra = "") =>
-    `${fence}\n\n` +
-    `Verse: ${args.reference}\n"${args.verseText}"\n\n` +
-    `${EDITORIAL_VOICE(langName)}\n\n` +
-    `${JARGON_BAN}\n\n` +
-    (extra ? `${extra}\n\n` : "");
 
   switch (args.lens) {
-
     // ─── ANGLES ──────────────────────────────────────────────────────────────
     case "angles":
       return (
@@ -168,17 +166,21 @@ export function buildLensPrompt(args: {
         `Does the original word carry a wider, stranger, or more physical range of meaning ` +
         `than the translation suggests? What does the single translated word collapse?\n` +
         `Example: σπλάγχνα (splanchna) covers gut, womb, bowels — translated "compassion" loses every organ.\n\n` +
+
         `Category B — ROOT METAPHOR:\n` +
         `Is there a buried physical image inside an abstract word? ` +
         `What did the original speakers picture when they used this word?\n` +
         `Example: χαρίζομαι (to forgive) comes from χάρις (gift, favor) — the root is giving, not releasing.\n\n` +
+
         `Category C — WORD CHOICE VS ALTERNATIVE:\n` +
         `What word did the author use, and what near-synonym could they have chosen instead? ` +
         `Why does the actual choice matter?\n` +
         `Example: Paul chose χαρίζομαι, not ἀφίημι — gift-giving logic, not debt-cancelling logic.\n\n` +
+
         `Category D — TRANSLATION GAP:\n` +
         `What does the ${langName} translation smooth over, flatten, or accidentally normalize? ` +
         `What sounds ordinary in ${langName} but was strange in the original?\n\n` +
+
         `Category E — TENSE, VOICE, OR MOOD:\n` +
         `Does a grammatical form — aorist, passive, imperative, participle — carry meaning ` +
         `that the translation paraphrases away?\n\n` +
@@ -228,26 +230,107 @@ export function buildLensPrompt(args: {
       );
 
     // ─── CONTEXT ──────────────────────────────────────────────────────────────
-    case "context":
+    case "context": {
+      const chapterReference =
+        args.chapterReference ?? "the chapter containing the target verse";
+      const chapterText = args.chapterText?.trim();
+
       return (
-        header() +
-        `${OUTPUT_STRUCTURE}\n\n` +
-        `Task: Build context in two layers, then land one payoff.\n\n` +
-        `**Narrow context** — Read the 3–5 verses immediately before and after. ` +
-        `Ask: what changes when this verse is read inside that movement? ` +
-        `Is this line an answer to something? A climax? A pivot? A correction? A reversal? ` +
-        `Lead with the detail that most readers miss because they extracted the verse from its local argument. ` +
-        `Make this feel like: "On its own the verse looks simple. In context, it is the hinge of a sharper argument." ` +
-        `Do not summarize the surrounding verses. Show what they do to this one.\n\n` +
-        `**Wide context** — Step back to the chapter, the book, and the moment of writing. ` +
-        `Where is the author driving? Is this verse doing local work or carrying a whole-book argument? ` +
-        `What was at stake politically, emotionally, or rhetorically in this moment? ` +
-        `Every background fact must earn its place by changing how a line reads. ` +
-        `Avoid generic historical overview. Background must feel revelatory.\n\n` +
-        `**Payoff** — One precise sentence. Not a summary. A reframing that makes the verse look different than it did before.\n\n` +
-        `Lead with the most under-appreciated detail. Do not begin with "The surrounding verses discuss…"` +
-        tail
+        `${fence}\n\n` +
+        `Target verse: ${args.reference}\n"${args.verseText}"\n\n` +
+        `Full chapter context: ${chapterReference}\n` +
+        (chapterText
+          ? `"${chapterText}"\n\n`
+          : `[CHAPTER TEXT WAS NOT PROVIDED. Use only stable biblical context you can confidently reconstruct, but clearly prioritize local context and avoid guessing specific verse wording.]\n\n`) +
+        `All string values must be written in ${langName}.\n\n` +
+        `${EDITORIAL_VOICE(langName)}\n\n` +
+        `${JARGON_BAN}\n\n` +
+
+        `TASK: Build a real Context Lens. Do NOT create ordinary insight cards, word studies, translation observations, or general reflections.\n\n` +
+
+        `A context card is valid ONLY if the idea becomes visible because the target verse is read inside a larger unit.\n` +
+        `If the same idea could be written by looking only at the target verse, reject it.\n\n` +
+
+        `WORK IN THREE LAYERS, IN THIS ORDER:\n\n` +
+
+        `LAYER 1 — NEAREST MEANING UNIT:\n` +
+        `From the full chapter, identify the closest meaningful unit around the target verse. ` +
+        `Usually this means the few verses before and after, but do not mechanically choose 3–5 verses. ` +
+        `Find the actual paragraph, scene, prayer movement, argument step, contrast, or turn of thought.\n\n` +
+        `Ask:\n` +
+        `- Where does this local thought begin and end?\n` +
+        `- Is the target verse an answer, hinge, climax, transition, explanation, contrast, correction, or conclusion?\n` +
+        `- What does the local movement make visible that the isolated verse hides?\n\n` +
+
+        `LAYER 2 — WHOLE CHAPTER MOVEMENT:\n` +
+        `Read the whole chapter as a flow. Identify what the chapter is doing before and after the target verse.\n\n` +
+        `Ask:\n` +
+        `- What is the chapter's main movement?\n` +
+        `- Why does this verse appear at this exact point?\n` +
+        `- What changes if the reader sees the whole chapter around it?\n` +
+        `- Does the verse summarize, sharpen, redirect, or deepen the chapter's argument?\n\n` +
+
+        `LAYER 3 — BOOK / WHOLE-BIBLE CONTEXT, ONLY IF USEFUL:\n` +
+        `Use broader book-level or whole-Bible context only if it genuinely changes the reading of the target verse. ` +
+        `Do not force cross-references. Do not create generic biblical-theology cards. ` +
+        `A broad-context card must still explain how it illuminates this specific verse in this specific chapter.\n\n` +
+
+        `STRICT REJECTION TEST:\n` +
+        `Reject any candidate if it is:\n` +
+        `- a lexical observation about a word;\n` +
+        `- a translation-gap observation;\n` +
+        `- a generic spiritual lesson;\n` +
+        `- a normal "interesting thought" that does not require the chapter;\n` +
+        `- a paraphrase of the target verse;\n` +
+        `- a card that could also appear under the Word Lens or Pearls Lens.\n\n` +
+
+        `VALID CONTEXT DISCOVERIES LOOK LIKE THIS:\n` +
+        `- "This line is not a definition; in the prayer movement, it functions as Jesus' appeal to the Father."\n` +
+        `- "The previous verses make this verse the hinge between authority received and life given."\n` +
+        `- "The chapter's movement shows that this phrase is not isolated doctrine but part of a farewell-prayer logic."\n` +
+        `- "The next verses reveal that the verse is not only about knowledge but about being drawn into the Son's mission."\n\n` +
+
+        `INVALID CONTEXT DISCOVERIES:\n` +
+        `- "The word means more than intellectual knowledge." That belongs to Word Lens.\n` +
+        `- "This verse teaches that eternal life is important." Too generic.\n` +
+        `- "The verse has a deep meaning." Empty.\n` +
+        `- "Knowing God means relationship." Could be written from the target verse alone unless the surrounding chapter changes it.\n\n` +
+
+        `OUTPUT GOAL:\n` +
+        `Return 3 context cards. Each card must come from a different contextual layer if possible:\n` +
+        `1. nearest meaning unit / paragraph;\n` +
+        `2. whole chapter movement;\n` +
+        `3. broader book or biblical context, only if genuinely useful. If broad context is weak, use another strong local/chapter card instead.\n\n` +
+
+        `JSON FORMAT:\n` +
+        `Return JSON only. No markdown fences. No prose before or after.\n\n` +
+        `The output must have exactly this shape:\n` +
+        `{\n` +
+        `  "thesis": "one elegant sentence in ${langName} explaining what the chapter context changes about the target verse",\n` +
+        `  "cards": [\n` +
+        `    {\n` +
+        `      "title": "sharp context-driven discovery, max 12 words, in ${langName}",\n` +
+        `      "teaser": "2-3 sentences. Start with the contextual discovery, not with a summary of the verse. Explain what the surrounding unit reveals.",\n` +
+        `      "shift": "the specific contextual shift: nearest verses, chapter movement, or broader setting that changes the reading",\n` +
+        `      "why_it_matters": "one sentence: how the verse reads differently after seeing this context"\n` +
+        `    },\n` +
+        `    {\n` +
+        `      "title": "...",\n` +
+        `      "teaser": "...",\n` +
+        `      "shift": "...",\n` +
+        `      "why_it_matters": "..."\n` +
+        `    },\n` +
+        `    {\n` +
+        `      "title": "...",\n` +
+        `      "teaser": "...",\n` +
+        `      "shift": "...",\n` +
+        `      "why_it_matters": "..."\n` +
+        `    }\n` +
+        `  ]\n` +
+        `}\n\n` +
+        `REMINDER: JSON only. All string values in ${langName}. Every card must pass the context-only rejection test.`
       );
+    }
 
     // ─── TRANSLATIONS ─────────────────────────────────────────────────────────
     case "translations":
@@ -268,8 +351,7 @@ export function buildLensPrompt(args: {
           : `- "literal": word-for-word interlinear rendering from Greek/Hebrew — show the force of each word\n` +
             `- "esv": English Standard Version — formal equivalence\n` +
             `- "nlt": New Living Translation — meaning-based, contemporary\n` +
-            `- "nwt": New World Translation (2013) — literal with distinctive terminology\n\n`
-        ) +
+            `- "nwt": New World Translation (2013) — literal with distinctive terminology\n\n`) +
 
         `STEP 2 — FIND 3 POINTS OF MEANINGFUL DIVERGENCE:\n` +
         `Compare the four versions. Find exactly 3 places where the translations make genuinely different choices — ` +
@@ -295,8 +377,7 @@ export function buildLensPrompt(args: {
         `    "literal": "...",\n` +
         (args.lang === "ru"
           ? `    "synodal": "...",\n    "rbo": "...",\n    "nwt": "..."\n`
-          : `    "esv": "...",\n    "nlt": "...",\n    "nwt": "..."\n`
-        ) +
+          : `    "esv": "...",\n    "nlt": "...",\n    "nwt": "..."\n`) +
         `  },\n` +
         `  "divergences": [\n` +
         `    {\n` +
@@ -309,8 +390,7 @@ export function buildLensPrompt(args: {
             `        {"label": "NWT", "text": "the specific phrase from NWT"}\n`
           : `        {"label": "ESV", "text": "the specific phrase from ESV"},\n` +
             `        {"label": "NLT", "text": "the specific phrase from NLT"},\n` +
-            `        {"label": "NWT", "text": "the specific phrase from NWT"}\n`
-        ) +
+            `        {"label": "NWT", "text": "the specific phrase from NWT"}\n`) +
         `      ],\n` +
         `      "analysis": [\n` +
         `        "Short paragraph 1 — what one or two translations do and why it matters (2–4 lines max).",\n` +
