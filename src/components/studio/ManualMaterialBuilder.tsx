@@ -36,10 +36,40 @@ type ManualExtractResponse = {
   lang?: Lang;
   provider?: string;
   verseText?: string;
+  verse_text?: string;
   verse_text_source?: "request" | "getVerseText";
   summary?: string;
   candidates?: ExtractedCandidate[];
   rejected?: RejectedIdea[];
+};
+
+type ProcessCandidateResponse = {
+  ok?: boolean;
+  error?: string;
+  skipped?: boolean;
+  skip_reason?: string;
+  saved_id?: string | null;
+  saved_ids?: Array<{
+    ok: boolean;
+    id: string | null;
+    lang: Lang;
+    error: string | null;
+  }>;
+  translation_group_id?: string;
+  rewritten?: boolean;
+  status?: string;
+  score_total?: number | null;
+  canonical_ref?: string | null;
+  book_key?: string | null;
+  editor_provider?: string;
+  editor_model?: string;
+};
+
+type SaveState = {
+  loading: boolean;
+  saved: boolean;
+  error: string;
+  message: string;
 };
 
 type Props = {
@@ -66,6 +96,7 @@ const WARNING_BG = "#f5ebd5";
 const WARNING_TEXT = "#8a6330";
 const ERROR_BG = "#f5dfd7";
 const ERROR_TEXT = "#8b3e2e";
+const SUCCESS_BG = "#e4ecde";
 const SUCCESS_TEXT = "#4f6b3d";
 
 function buttonStyle(primary = false, disabled = false): CSSProperties {
@@ -117,27 +148,69 @@ function MessageBox({
   text,
   style,
 }: {
-  kind: "error" | "success";
+  kind: "error" | "success" | "info";
   text: string;
   style?: CSSProperties;
 }) {
   const isError = kind === "error";
+  const isSuccess = kind === "success";
 
   return (
     <div
       style={{
         padding: "10px 11px",
         borderRadius: 12,
-        background: isError ? ERROR_BG : "#e4ecde",
-        color: isError ? ERROR_TEXT : SUCCESS_TEXT,
+        background: isError ? ERROR_BG : isSuccess ? SUCCESS_BG : SLATE_SOFT,
+        color: isError ? ERROR_TEXT : isSuccess ? SUCCESS_TEXT : SLATE_DARK,
         fontSize: 13,
         fontWeight: 800,
+        lineHeight: 1.45,
         ...style,
       }}
     >
       {text}
     </div>
   );
+}
+
+function createEmptySaveState(previous?: SaveState): SaveState {
+  return {
+    loading: false,
+    saved: previous?.saved ?? false,
+    error: "",
+    message: previous?.message ?? "",
+  };
+}
+
+function getCandidateSaveMessage(data: ProcessCandidateResponse): string {
+  if (data.skipped) {
+    if (data.skip_reason === "matched_duplicate") {
+      return "Не сохранено: система сочла это дублем уже существующей карточки.";
+    }
+
+    if (data.skip_reason === "matched_duplicate_after_rewrite") {
+      return "Не сохранено: после доработки система всё равно сочла это дублем.";
+    }
+
+    if (data.skip_reason === "score_below_save_threshold") {
+      return "Не сохранено: оценка ниже порога сохранения.";
+    }
+
+    if (data.skip_reason === "placement_not_savable") {
+      return "Не сохранено: evaluator предложил скрыть или отклонить карточку.";
+    }
+
+    return `Не сохранено: ${data.skip_reason ?? "кандидат не прошёл фильтр"}.`;
+  }
+
+  const score =
+    typeof data.score_total === "number" && Number.isFinite(data.score_total)
+      ? ` Оценка: ${data.score_total}.`
+      : "";
+
+  const status = data.status ? ` Статус: ${data.status}.` : "";
+
+  return `Карточка сохранена в RU/EN/ES.${score}${status}`;
 }
 
 export function ManualMaterialBuilder({
@@ -153,8 +226,10 @@ export function ManualMaterialBuilder({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [summary, setSummary] = useState("");
+  const [verseText, setVerseText] = useState("");
   const [candidates, setCandidates] = useState<ExtractedCandidate[]>([]);
   const [rejected, setRejected] = useState<RejectedIdea[]>([]);
+  const [saveStates, setSaveStates] = useState<Record<string, SaveState>>({});
 
   async function extractManualCandidates() {
     if (!selectedVerse) {
@@ -175,8 +250,10 @@ export function ManualMaterialBuilder({
     setLoading(true);
     setError("");
     setSummary("");
+    setVerseText("");
     setCandidates([]);
     setRejected([]);
+    setSaveStates({});
     onNotice?.("Ищу кандидаты в материале...");
 
     try {
@@ -188,6 +265,7 @@ export function ManualMaterialBuilder({
         },
         body: JSON.stringify({
           reference: selectedVerse.reference,
+          canonical_ref: selectedVerse.canonical_ref,
           lang,
           provider,
           material,
@@ -201,6 +279,14 @@ export function ManualMaterialBuilder({
         throw new Error(data.error || "Не удалось извлечь кандидатов.");
       }
 
+      const extractedVerseText =
+        typeof data.verseText === "string" && data.verseText.trim()
+          ? data.verseText.trim()
+          : typeof data.verse_text === "string" && data.verse_text.trim()
+            ? data.verse_text.trim()
+            : "";
+
+      setVerseText(extractedVerseText);
       setSummary(data.summary ?? "");
       setCandidates(data.candidates ?? []);
       setRejected(data.rejected ?? []);
@@ -212,6 +298,109 @@ export function ManualMaterialBuilder({
       onError?.(message);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function saveCandidate(candidate: ExtractedCandidate) {
+    if (!selectedVerse) {
+      onError?.("Сначала выбери стих.");
+      return;
+    }
+
+    if (!adminSecret.trim()) {
+      onError?.("Вставь Admin Secret.");
+      return;
+    }
+
+    if (!verseText.trim()) {
+      const message =
+        "Не могу сохранить: не найден текст стиха после извлечения кандидатов. Нажми «Найти кандидаты» ещё раз.";
+      setSaveStates((prev) => ({
+        ...prev,
+        [candidate.id]: {
+          ...createEmptySaveState(prev[candidate.id]),
+          error: message,
+        },
+      }));
+      onError?.(message);
+      return;
+    }
+
+    setSaveStates((prev) => ({
+      ...prev,
+      [candidate.id]: {
+        ...createEmptySaveState(prev[candidate.id]),
+        loading: true,
+        saved: false,
+        error: "",
+        message: "",
+      },
+    }));
+
+    onNotice?.(`Оцениваю и сохраняю: ${candidate.title}`);
+
+    try {
+      const response = await fetch("/api/admin/process-angle-candidate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-secret": adminSecret,
+        },
+        body: JSON.stringify({
+          reference: selectedVerse.reference,
+          verseText,
+          lang,
+          provider,
+          source_provider: provider,
+          source_model: `manual_material:${provider}`,
+          editor_provider: provider,
+          targetFeaturedCount: 12,
+          sourceArticle: material,
+          candidate: {
+            id: candidate.id,
+            title: candidate.title,
+            anchor: candidate.anchor,
+            teaser: candidate.teaser,
+            why_it_matters: candidate.why_it_matters,
+            body: candidate.teaser,
+          },
+        }),
+      });
+
+      const data = (await response.json()) as ProcessCandidateResponse;
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || "Не удалось оценить и сохранить кандидата.");
+      }
+
+      const message = getCandidateSaveMessage(data);
+
+      setSaveStates((prev) => ({
+        ...prev,
+        [candidate.id]: {
+          loading: false,
+          saved: !data.skipped,
+          error: "",
+          message,
+        },
+      }));
+
+      onNotice?.(message);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Не удалось оценить и сохранить кандидата.";
+
+      setSaveStates((prev) => ({
+        ...prev,
+        [candidate.id]: {
+          ...createEmptySaveState(prev[candidate.id]),
+          loading: false,
+          saved: false,
+          error: message,
+        },
+      }));
+
+      onError?.(message);
     }
   }
 
@@ -266,7 +455,7 @@ export function ManualMaterialBuilder({
         }}
       >
         Вставь найденную мысль, длинную статью, заметку из линзы или свой угол.
-        Система предложит 1–5 кандидатов. На этом шаге они ещё не сохраняются.
+        Система предложит 1–5 кандидатов для текущего выбранного стиха.
       </p>
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
@@ -367,115 +556,136 @@ export function ManualMaterialBuilder({
 
       {candidates.length > 0 ? (
         <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
-          {candidates.map((candidate) => (
-            <div
-              key={candidate.id}
-              style={{
-                padding: 12,
-                borderRadius: 16,
-                background: CARD,
-                border: `1px solid ${LINE}`,
-              }}
-            >
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-                <h4
-                  style={{
-                    margin: 0,
-                    fontSize: 16,
-                    lineHeight: 1.25,
-                    fontFamily:
-                      'ui-serif, Georgia, "Iowan Old Style", "Times New Roman", serif',
-                    color: INK,
-                  }}
-                >
-                  {candidate.title}
-                </h4>
+          {candidates.map((candidate) => {
+            const saveState = saveStates[candidate.id] ?? createEmptySaveState();
+            const saveDisabled = saveState.loading || saveState.saved;
 
-                {scorePill(candidate.estimated_score)}
-              </div>
-
-              {candidate.anchor ? (
-                <p
-                  style={{
-                    margin: "8px 0 0",
-                    color: MUTED,
-                    fontSize: 13,
-                    lineHeight: 1.5,
-                    fontStyle: "italic",
-                  }}
-                >
-                  "{candidate.anchor}"
-                </p>
-              ) : null}
-
-              <p
+            return (
+              <div
+                key={candidate.id}
                 style={{
-                  margin: "9px 0 0",
-                  color: TEXT,
-                  fontSize: 13,
-                  lineHeight: 1.6,
+                  padding: 12,
+                  borderRadius: 16,
+                  background: CARD,
+                  border: `1px solid ${LINE}`,
                 }}
               >
-                {candidate.teaser}
-              </p>
-
-              {candidate.why_it_matters ? (
-                <p
-                  style={{
-                    margin: "9px 0 0",
-                    color: MUTED,
-                    fontSize: 13,
-                    lineHeight: 1.55,
-                  }}
-                >
-                  <strong style={{ color: SLATE_DARK }}>Почему важно: </strong>
-                  {candidate.why_it_matters}
-                </p>
-              ) : null}
-
-              <div style={{ display: "grid", gap: 7, marginTop: 10 }}>
-                {candidate.strength_reason ? (
-                  <div style={{ color: SUCCESS_TEXT, fontSize: 12, lineHeight: 1.45 }}>
-                    <strong>Сила: </strong>
-                    {candidate.strength_reason}
-                  </div>
-                ) : null}
-
-                {candidate.risk ? (
-                  <div style={{ color: WARNING_TEXT, fontSize: 12, lineHeight: 1.45 }}>
-                    <strong>Риск: </strong>
-                    {candidate.risk}
-                  </div>
-                ) : null}
-
-                {candidate.source_excerpt ? (
-                  <div
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                  <h4
                     style={{
+                      margin: 0,
+                      fontSize: 16,
+                      lineHeight: 1.25,
+                      fontFamily:
+                        'ui-serif, Georgia, "Iowan Old Style", "Times New Roman", serif',
+                      color: INK,
+                    }}
+                  >
+                    {candidate.title}
+                  </h4>
+
+                  {scorePill(candidate.estimated_score)}
+                </div>
+
+                {candidate.anchor ? (
+                  <p
+                    style={{
+                      margin: "8px 0 0",
                       color: MUTED,
-                      fontSize: 12,
-                      lineHeight: 1.45,
-                      paddingTop: 8,
-                      borderTop: `1px solid ${LINE_SOFT}`,
+                      fontSize: 13,
+                      lineHeight: 1.5,
                       fontStyle: "italic",
                     }}
                   >
-                    “{candidate.source_excerpt}”
-                  </div>
+                    "{candidate.anchor}"
+                  </p>
+                ) : null}
+
+                <p
+                  style={{
+                    margin: "9px 0 0",
+                    color: TEXT,
+                    fontSize: 13,
+                    lineHeight: 1.6,
+                  }}
+                >
+                  {candidate.teaser}
+                </p>
+
+                {candidate.why_it_matters ? (
+                  <p
+                    style={{
+                      margin: "9px 0 0",
+                      color: MUTED,
+                      fontSize: 13,
+                      lineHeight: 1.55,
+                    }}
+                  >
+                    <strong style={{ color: SLATE_DARK }}>Почему важно: </strong>
+                    {candidate.why_it_matters}
+                  </p>
+                ) : null}
+
+                <div style={{ display: "grid", gap: 7, marginTop: 10 }}>
+                  {candidate.strength_reason ? (
+                    <div style={{ color: SUCCESS_TEXT, fontSize: 12, lineHeight: 1.45 }}>
+                      <strong>Сила: </strong>
+                      {candidate.strength_reason}
+                    </div>
+                  ) : null}
+
+                  {candidate.risk ? (
+                    <div style={{ color: WARNING_TEXT, fontSize: 12, lineHeight: 1.45 }}>
+                      <strong>Риск: </strong>
+                      {candidate.risk}
+                    </div>
+                  ) : null}
+
+                  {candidate.source_excerpt ? (
+                    <div
+                      style={{
+                        color: MUTED,
+                        fontSize: 12,
+                        lineHeight: 1.45,
+                        paddingTop: 8,
+                        borderTop: `1px solid ${LINE_SOFT}`,
+                        fontStyle: "italic",
+                      }}
+                    >
+                      “{candidate.source_excerpt}”
+                    </div>
+                  ) : null}
+                </div>
+
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 11 }}>
+                  <button
+                    type="button"
+                    disabled={saveDisabled}
+                    onClick={() => saveCandidate(candidate)}
+                    style={buttonStyle(true, saveDisabled)}
+                  >
+                    {saveState.loading
+                      ? "Оцениваю..."
+                      : saveState.saved
+                        ? "Сохранено"
+                        : "Оценить и сохранить"}
+                  </button>
+                </div>
+
+                {saveState.error ? (
+                  <MessageBox kind="error" text={saveState.error} style={{ marginTop: 10 }} />
+                ) : null}
+
+                {saveState.message ? (
+                  <MessageBox
+                    kind={saveState.saved ? "success" : "info"}
+                    text={saveState.message}
+                    style={{ marginTop: 10 }}
+                  />
                 ) : null}
               </div>
-
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 11 }}>
-                <button
-                  type="button"
-                  disabled
-                  style={buttonStyle(false, true)}
-                  title="Подключим на следующем шаге"
-                >
-                  Оценить и сохранить
-                </button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       ) : null}
 
