@@ -66,7 +66,7 @@ body {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   background:
-    radial-gradient(circle at 8% -8%, rgba(216, 170, 112, 0.18), transparent 42%),
+    radial-gradient(circle at 8% -8%, rgba(216, 170, 112, 0.16), transparent 42%),
     radial-gradient(circle at 95% 110%, rgba(111, 135, 154, 0.13), transparent 42%),
     linear-gradient(135deg, #f8f0e2 0%, #f4ead8 48%, #f8f0e2 100%);
 }
@@ -76,10 +76,10 @@ body::before {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  opacity: 0.34;
+  opacity: 0.30;
   background-image:
-    linear-gradient(rgba(92, 66, 36, 0.025) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(92, 66, 36, 0.018) 1px, transparent 1px);
+    linear-gradient(rgba(92, 66, 36, 0.022) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(92, 66, 36, 0.016) 1px, transparent 1px);
   background-size: 38px 38px;
   mask-image: radial-gradient(circle at 50% 28%, black, transparent 78%);
 }
@@ -596,7 +596,11 @@ a:hover {
   font-size: 18px;
   color: var(--ink);
   white-space: nowrap;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.012em;
+  text-shadow:
+    0 1px 0 rgba(255, 252, 245, 0.82),
+    0 3px 10px rgba(92, 66, 36, 0.12);
+  filter: drop-shadow(0 2px 7px rgba(92, 66, 36, 0.055));
 }
 
 .home-controls {
