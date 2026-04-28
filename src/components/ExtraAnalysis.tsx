@@ -1,10 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { dictionary, type Lang } from "@/lib/i18n/dictionary";
 import type { Provider } from "@/lib/ai/providers";
 import { EXTRA_ORDER, type ExtraId } from "@/lib/prompts/buildExtraPrompt";
-import { MarkdownText } from "./MarkdownText";
 import { extractJSONObject } from "@/lib/ai/parseJSON";
 
 export function ExtraAnalysis({
@@ -43,6 +42,298 @@ export function ExtraAnalysis({
   );
 }
 
+type ExtraBlock = {
+  title: string;
+  body: string;
+};
+
+function getCollapseLabel(lang: Lang): string {
+  if (lang === "ru") return "Скрыть";
+  if (lang === "es") return "Ocultar";
+  return "Hide";
+}
+
+function getArticleLabel(lang: Lang, id: ExtraId): string {
+  if (lang === "ru") {
+    if (id === "textual_findings") return "Текстовые находки";
+    if (id === "historical_scene") return "Историческая сцена";
+    return "Связи с другими стихами";
+  }
+
+  if (lang === "es") {
+    if (id === "textual_findings") return "Hallazgos textuales";
+    if (id === "historical_scene") return "Escena histórica";
+    return "Conexiones con otros textos";
+  }
+
+  if (id === "textual_findings") return "Textual findings";
+  if (id === "historical_scene") return "Historical scene";
+  return "Links with other passages";
+}
+
+function getShareLabel(lang: Lang): string {
+  if (lang === "ru") return "Поделиться исследованием";
+  if (lang === "es") return "Compartir investigación";
+  return "Share this research";
+}
+
+function stripCodeFence(text: string): string {
+  const trimmed = text.trim();
+
+  if (!trimmed.startsWith("```")) return trimmed;
+
+  return trimmed
+    .replace(/^```(?:markdown|md|text|json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+}
+
+function normalizeArticleText(text: string): string {
+  return stripCodeFence(text)
+    .replace(/\r\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function splitArticleParagraphs(text: string): string[] {
+  const normalized = normalizeArticleText(text);
+
+  const paragraphs = normalized
+    .split(/\n\s*\n/g)
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  if (paragraphs.length > 1) return paragraphs;
+
+  return normalized
+    .split(/(?<=[.!?])\s+(?=[А-ЯA-ZЁ])/g)
+    .map((p) => p.trim())
+    .filter((p) => p.length > 20);
+}
+
+function cleanInlineMarkdown(text: string): string {
+  return text
+    .replace(/^#{1,4}\s+/g, "")
+    .replace(/^[-–—]\s+/g, "")
+    .trim();
+}
+
+function isHeadingLike(text: string): boolean {
+  const cleaned = cleanInlineMarkdown(text);
+
+  if (cleaned.length > 90) return false;
+  if (/[.!?]$/.test(cleaned)) return false;
+
+  return /^#{1,4}\s+/.test(text.trim()) || cleaned.split(/\s+/).length <= 8;
+}
+
+function removeMarkdownMarkers(text: string): string {
+  return cleanInlineMarkdown(text)
+    .replace(/\*\*/g, "")
+    .replace(/`/g, "")
+    .replace(/\*/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function getSentenceCandidates(paragraphs: string[]): string[] {
+  return paragraphs
+    .flatMap((paragraph) =>
+      removeMarkdownMarkers(paragraph)
+        .split(/(?<=[.!?])\s+/g)
+        .map((sentence) => sentence.trim()),
+    )
+    .filter((sentence) => sentence.length >= 70 && sentence.length <= 190);
+}
+
+function pickPullQuote(paragraphs: string[], fallback: string): string {
+  const candidates = getSentenceCandidates(paragraphs.slice(1));
+
+  const strong =
+    candidates.find((sentence) =>
+      /(не просто|именно|становится|превращает|показывает|открывает|меняет|ключ|смысл|контекст|слово|деталь|читатель)/i.test(
+        sentence,
+      ),
+    ) ?? candidates[0];
+
+  if (strong) return strong.replace(/[.。]$/, "");
+
+  return fallback;
+}
+
+function renderInlineText(text: string): ReactNode[] {
+  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`|\*[^*]+\*)/g);
+
+  return parts.map((part, index) => {
+    if (!part) return null;
+
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return <strong key={index}>{part.slice(2, -2)}</strong>;
+    }
+
+    if (part.startsWith("`") && part.endsWith("`")) {
+      return (
+        <span key={index} className="editorial-term">
+          {part.slice(1, -1)}
+        </span>
+      );
+    }
+
+    if (part.startsWith("*") && part.endsWith("*")) {
+      return <em key={index}>{part.slice(1, -1)}</em>;
+    }
+
+    return <span key={index}>{part}</span>;
+  });
+}
+
+function extractBlocks(raw: string): ExtraBlock[] | null {
+  const parsed = extractJSONObject<{ blocks: ExtraBlock[] }>(raw);
+
+  if (!parsed || !Array.isArray(parsed.blocks)) return null;
+
+  const blocks = parsed.blocks.filter(
+    (b: unknown) =>
+      typeof b === "object" &&
+      b !== null &&
+      typeof (b as ExtraBlock).title === "string" &&
+      typeof (b as ExtraBlock).body === "string",
+  );
+
+  return blocks.length > 0 ? blocks : null;
+}
+
+function blocksToText(blocks: ExtraBlock[]): string {
+  return blocks.map((block) => `${block.title}\n\n${block.body}`).join("\n\n");
+}
+
+function EditorialArticleFromText({
+  text,
+  fallbackTitle,
+  kicker,
+}: {
+  text: string;
+  fallbackTitle: string;
+  kicker: string;
+}) {
+  const paragraphs = splitArticleParagraphs(text);
+
+  if (paragraphs.length === 0) return null;
+
+  const first = paragraphs[0];
+  const rest = paragraphs.slice(1);
+  const pullQuote = pickPullQuote(paragraphs, fallbackTitle);
+
+  return (
+    <div className="editorial-article">
+      <div className="editorial-kicker">{kicker}</div>
+
+      <p className="editorial-lead">
+        {renderInlineText(cleanInlineMarkdown(first))}
+      </p>
+
+      {rest.map((paragraph, index) => {
+        const cleaned = cleanInlineMarkdown(paragraph);
+        const shouldInsertPullQuote = index === 1 && pullQuote;
+        const shouldInsertDivider = index > 0 && index % 3 === 0;
+
+        return (
+          <div key={`${cleaned.slice(0, 30)}-${index}`}>
+            {shouldInsertPullQuote && (
+              <aside className="editorial-pullquote">
+                <span>“</span>
+                {pullQuote}
+                <span>”</span>
+              </aside>
+            )}
+
+            {shouldInsertDivider && <div className="editorial-divider" />}
+
+            {isHeadingLike(paragraph) ? (
+              <h4 className="editorial-subhead">
+                {renderInlineText(cleaned)}
+              </h4>
+            ) : (
+              <p className="editorial-paragraph">
+                {renderInlineText(cleaned)}
+              </p>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function EditorialArticleFromBlocks({
+  blocks,
+  kicker,
+}: {
+  blocks: ExtraBlock[];
+  kicker: string;
+}) {
+  const firstBlock = blocks[0];
+  const restBlocks = blocks.slice(1);
+
+  if (!firstBlock) return null;
+
+  const firstParagraphs = splitArticleParagraphs(firstBlock.body);
+  const firstLead = firstParagraphs[0] ?? firstBlock.body;
+  const firstRest = firstParagraphs.slice(1);
+  const allParagraphs = blocks.flatMap((block) => splitArticleParagraphs(block.body));
+  const pullQuote = pickPullQuote(allParagraphs, firstBlock.title);
+
+  return (
+    <div className="editorial-article">
+      <div className="editorial-kicker">{kicker}</div>
+
+      <h4 className="editorial-subhead" style={{ marginTop: 0, paddingTop: 0, borderTop: "none" }}>
+        {firstBlock.title}
+      </h4>
+
+      <p className="editorial-lead">
+        {renderInlineText(cleanInlineMarkdown(firstLead))}
+      </p>
+
+      {firstRest.map((paragraph, index) => (
+        <p key={`first-${index}`} className="editorial-paragraph">
+          {renderInlineText(cleanInlineMarkdown(paragraph))}
+        </p>
+      ))}
+
+      {restBlocks.map((block, blockIndex) => {
+        const paragraphs = splitArticleParagraphs(block.body);
+        const shouldInsertPullQuote = blockIndex === 0 && pullQuote;
+
+        return (
+          <div key={`${block.title}-${blockIndex}`}>
+            {shouldInsertPullQuote && (
+              <aside className="editorial-pullquote">
+                <span>“</span>
+                {pullQuote}
+                <span>”</span>
+              </aside>
+            )}
+
+            <div className="editorial-divider" />
+
+            <h4 className="editorial-subhead">{block.title}</h4>
+
+            {paragraphs.map((paragraph, paragraphIndex) => (
+              <p
+                key={`${block.title}-${paragraphIndex}`}
+                className="editorial-paragraph"
+              >
+                {renderInlineText(cleanInlineMarkdown(paragraph))}
+              </p>
+            ))}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function ExtraItem({
   id,
   title,
@@ -66,28 +357,14 @@ function ExtraItem({
   const [error, setError] = useState("");
   const [shareNotice, setShareNotice] = useState("");
 
-  type ExtraBlock = { title: string; body: string };
-
-  function extractBlocks(raw: string): ExtraBlock[] | null {
-    const parsed = extractJSONObject<{ blocks: ExtraBlock[] }>(raw);
-
-    if (!parsed || !Array.isArray(parsed.blocks)) return null;
-
-    return parsed.blocks.filter(
-      (b: unknown) =>
-        typeof b === "object" &&
-        b !== null &&
-        typeof (b as ExtraBlock).title === "string" &&
-        typeof (b as ExtraBlock).body === "string",
-    );
-  }
+  const articleLabel = getArticleLabel(lang, id);
+  const shareLabel = getShareLabel(lang);
+  const collapseLabel = getCollapseLabel(lang);
 
   function buildShareText(raw: string): string {
     const blocks = extractBlocks(raw);
 
-    const body = blocks
-      ? blocks.map((block) => `${block.title}\n\n${block.body}`).join("\n\n")
-      : raw;
+    const body = blocks ? blocksToText(blocks) : raw;
 
     return `${reference}\n${title}\n\n${body}\n\n${T.shareFrom}`;
   }
@@ -134,7 +411,7 @@ function ExtraItem({
         }),
       });
 
-      const j = await r.json();
+      const j = (await r.json()) as { text?: string; error?: string };
 
       if (!r.ok) throw new Error(j?.error || T.error);
 
@@ -153,8 +430,10 @@ function ExtraItem({
     if (next) void load();
   }
 
+  const blocks = text ? extractBlocks(text) : null;
+
   return (
-    <div className="card">
+    <article className={`angle-card angle-card-premium${open ? " is-expanded" : ""}`}>
       <button
         type="button"
         onClick={toggle}
@@ -170,93 +449,61 @@ function ExtraItem({
           cursor: "pointer",
           color: "var(--ink)",
           fontFamily: "inherit",
+          textAlign: "left",
         }}
       >
-        <span className="section-title">{title}</span>
-        <span className="muted">{open ? T.hide : T.show}</span>
+        <span className="angle-card-title" style={{ margin: 0 }}>
+          {title}
+        </span>
+
+        <span className={`angle-expand-btn${open ? " is-open" : ""}`}>
+          {open ? collapseLabel : T.show}
+        </span>
       </button>
 
       {open && (
-        <div style={{ marginTop: 14 }}>
+        <div className="angle-expansion">
           {loading && (
-            <>
-              <div className="skeleton" style={{ width: "80%" }} />
-              <div className="skeleton" style={{ width: "65%" }} />
-            </>
+            <div className="angle-expansion-loading">
+              <p className="expansion-writing">{T.writing}</p>
+              <div className="lens-skeleton-bar" style={{ width: "92%" }} />
+              <div className="lens-skeleton-bar" style={{ width: "86%" }} />
+              <div className="lens-skeleton-bar" style={{ width: "78%" }} />
+            </div>
           )}
 
           {error && <div className="error">{error}</div>}
 
           {!loading && !error && text ? (
             <>
-              {(() => {
-                const blocks = extractBlocks(text);
+              {blocks ? (
+                <EditorialArticleFromBlocks
+                  blocks={blocks}
+                  kicker={articleLabel}
+                />
+              ) : (
+                <EditorialArticleFromText
+                  text={text}
+                  fallbackTitle={title}
+                  kicker={articleLabel}
+                />
+              )}
 
-                if (!blocks) {
-                  return (
-                    <div className="prose">
-                      <MarkdownText text={text} />
-                    </div>
-                  );
-                }
+              <div className="editorial-footer">
+                <div className="editorial-footer-label">{shareLabel}</div>
 
-                return (
-                  <div style={{ display: "grid", gap: 0 }}>
-                    {blocks.map((block, i) => (
-                      <div key={i}>
-                        {i > 0 && (
-                          <div
-                            className="angle-card-divider"
-                            style={{ margin: "16px 0" }}
-                          />
-                        )}
-
-                        <div className="extra-block-title">{block.title}</div>
-                        <p className="extra-block-body">{block.body}</p>
-                      </div>
-                    ))}
-                  </div>
-                );
-              })()}
-
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  marginTop: 18,
-                  paddingTop: 14,
-                  borderTop: "1px solid rgba(120, 91, 54, 0.18)",
-                }}
-              >
                 <button
                   type="button"
                   onClick={shareAnalysis}
-                  style={{
-                    border: "1px solid rgba(95, 120, 144, 0.32)",
-                    borderRadius: 999,
-                    background: "rgba(95, 120, 144, 0.09)",
-                    color: "var(--ink)",
-                    padding: "8px 12px",
-                    cursor: "pointer",
-                    fontSize: 13,
-                    fontWeight: 700,
-                    fontFamily: "inherit",
-                  }}
+                  className="editorial-share-btn"
                 >
-                  {T.share}
+                  {shareNotice || T.share}
                 </button>
-
-                {shareNotice ? (
-                  <span className="muted" style={{ fontSize: 13 }}>
-                    {shareNotice}
-                  </span>
-                ) : null}
               </div>
             </>
           ) : null}
         </div>
       )}
-    </div>
+    </article>
   );
 }
