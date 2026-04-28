@@ -53,6 +53,7 @@ function normalizeCard(c: unknown): AngleCard | null {
   ).trim();
 
   if (!title || !teaser || !anchor || !why_it_matters) return null;
+
   return { title, teaser, anchor, why_it_matters };
 }
 
@@ -85,17 +86,6 @@ function extractCards(raw: string): AngleCard[] | null {
   return cards;
 }
 
-function getCollapseLabel(lang: Lang) {
-  switch (lang) {
-    case "ru":
-      return "Свернуть";
-    case "es":
-      return "Ocultar";
-    default:
-      return "Collapse";
-  }
-}
-
 export function AngleCards({
   rawText,
   reference,
@@ -124,8 +114,8 @@ export function AngleCards({
     <div className="angle-cards-stack">
       {cards.map((card, i) => (
         <AngleCardItem
-          key={`${card.title}-${i}`}
-          index={i + 1}
+          key={i}
+          index={i}
           card={card}
           reference={reference}
           verseText={verseText}
@@ -153,13 +143,13 @@ function AngleCardItem({
   provider: Provider;
 }) {
   const t = dictionary[lang];
-  const collapseLabel = getCollapseLabel(lang);
-
   const [expanded, setExpanded] = useState(false);
   const [article, setArticle] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [shareState, setShareState] = useState<"idle" | "copied">("idle");
+
+  const cardNumber = String(index + 1).padStart(2, "0");
 
   async function handleExpand() {
     if (expanded) {
@@ -169,7 +159,6 @@ function AngleCardItem({
     }
 
     setExpanded(true);
-
     if (article) return;
 
     setLoading(true);
@@ -191,7 +180,6 @@ function AngleCardItem({
       });
 
       const j = (await r.json()) as { text?: string; error?: string };
-
       if (!r.ok) throw new Error(j?.error || t.error);
 
       setArticle(j.text ?? "");
@@ -214,71 +202,71 @@ function AngleCardItem({
       } catch {
         // user dismissed share sheet
       }
-      return;
-    }
-
-    try {
-      await navigator.clipboard.writeText(shareText);
-      setShareState("copied");
-      setTimeout(() => setShareState("idle"), 2500);
-    } catch {
-      // clipboard unavailable
+    } else {
+      try {
+        await navigator.clipboard.writeText(shareText);
+        setShareState("copied");
+        setTimeout(() => setShareState("idle"), 2500);
+      } catch {
+        // clipboard unavailable
+      }
     }
   }
 
-  const indexText = String(index).padStart(2, "0");
-
   return (
-    <article className={`angle-card${expanded ? " is-expanded" : ""}`}>
+    <article className={`angle-card angle-card-premium${expanded ? " is-expanded" : ""}`}>
       <div className="angle-card-topline">
-        <div className="angle-card-index">{indexText}</div>
+        <div className="angle-card-index">{cardNumber}</div>
 
         <button
           type="button"
-          className="angle-card-expand"
+          className={`angle-expand-btn${expanded ? " is-open" : ""}`}
           onClick={handleExpand}
         >
-          {expanded ? collapseLabel : t.expand}
+          {expanded ? "Свернуть" : t.expand}
         </button>
       </div>
 
       <h3 className="angle-card-title">{card.title}</h3>
 
-      <div className="angle-card-rule" />
+      <div className="angle-card-divider" />
 
-      <div className="angle-card-anchor-box">
-        <div className="angle-card-anchor-label">{t.anchor}</div>
-        <div className="angle-card-anchor-text">“{card.anchor}”</div>
+      <div className="angle-anchor-box">
+        <div className="angle-anchor-label">{t.anchor}</div>
+        <div className="angle-anchor-text">“{card.anchor}”</div>
       </div>
 
-      <p className="angle-card-teaser">{card.teaser}</p>
+      <div className="angle-card-body">
+        <p className="angle-card-teaser">{card.teaser}</p>
+      </div>
 
       <div className="angle-why">
-        <span className="angle-why-label">{t.whyItMatters}:</span>{" "}
-        {card.why_it_matters}
+        <span className="angle-why-label">{t.whyItMatters}: </span>
+        <span className="angle-why-text">{card.why_it_matters}</span>
       </div>
 
       {expanded && (
         <div className="angle-expansion">
           {loading && !article && (
-            <p className="expansion-writing">{t.writing}</p>
+            <div className="angle-expansion-loading">
+              <p className="expansion-writing">{t.writing}</p>
+              <div className="lens-skeleton-bar" style={{ width: "92%" }} />
+              <div className="lens-skeleton-bar" style={{ width: "86%" }} />
+              <div className="lens-skeleton-bar" style={{ width: "78%" }} />
+            </div>
           )}
 
           {error && <div className="error">{error}</div>}
 
           {article && (
-            <div className="prose">
+            <div className="prose angle-expansion-prose lens-content-appear">
               <MarkdownText text={article} />
             </div>
           )}
 
           {!loading && !error && article && (
-            <div style={{ marginTop: 16 }}>
-              <button
-                type="button"
-                className="btn btn-sm"
-                onClick={handleShare}
-              >
+            <div className="angle-expansion-actions">
+              <button type="button" className="btn btn-sm btn-ghost" onClick={handleShare}>
                 {shareState === "copied" ? t.copied : t.share}
               </button>
             </div>
