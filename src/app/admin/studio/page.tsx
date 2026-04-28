@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { formatReference } from "@/lib/bible/formatReference";
 import { ManualMaterialBuilder } from "@/components/studio/ManualMaterialBuilder";
+import { GroupCardActions } from "@/components/studio/GroupCardActions";
 
 type Lang = "ru" | "en" | "es";
 type RewriteMode = "polish" | "from_idea";
@@ -194,6 +195,8 @@ type UpdateAngleCardResponse = {
   error?: string;
   card?: Partial<StudioCard>;
 };
+
+type GroupStatus = "featured" | "reserve" | "hidden" | "rejected";
 
 type ReEvaluateState = {
   loading: boolean;
@@ -735,6 +738,44 @@ export default function StudioPage() {
       setNotice("");
     } finally {
       setLoadingCards(false);
+    }
+  }
+
+  async function applyGroupStatusLocally(
+    card: StudioCard,
+    status: GroupStatus,
+    message: string,
+  ) {
+    setCards((prevCards) => {
+      const nextCards = sortStudioCards(
+        prevCards.map((current) => {
+          if (current.id !== card.id) return current;
+
+          return {
+            ...current,
+            status,
+            moderator_decision:
+              status === "hidden"
+                ? "group_hide_from_studio"
+                : status === "rejected"
+                  ? "group_reject_from_studio"
+                  : status === "reserve"
+                    ? "group_restore_reserve_from_studio"
+                    : "group_force_featured_from_studio",
+            moderator_reviewed_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          };
+        }),
+      );
+
+      setCardsSummary(summarizeCards(nextCards));
+      return nextCards;
+    });
+
+    setNotice(message);
+
+    if (selectedVerse) {
+      await loadCards(selectedVerse);
     }
   }
 
@@ -2334,6 +2375,26 @@ export default function StudioPage() {
                               {card.is_locked ? "Unlock" : "Lock"}
                             </button>
                           </div>
+
+                          <GroupCardActions
+                            card={{
+                              id: card.id,
+                              title: card.title,
+                              status: card.status,
+                            }}
+                            adminSecret={adminSecret}
+                            disabled={editorialBusy}
+                            onBusyChange={(busy) =>
+                              setUpdatingEditorial((prev) => ({
+                                ...prev,
+                                [card.id]: busy,
+                              }))
+                            }
+                            onUpdated={(status, message) =>
+                              void applyGroupStatusLocally(card, status, message)
+                            }
+                            onError={setCardsError}
+                          />
 
                           {card.moderator_note ? (
                             <div
