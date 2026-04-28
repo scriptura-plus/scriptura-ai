@@ -2,6 +2,7 @@
   --bg: #f6efe1;
   --bg-alt: #efe5d0;
   --paper: #fbf6ea;
+  --paper-soft: #fffaf0;
   --ink: #2c241b;
   --ink-soft: #5a4a37;
   --accent: #8a5a2b;
@@ -14,7 +15,7 @@
   --shadow: 0 1px 2px rgba(60, 40, 20, 0.05), 0 10px 28px rgba(60, 40, 20, 0.08);
   --shadow-soft: 0 1px 2px rgba(60, 40, 20, 0.04), 0 6px 18px rgba(60, 40, 20, 0.06);
   --radius: 16px;
-  --max: 720px;
+  --max: 700px;
   --serif: ui-serif, Georgia, "Iowan Old Style", "Times New Roman", serif;
   --sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
 }
@@ -29,9 +30,10 @@ body {
   font-size: 16px;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
   background-image:
     radial-gradient(circle at 10% 0%, rgba(200,151,102,0.10), transparent 45%),
-    radial-gradient(circle at 90% 100%, rgba(138,90,43,0.07), transparent 45%);
+    radial-gradient(circle at 90% 100%, rgba(95,120,144,0.07), transparent 48%);
   min-height: 100dvh;
 }
 
@@ -45,9 +47,14 @@ a:hover { text-decoration: underline; }
 }
 
 .card {
-  background: rgba(251, 246, 234, 0.92);
-  border: 1px solid rgba(216, 201, 168, 0.88);
-  border-radius: 20px;
+  background: linear-gradient(
+    180deg,
+    rgba(255,255,255,0.38) 0%,
+    rgba(251,246,234,0.94) 24%,
+    rgba(251,246,234,0.98) 100%
+  );
+  border: 1px solid rgba(216, 201, 168, 0.84);
+  border-radius: 22px;
   padding: 20px;
   box-shadow: var(--shadow);
   backdrop-filter: blur(2px);
@@ -90,14 +97,16 @@ a:hover { text-decoration: underline; }
 
 .input, .select {
   width: 100%;
-  padding: 10px 12px;
-  border-radius: 12px;
-  border: 1px solid var(--line);
-  background: rgba(251, 246, 234, 0.92);
+  padding: 11px 13px;
+  border-radius: 13px;
+  border: 1px solid rgba(216, 201, 168, 0.92);
+  background: rgba(251, 246, 234, 0.90);
   color: var(--ink);
   font-size: 16px;
   font-family: inherit;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.3);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.42),
+    0 1px 2px rgba(60, 40, 20, 0.025);
 }
 
 .input:focus, .select:focus {
@@ -127,42 +136,51 @@ a:hover { text-decoration: underline; }
 
 .verse-text {
   font-family: var(--serif);
-  font-size: 22px;
-  line-height: 1.55;
+  font-size: 22.5px;
+  line-height: 1.56;
   color: var(--ink);
   white-space: pre-wrap;
+  letter-spacing: -0.012em;
 }
 
 .tab-row {
   display: flex;
-  gap: 8px;
+  gap: 9px;
   flex-wrap: wrap;
-  margin: 18px 0;
+  margin: 19px 0 20px;
 }
 
 .tab {
-  padding: 8px 14px;
+  padding: 8px 15px;
   border-radius: 999px;
-  border: 1px solid rgba(216, 201, 168, 0.95);
-  background: rgba(251, 246, 234, 0.82);
+  border: 1px solid rgba(216, 201, 168, 0.92);
+  background: rgba(251, 246, 234, 0.80);
   cursor: pointer;
   font-size: 14px;
   font-family: inherit;
   color: var(--ink);
-  transition: background .12s ease, color .12s ease, border-color .12s ease, box-shadow .12s ease;
-  box-shadow: 0 1px 2px rgba(60, 40, 20, 0.03);
+  transition: background .12s ease, color .12s ease, border-color .12s ease, box-shadow .12s ease, transform .06s ease;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.40),
+    0 1px 2px rgba(60, 40, 20, 0.028);
 }
 
 .tab:hover {
-  background: var(--bg-alt);
+  background: rgba(244, 239, 227, 0.96);
   box-shadow: 0 6px 16px rgba(60, 40, 20, 0.05);
 }
 
+.tab:active {
+  transform: scale(0.98);
+}
+
 .tab.active {
-  background: var(--ui-active);
+  background: linear-gradient(180deg, #6f8aa3 0%, var(--ui-active) 100%);
   color: #f0f4f8;
-  border-color: var(--ui-active);
-  box-shadow: 0 8px 18px rgba(95, 120, 144, 0.18);
+  border-color: rgba(77, 100, 120, 0.9);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.20),
+    0 9px 20px rgba(95, 120, 144, 0.20);
 }
 
 .row {
@@ -276,11 +294,11 @@ a:hover { text-decoration: underline; }
 .angle-card {
   background: linear-gradient(
     180deg,
-    rgba(255,255,255,0.38) 0%,
+    rgba(255,255,255,0.40) 0%,
     rgba(251,246,234,0.95) 20%,
     rgba(251,246,234,0.985) 100%
   );
-  border: 1px solid rgba(216, 201, 168, 0.78);
+  border: 1px solid rgba(216, 201, 168, 0.76);
   border-radius: 24px;
   padding: 18px 18px 16px;
   box-shadow: var(--shadow);
@@ -318,8 +336,8 @@ a:hover { text-decoration: underline; }
 
 .angle-card-expand {
   appearance: none;
-  border: 1px solid rgba(216, 201, 168, 0.92);
-  background: rgba(251, 246, 234, 0.78);
+  border: 1px solid rgba(216, 201, 168, 0.90);
+  background: rgba(251, 246, 234, 0.76);
   color: #59738b;
   padding: 8px 13px;
   border-radius: 999px;
@@ -358,8 +376,8 @@ a:hover { text-decoration: underline; }
   height: 1px;
   background: linear-gradient(
     90deg,
-    rgba(216, 201, 168, 0.82) 0%,
-    rgba(216, 201, 168, 0.45) 62%,
+    rgba(216, 201, 168, 0.80) 0%,
+    rgba(216, 201, 168, 0.44) 62%,
     rgba(216, 201, 168, 0) 100%
   );
   margin: 10px 0 12px;
@@ -368,10 +386,10 @@ a:hover { text-decoration: underline; }
 .angle-card-anchor-box {
   background: linear-gradient(
     180deg,
-    rgba(244, 236, 220, 0.42) 0%,
-    rgba(249, 244, 235, 0.72) 100%
+    rgba(244, 236, 220, 0.38) 0%,
+    rgba(249, 244, 235, 0.70) 100%
   );
-  border: 1px solid rgba(216, 201, 168, 0.68);
+  border: 1px solid rgba(216, 201, 168, 0.66);
   border-radius: 15px;
   padding: 10px 12px;
   margin-bottom: 14px;
@@ -411,7 +429,7 @@ a:hover { text-decoration: underline; }
   font-size: 13.5px;
   line-height: 1.62;
   color: var(--ink-soft);
-  border-top: 1px solid rgba(216, 201, 168, 0.78);
+  border-top: 1px solid rgba(216, 201, 168, 0.76);
   padding-top: 11px;
   margin-top: 0;
 }
