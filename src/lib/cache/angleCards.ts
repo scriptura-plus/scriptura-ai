@@ -49,6 +49,11 @@ export type AngleCardInput = {
   rank?: number | null;
   is_locked?: boolean;
 
+  moderator_boost?: number | null;
+  moderator_note?: string | null;
+  moderator_decision?: string | null;
+  moderator_reviewed_at?: string | null;
+
   source_type?: string;
   source_provider?: string | null;
   source_model?: string | null;
@@ -96,6 +101,11 @@ export type AngleCardRow = {
 
   is_locked: boolean;
 
+  moderator_boost: number;
+  moderator_note: string | null;
+  moderator_decision: string | null;
+  moderator_reviewed_at: string | null;
+
   source_type: string;
   source_provider: string | null;
   source_model: string | null;
@@ -142,6 +152,45 @@ export type StudioVerseSummary = {
   last_activity_at: string;
 };
 
+function getEffectiveScore(card: Pick<AngleCardRow, "score_total" | "moderator_boost">): number {
+  return (card.score_total ?? 0) + (card.moderator_boost ?? 0);
+}
+
+function getStatusWeight(status: AngleCardStatus): number {
+  if (status === "featured") return 1;
+  if (status === "reserve") return 2;
+  if (status === "rewrite") return 3;
+  if (status === "hidden") return 4;
+  if (status === "rejected") return 5;
+  return 99;
+}
+
+function sortAngleCards(cards: AngleCardRow[]): AngleCardRow[] {
+  return [...cards].sort((a, b) => {
+    const statusDiff = getStatusWeight(a.status) - getStatusWeight(b.status);
+    if (statusDiff !== 0) return statusDiff;
+
+    const aHasRank = typeof a.rank === "number";
+    const bHasRank = typeof b.rank === "number";
+
+    if (aHasRank && bHasRank && a.rank !== b.rank) {
+      return (a.rank ?? 9999) - (b.rank ?? 9999);
+    }
+
+    if (aHasRank && !bHasRank) return -1;
+    if (!aHasRank && bHasRank) return 1;
+
+    const scoreDiff = getEffectiveScore(b) - getEffectiveScore(a);
+    if (scoreDiff !== 0) return scoreDiff;
+
+    return a.created_at.localeCompare(b.created_at);
+  });
+}
+
+function applyLimit(cards: AngleCardRow[], limit?: number): AngleCardRow[] {
+  return cards.slice(0, limit ?? 24);
+}
+
 export async function saveAngleCard(input: AngleCardInput): Promise<{
   ok: boolean;
   id: string | null;
@@ -187,6 +236,11 @@ export async function saveAngleCard(input: AngleCardInput): Promise<{
       status: input.status,
       rank: input.rank ?? null,
       is_locked: input.is_locked ?? false,
+
+      moderator_boost: input.moderator_boost ?? 0,
+      moderator_note: input.moderator_note ?? null,
+      moderator_decision: input.moderator_decision ?? null,
+      moderator_reviewed_at: input.moderator_reviewed_at ?? null,
 
       source_type: input.source_type ?? "manual_test",
       source_provider: input.source_provider ?? null,
@@ -240,6 +294,7 @@ export async function getAngleCards(args: {
   }
 
   const statuses = args.statuses ?? ["featured", "reserve"];
+  const dbLimit = Math.max((args.limit ?? 24) * 4, 100);
 
   const { data, error } = await client
     .from("angle_cards")
@@ -251,7 +306,7 @@ export async function getAngleCards(args: {
     .order("rank", { ascending: true, nullsFirst: false })
     .order("score_total", { ascending: false, nullsFirst: false })
     .order("created_at", { ascending: true })
-    .limit(args.limit ?? 24);
+    .limit(dbLimit);
 
   if (error) {
     return {
@@ -261,9 +316,11 @@ export async function getAngleCards(args: {
     };
   }
 
+  const sortedCards = sortAngleCards((data ?? []) as AngleCardRow[]);
+
   return {
     ok: true,
-    cards: (data ?? []) as AngleCardRow[],
+    cards: applyLimit(sortedCards, args.limit),
     error: null,
   };
 }
@@ -289,6 +346,7 @@ export async function getAngleCardsByCanonicalRef(args: {
   }
 
   const statuses = args.statuses ?? ["featured", "reserve"];
+  const dbLimit = Math.max((args.limit ?? 24) * 4, 100);
 
   const { data, error } = await client
     .from("angle_cards")
@@ -300,7 +358,7 @@ export async function getAngleCardsByCanonicalRef(args: {
     .order("rank", { ascending: true, nullsFirst: false })
     .order("score_total", { ascending: false, nullsFirst: false })
     .order("created_at", { ascending: true })
-    .limit(args.limit ?? 24);
+    .limit(dbLimit);
 
   if (error) {
     return {
@@ -310,9 +368,11 @@ export async function getAngleCardsByCanonicalRef(args: {
     };
   }
 
+  const sortedCards = sortAngleCards((data ?? []) as AngleCardRow[]);
+
   return {
     ok: true,
-    cards: (data ?? []) as AngleCardRow[],
+    cards: applyLimit(sortedCards, args.limit),
     error: null,
   };
 }
@@ -342,7 +402,7 @@ export async function getStudioVerseSummaries(args: {
   const { data, error } = await client
     .from("angle_cards")
     .select(
-      "reference, book, chapter, verse, lang, canonical_ref, book_key, status, score_total, source_model, source_type, created_at, updated_at",
+      "reference, book, chapter, verse, lang, canonical_ref, book_key, status, score_total, moderator_boost, source_model, source_type, created_at, updated_at",
     )
     .eq("lang", args.lang)
     .gte("created_at", since)
@@ -370,11 +430,14 @@ export async function getStudioVerseSummaries(args: {
       book_key: string | null;
       status: AngleCardStatus;
       score_total: number | null;
+      moderator_boost: number | null;
       source_model: string | null;
       source_type: string | null;
       created_at: string;
       updated_at: string;
     };
+
+    const effectiveScore = (card.score_total ?? 0) + (card.moderator_boost ?? 0);
 
     const groupKey = card.canonical_ref || card.reference;
     const key = `${card.lang}::${groupKey}`;
@@ -399,7 +462,7 @@ export async function getStudioVerseSummaries(args: {
         reserve_count: card.status === "reserve" ? 1 : 0,
         hidden_count: card.status === "hidden" ? 1 : 0,
         rejected_count: card.status === "rejected" ? 1 : 0,
-        best_score: card.score_total,
+        best_score: typeof card.score_total === "number" ? effectiveScore : null,
         sources: source ? [source] : [],
         last_activity_at: card.created_at,
       });
@@ -413,20 +476,19 @@ export async function getStudioVerseSummaries(args: {
     if (card.status === "hidden") existing.hidden_count += 1;
     if (card.status === "rejected") existing.rejected_count += 1;
 
-    // Если группа создана по старой карточке без canonical_ref,
-    // но следующая карточка его уже имеет — обновляем
     if (!existing.canonical_ref && card.canonical_ref) {
       existing.canonical_ref = card.canonical_ref;
     }
+
     if (!existing.book_key && card.book_key) {
       existing.book_key = card.book_key;
     }
 
     if (
       typeof card.score_total === "number" &&
-      (existing.best_score === null || card.score_total > existing.best_score)
+      (existing.best_score === null || effectiveScore > existing.best_score)
     ) {
-      existing.best_score = card.score_total;
+      existing.best_score = effectiveScore;
     }
 
     if (source && !existing.sources.includes(source)) {
