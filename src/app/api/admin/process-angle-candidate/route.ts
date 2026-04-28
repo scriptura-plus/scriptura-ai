@@ -510,6 +510,32 @@ function toEvaluatorCard(card: AngleCardRow) {
   };
 }
 
+function toDuplicateCard(card: AngleCardRow | null) {
+  if (!card) return null;
+
+  return {
+    id: card.id,
+    title: card.title,
+    anchor: card.anchor,
+    teaser: card.teaser,
+    why_it_matters: card.why_it_matters,
+    angle_summary: card.angle_summary,
+    coverage_type: card.coverage_type,
+    score_total: card.score_total,
+    status: card.status,
+    is_locked: card.is_locked,
+    source_type: card.source_type,
+    source_provider: card.source_provider,
+    source_model: card.source_model,
+    editor_model: card.editor_model,
+    moderator_boost:
+      "moderator_boost" in card
+        ? (card as AngleCardRow & { moderator_boost?: number | null })
+            .moderator_boost ?? null
+        : null,
+  };
+}
+
 function normalizeStatusFromPlacement(
   placement: unknown,
 ): AngleCardInput["status"] {
@@ -553,6 +579,73 @@ function shouldRewrite(evaluation: Evaluation): boolean {
 function getBattle(evaluation: Evaluation): EvaluationBattle | null {
   if (!isRecord(evaluation.battle)) return null;
   return normalizeBattle(evaluation.battle);
+}
+
+function getMatchedCardId(evaluation: Evaluation): string | null {
+  const battle = getBattle(evaluation);
+
+  return (
+    getString(evaluation.matched_card_id) ??
+    getString(evaluation.replace_card_id) ??
+    getString(battle?.old_card_id) ??
+    null
+  );
+}
+
+function findMatchedCard(
+  evaluation: Evaluation,
+  cards: AngleCardRow[],
+): AngleCardRow | null {
+  const matchedCardId = getMatchedCardId(evaluation);
+
+  if (matchedCardId) {
+    const exact = cards.find((card) => card.id === matchedCardId);
+    if (exact) return exact;
+  }
+
+  const battle = getBattle(evaluation);
+  const oldScore = getNumber(battle?.old_score);
+
+  if (typeof oldScore === "number") {
+    const scoreMatch = cards.find((card) => card.score_total === oldScore);
+    if (scoreMatch) return scoreMatch;
+  }
+
+  return cards[0] ?? null;
+}
+
+function buildDuplicatePayload(args: {
+  evaluation: Evaluation;
+  candidate: CandidateCard;
+  finalCard: CandidateCard;
+  matchedCard: AngleCardRow | null;
+}) {
+  const battle = getBattle(args.evaluation);
+
+  return {
+    reason:
+      getString(args.evaluation.reason) ??
+      getString(battle?.battle_reason) ??
+      "Система считает, что новый кандидат раскрывает тот же угол, что уже существующая карточка.",
+    matched_card_id: args.matchedCard?.id ?? getMatchedCardId(args.evaluation),
+    existing_card: toDuplicateCard(args.matchedCard),
+    candidate_card: {
+      id: args.finalCard.id ?? args.candidate.id ?? null,
+      title: args.finalCard.title,
+      anchor: args.finalCard.anchor ?? null,
+      teaser: args.finalCard.teaser ?? args.finalCard.body ?? "",
+      why_it_matters: args.finalCard.why_it_matters ?? null,
+      original_candidate: args.candidate,
+    },
+    existing_score:
+      args.matchedCard?.score_total ?? getNumber(battle?.old_score) ?? null,
+    candidate_score:
+      getNumber(args.evaluation.score_total) ?? getNumber(battle?.new_score),
+    same_angle: args.evaluation.same_angle ?? null,
+    similarity_confidence: args.evaluation.similarity_confidence ?? null,
+    battle,
+    evaluation: args.evaluation,
+  };
 }
 
 function shouldSkipMatchedDuplicate(evaluation: Evaluation): boolean {
@@ -886,6 +979,8 @@ export async function POST(req: Request) {
     });
 
     if (shouldSkipMatchedDuplicate(firstEvaluation)) {
+      const matchedCard = findMatchedCard(firstEvaluation, existing.cards);
+
       return NextResponse.json({
         ok: true,
         skipped: true,
@@ -899,6 +994,12 @@ export async function POST(req: Request) {
         book_key: normalizedReference.book_key,
         editor_provider: editorProvider,
         editor_model: getModelName(editorProvider),
+        duplicate: buildDuplicatePayload({
+          evaluation: firstEvaluation,
+          candidate,
+          finalCard: candidate,
+          matchedCard,
+        }),
         first_evaluation: firstEvaluation,
         final_card: candidate,
         final_evaluation: firstEvaluation,
@@ -937,6 +1038,8 @@ export async function POST(req: Request) {
       });
 
       if (shouldSkipMatchedDuplicate(finalEvaluation)) {
+        const matchedCard = findMatchedCard(finalEvaluation, existing.cards);
+
         return NextResponse.json({
           ok: true,
           skipped: true,
@@ -950,6 +1053,12 @@ export async function POST(req: Request) {
           book_key: normalizedReference.book_key,
           editor_provider: editorProvider,
           editor_model: getModelName(editorProvider),
+          duplicate: buildDuplicatePayload({
+            evaluation: finalEvaluation,
+            candidate,
+            finalCard,
+            matchedCard,
+          }),
           first_evaluation: firstEvaluation,
           rewritten_card: rewrittenCard,
           final_card: finalCard,
