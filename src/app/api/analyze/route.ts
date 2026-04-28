@@ -2,6 +2,7 @@ import { after, NextResponse } from "next/server";
 import { runAI } from "@/lib/ai/runAI";
 import { isProvider, defaultProvider } from "@/lib/ai/providers";
 import { normalizeReference } from "@/lib/bible/normalizeReference";
+import { getChapterText } from "@/lib/bible/getVerseText";
 import {
   buildLensPrompt,
   type LensId,
@@ -707,7 +708,41 @@ export async function POST(req: Request) {
       | null = null;
 
     if (kind === "lens" && isLensId(id)) {
-      prompt = buildLensPrompt({ lens: id, reference, verseText, lang });
+      let chapterText: string | null = null;
+      let chapterReference: string | null = null;
+
+      if (id === "context") {
+        try {
+          const chapter = await getChapterText(reference, lang, provider);
+          chapterText = chapter.text;
+          chapterReference = chapter.reference;
+
+          console.log("[CONTEXT_LENS] chapter loaded", {
+            reference,
+            chapterReference,
+            lang,
+            provider,
+            length: chapterText.length,
+          });
+        } catch (error) {
+          console.warn("[CONTEXT_LENS] chapter load failed", {
+            reference,
+            lang,
+            provider,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+
+      prompt = buildLensPrompt({
+        lens: id,
+        reference,
+        verseText,
+        lang,
+        chapterText,
+        chapterReference,
+      });
+
       expectJSON = true;
     } else if (kind === "extra" && isExtraId(id)) {
       prompt = buildExtraPrompt({ id, reference, verseText, lang });
