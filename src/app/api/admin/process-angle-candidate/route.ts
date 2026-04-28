@@ -947,6 +947,7 @@ export async function POST(req: Request) {
     const sourceArticle = getString(body?.sourceArticle) ?? undefined;
     const targetFeaturedCount = getNumber(body?.targetFeaturedCount) ?? 12;
 
+    const previewOnly = getBoolean(body?.preview_only) ?? false;
     const forceSaveDuplicate = getBoolean(body?.force_save_duplicate) ?? false;
     const forceStatus = normalizeForceStatus(body?.force_status);
 
@@ -1004,6 +1005,46 @@ export async function POST(req: Request) {
       targetFeaturedCount,
       editorProvider,
     });
+
+    if (previewOnly) {
+      const duplicate = shouldSkipMatchedDuplicate(firstEvaluation)
+        ? buildDuplicatePayload({
+            evaluation: firstEvaluation,
+            candidate,
+            finalCard: candidate,
+            matchedCard: findMatchedCard(firstEvaluation, existing.cards),
+          })
+        : null;
+
+      const skipDecision = shouldSkipInsteadOfSave(firstEvaluation);
+      const wouldSave = !duplicate && !skipDecision.skip;
+
+      return NextResponse.json({
+        ok: true,
+        preview_only: true,
+        changed_database: false,
+        skipped: Boolean(duplicate) || skipDecision.skip,
+        skip_reason: duplicate
+          ? "matched_duplicate"
+          : skipDecision.skip
+            ? skipDecision.reason
+            : null,
+        would_save: wouldSave,
+        saved_id: null,
+        saved_ids: [],
+        rewritten: false,
+        status: forceStatus ?? normalizeStatusFromPlacement(firstEvaluation.placement),
+        score_total: getNumber(firstEvaluation.score_total),
+        canonical_ref: normalizedReference.canonical_ref,
+        book_key: normalizedReference.book_key,
+        editor_provider: editorProvider,
+        editor_model: getModelName(editorProvider),
+        duplicate,
+        first_evaluation: firstEvaluation,
+        final_card: candidate,
+        final_evaluation: firstEvaluation,
+      });
+    }
 
     if (shouldSkipMatchedDuplicate(firstEvaluation) && !forceSaveDuplicate) {
       const matchedCard = findMatchedCard(firstEvaluation, existing.cards);
@@ -1141,11 +1182,10 @@ export async function POST(req: Request) {
     const referenceParts = parseReferenceParts(reference);
     const cardForSave = getFinalCardForSave(finalCard);
     const status =
-      forceSaveDuplicate && forceStatus
-        ? forceStatus
-        : forceSaveDuplicate
-          ? "reserve"
-          : normalizeStatusFromPlacement(finalEvaluation.placement);
+      forceStatus ??
+      (forceSaveDuplicate
+        ? "reserve"
+        : normalizeStatusFromPlacement(finalEvaluation.placement));
     const scoreTotal = getNumber(finalEvaluation.score_total);
     const translationGroupId = randomUUID();
 
