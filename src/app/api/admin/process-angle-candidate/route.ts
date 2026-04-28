@@ -91,6 +91,7 @@ type SaveOneCardArgs = {
   editorProvider: Provider;
   candidate: CandidateCard;
   replace_card_id: string | null;
+  forceSaveDuplicate: boolean;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -260,6 +261,27 @@ function normalizePlacementValue(value: unknown): string | null {
   }
 
   return raw;
+}
+
+function normalizeForceStatus(value: unknown): AngleCardInput["status"] | null {
+  const raw = getString(value);
+  if (!raw) return null;
+
+  const normalized = raw.trim().toLowerCase();
+
+  if (
+    normalized === "featured" ||
+    normalized === "active" ||
+    normalized === "активная"
+  ) {
+    return "featured";
+  }
+
+  if (normalized === "reserve" || normalized === "запас") {
+    return "reserve";
+  }
+
+  return null;
 }
 
 function normalizeBattleAction(value: unknown): string | null {
@@ -884,9 +906,11 @@ async function saveOneCard(args: SaveOneCardArgs): Promise<{
     rank: args.status === "featured" ? 999 : null,
     is_locked: false,
 
-    source_type: args.rewritten
-      ? "admin_process_candidate_rewrite"
-      : "admin_process_candidate",
+    source_type: args.forceSaveDuplicate
+      ? "manual_force_duplicate"
+      : args.rewritten
+        ? "admin_process_candidate_rewrite"
+        : "admin_process_candidate",
     source_provider: args.sourceProvider,
     source_model: args.sourceModel,
 
@@ -922,6 +946,9 @@ export async function POST(req: Request) {
     const candidate = body?.candidate;
     const sourceArticle = getString(body?.sourceArticle) ?? undefined;
     const targetFeaturedCount = getNumber(body?.targetFeaturedCount) ?? 12;
+
+    const forceSaveDuplicate = getBoolean(body?.force_save_duplicate) ?? false;
+    const forceStatus = normalizeForceStatus(body?.force_status);
 
     const editorProvider = chooseEditorProvider(body);
 
@@ -978,7 +1005,7 @@ export async function POST(req: Request) {
       editorProvider,
     });
 
-    if (shouldSkipMatchedDuplicate(firstEvaluation)) {
+    if (shouldSkipMatchedDuplicate(firstEvaluation) && !forceSaveDuplicate) {
       const matchedCard = findMatchedCard(firstEvaluation, existing.cards);
 
       return NextResponse.json({
@@ -1011,7 +1038,7 @@ export async function POST(req: Request) {
     let rewritten = false;
     let rewrittenCard: CandidateCard | null = null;
 
-    if (shouldRewrite(firstEvaluation)) {
+    if (shouldRewrite(firstEvaluation) && !forceSaveDuplicate) {
       rewrittenCard = await rewriteCandidate({
         reference,
         verseText,
@@ -1037,7 +1064,7 @@ export async function POST(req: Request) {
         editorProvider,
       });
 
-      if (shouldSkipMatchedDuplicate(finalEvaluation)) {
+      if (shouldSkipMatchedDuplicate(finalEvaluation) && !forceSaveDuplicate) {
         const matchedCard = findMatchedCard(finalEvaluation, existing.cards);
 
         return NextResponse.json({
@@ -1069,7 +1096,7 @@ export async function POST(req: Request) {
 
     const skipDecision = shouldSkipInsteadOfSave(finalEvaluation);
 
-    if (skipDecision.skip) {
+    if (skipDecision.skip && !forceSaveDuplicate) {
       return NextResponse.json({
         ok: true,
         skipped: true,
@@ -1090,9 +1117,35 @@ export async function POST(req: Request) {
       });
     }
 
+    if (skipDecision.reason === "invalid_score_total") {
+      return NextResponse.json({
+        ok: true,
+        skipped: true,
+        skip_reason: "invalid_score_total",
+        saved_id: null,
+        saved_ids: [],
+        rewritten,
+        status: "skipped_not_savable",
+        score_total: null,
+        canonical_ref: normalizedReference.canonical_ref,
+        book_key: normalizedReference.book_key,
+        editor_provider: editorProvider,
+        editor_model: getModelName(editorProvider),
+        first_evaluation: firstEvaluation,
+        rewritten_card: rewrittenCard,
+        final_card: finalCard,
+        final_evaluation: finalEvaluation,
+      });
+    }
+
     const referenceParts = parseReferenceParts(reference);
     const cardForSave = getFinalCardForSave(finalCard);
-    const status = normalizeStatusFromPlacement(finalEvaluation.placement);
+    const status =
+      forceSaveDuplicate && forceStatus
+        ? forceStatus
+        : forceSaveDuplicate
+          ? "reserve"
+          : normalizeStatusFromPlacement(finalEvaluation.placement);
     const scoreTotal = getNumber(finalEvaluation.score_total);
     const translationGroupId = randomUUID();
 
@@ -1160,6 +1213,7 @@ export async function POST(req: Request) {
         editorProvider,
         candidate,
         replace_card_id: getString(finalEvaluation.replace_card_id),
+        forceSaveDuplicate,
       });
 
       if (!saveResult.ok) {
@@ -1186,6 +1240,7 @@ export async function POST(req: Request) {
       saved_ids: saveResults,
       translation_group_id: translationGroupId,
       rewritten,
+      forced_duplicate_save: forceSaveDuplicate,
       status,
       score_total: scoreTotal,
       canonical_ref: normalizedReference.canonical_ref,
