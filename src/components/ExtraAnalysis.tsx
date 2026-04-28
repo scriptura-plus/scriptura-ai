@@ -53,22 +53,8 @@ function getCollapseLabel(lang: Lang): string {
   return "Hide";
 }
 
-function getArticleLabel(lang: Lang, id: ExtraId): string {
-  if (lang === "ru") {
-    if (id === "textual_findings") return "Текстовые находки";
-    if (id === "historical_scene") return "Историческая сцена";
-    return "Связи с другими стихами";
-  }
-
-  if (lang === "es") {
-    if (id === "textual_findings") return "Hallazgos textuales";
-    if (id === "historical_scene") return "Escena histórica";
-    return "Conexiones con otros textos";
-  }
-
-  if (id === "textual_findings") return "Textual findings";
-  if (id === "historical_scene") return "Historical scene";
-  return "Links with other passages";
+function getArticleLabel(title: string): string {
+  return title;
 }
 
 function getShareLabel(lang: Lang): string {
@@ -280,14 +266,19 @@ function EditorialArticleFromBlocks({
   const firstParagraphs = splitArticleParagraphs(firstBlock.body);
   const firstLead = firstParagraphs[0] ?? firstBlock.body;
   const firstRest = firstParagraphs.slice(1);
-  const allParagraphs = blocks.flatMap((block) => splitArticleParagraphs(block.body));
+  const allParagraphs = blocks.flatMap((block) =>
+    splitArticleParagraphs(block.body),
+  );
   const pullQuote = pickPullQuote(allParagraphs, firstBlock.title);
 
   return (
     <div className="editorial-article">
       <div className="editorial-kicker">{kicker}</div>
 
-      <h4 className="editorial-subhead" style={{ marginTop: 0, paddingTop: 0, borderTop: "none" }}>
+      <h4
+        className="editorial-subhead"
+        style={{ marginTop: 0, paddingTop: 0, borderTop: "none" }}
+      >
         {firstBlock.title}
       </h4>
 
@@ -357,7 +348,7 @@ function ExtraItem({
   const [error, setError] = useState("");
   const [shareNotice, setShareNotice] = useState("");
 
-  const articleLabel = getArticleLabel(lang, id);
+  const articleLabel = getArticleLabel(title);
   const shareLabel = getShareLabel(lang);
   const collapseLabel = getCollapseLabel(lang);
 
@@ -450,6 +441,7 @@ function ExtraItem({
           color: "var(--ink)",
           fontFamily: "inherit",
           textAlign: "left",
+          gap: 16,
         }}
       >
         <span className="angle-card-title" style={{ margin: 0 }}>
