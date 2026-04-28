@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { formatReference } from "@/lib/bible/formatReference";
 
 type Lang = "ru" | "en" | "es";
@@ -38,6 +38,12 @@ type StudioCard = {
   status: string;
   rank?: number | null;
   is_locked?: boolean;
+
+  moderator_boost?: number | null;
+  moderator_note?: string | null;
+  moderator_decision?: string | null;
+  moderator_reviewed_at?: string | null;
+
   source_type: string | null;
   source_provider: string | null;
   source_model: string | null;
@@ -182,6 +188,12 @@ type ApplyRewriteResponse = {
   card?: Partial<StudioCard>;
 };
 
+type UpdateAngleCardResponse = {
+  ok?: boolean;
+  error?: string;
+  card?: Partial<StudioCard>;
+};
+
 type ReEvaluateState = {
   loading: boolean;
   applying: boolean;
@@ -210,10 +222,10 @@ type RewriteState = {
 };
 
 const BG = "#f4efe7";
-const PAGE_GLOW = "radial-gradient(circle at top, rgba(255,255,255,0.72) 0%, rgba(255,255,255,0) 52%)";
+const PAGE_GLOW =
+  "radial-gradient(circle at top, rgba(255,255,255,0.72) 0%, rgba(255,255,255,0) 52%)";
 const PAPER = "#fbf8f3";
 const PANEL = "#f9f5ee";
-const PANEL_SOFT = "#f3eee5";
 const CARD = "#fffdfa";
 const CARD_ALT = "#f7f3ec";
 const LINE = "#d9d0c2";
@@ -289,11 +301,6 @@ function readableSourceLabel(source: string): string {
   return cleaned;
 }
 
-function sourceLabel(sources: string[]): string {
-  if (!sources.length) return "Неизвестно";
-  return sources.map(readableSourceLabel).join(", ");
-}
-
 function statusLabel(status: string): string {
   if (status === "featured") return "Статус: активная";
   if (status === "reserve") return "Статус: запас";
@@ -328,6 +335,58 @@ function coverageLabel(type: string | null): string | null {
 
 function getCardSource(card: StudioCard): string {
   return readableSourceLabel(card.source_model || card.source_type || "unknown");
+}
+
+function getModeratorBoost(card: StudioCard): number {
+  return typeof card.moderator_boost === "number" && Number.isFinite(card.moderator_boost)
+    ? card.moderator_boost
+    : 0;
+}
+
+function getEffectiveScore(card: StudioCard): number | null {
+  if (typeof card.score_total !== "number" || !Number.isFinite(card.score_total)) {
+    return null;
+  }
+
+  return card.score_total + getModeratorBoost(card);
+}
+
+function getStatusWeight(status: string): number {
+  if (status === "featured") return 1;
+  if (status === "reserve") return 2;
+  if (status === "rewrite") return 3;
+  if (status === "hidden") return 4;
+  if (status === "rejected") return 5;
+  return 99;
+}
+
+function sortStudioCards(cards: StudioCard[]): StudioCard[] {
+  return [...cards].sort((a, b) => {
+    const statusDiff = getStatusWeight(a.status) - getStatusWeight(b.status);
+    if (statusDiff !== 0) return statusDiff;
+
+    const aHasRank = typeof a.rank === "number";
+    const bHasRank = typeof b.rank === "number";
+
+    if (aHasRank && bHasRank && a.rank !== b.rank) {
+      return (a.rank ?? 9999) - (b.rank ?? 9999);
+    }
+
+    if (aHasRank && !bHasRank) return -1;
+    if (!aHasRank && bHasRank) return 1;
+
+    const aEffective = getEffectiveScore(a) ?? -9999;
+    const bEffective = getEffectiveScore(b) ?? -9999;
+
+    if (aEffective !== bEffective) return bEffective - aEffective;
+
+    return a.created_at.localeCompare(b.created_at);
+  });
+}
+
+function sourceLabel(sources: string[]): string {
+  if (!sources.length) return "Неизвестно";
+  return sources.map(readableSourceLabel).join(", ");
 }
 
 function getButtonStyle(active = false, disabled = false) {
@@ -491,11 +550,10 @@ function summarizeCards(cards: StudioCard[]): CardsSummary {
     if (card.status === "hidden") summary.hidden += 1;
     if (card.status === "rejected") summary.rejected += 1;
 
-    if (
-      typeof card.score_total === "number" &&
-      (bestScore === null || card.score_total > bestScore)
-    ) {
-      bestScore = card.score_total;
+    const effectiveScore = getEffectiveScore(card);
+
+    if (effectiveScore !== null && (bestScore === null || effectiveScore > bestScore)) {
+      bestScore = effectiveScore;
     }
 
     sources.add(getCardSource(card));
@@ -536,6 +594,7 @@ export default function StudioPage() {
   const [reEvaluations, setReEvaluations] = useState<Record<string, ReEvaluateState>>({});
   const [retranslations, setRetranslations] = useState<Record<string, RetranslateState>>({});
   const [rewrites, setRewrites] = useState<Record<string, RewriteState>>({});
+  const [updatingEditorial, setUpdatingEditorial] = useState<Record<string, boolean>>({});
 
   const selectedVerse = useMemo(() => {
     return verses.find((verse) => verse.reference === selectedReference) ?? null;
@@ -637,6 +696,7 @@ export default function StudioPage() {
     setReEvaluations({});
     setRetranslations({});
     setRewrites({});
+    setUpdatingEditorial({});
     setNotice(`Открываю ${displayReference(verse)}...`);
 
     try {
@@ -661,9 +721,10 @@ export default function StudioPage() {
         throw new Error(data.error || "Не удалось загрузить карточки.");
       }
 
-      setCards(data.cards ?? []);
-      setCardsSummary(data.summary ?? null);
-      setNotice(`Карточки загружены: ${data.cards?.length ?? 0}.`);
+      const loadedCards = sortStudioCards(data.cards ?? []);
+      setCards(loadedCards);
+      setCardsSummary(data.summary ?? summarizeCards(loadedCards));
+      setNotice(`Карточки загружены: ${loadedCards.length}.`);
     } catch (error) {
       setCards([]);
       setCardsSummary(null);
@@ -674,6 +735,142 @@ export default function StudioPage() {
     } finally {
       setLoadingCards(false);
     }
+  }
+
+  async function updateAngleCardEditorial(
+    card: StudioCard,
+    patch: {
+      moderator_boost?: number;
+      status?: string;
+      is_locked?: boolean;
+      moderator_note?: string | null;
+      moderator_decision?: string | null;
+    },
+  ) {
+    if (!adminSecret.trim()) {
+      setCardsError("Вставь Admin Secret.");
+      return;
+    }
+
+    setUpdatingEditorial((prev) => ({ ...prev, [card.id]: true }));
+    setCardsError("");
+
+    try {
+      const response = await fetch("/api/admin/studio/update-angle-card", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-secret": adminSecret,
+        },
+        body: JSON.stringify({
+          card_id: card.id,
+          ...patch,
+        }),
+      });
+
+      const data = (await response.json()) as UpdateAngleCardResponse;
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || "Не удалось обновить карточку.");
+      }
+
+      setCards((prevCards) => {
+        const nextCards = sortStudioCards(
+          prevCards.map((current) => {
+            if (current.id !== card.id) return current;
+
+            return {
+              ...current,
+              status:
+                typeof data.card?.status === "string"
+                  ? data.card.status
+                  : patch.status ?? current.status,
+              is_locked:
+                typeof data.card?.is_locked === "boolean"
+                  ? data.card.is_locked
+                  : typeof patch.is_locked === "boolean"
+                    ? patch.is_locked
+                    : current.is_locked,
+              moderator_boost:
+                typeof data.card?.moderator_boost === "number"
+                  ? data.card.moderator_boost
+                  : typeof patch.moderator_boost === "number"
+                    ? patch.moderator_boost
+                    : current.moderator_boost ?? 0,
+              moderator_note:
+                data.card?.moderator_note !== undefined
+                  ? data.card.moderator_note ?? null
+                  : patch.moderator_note !== undefined
+                    ? patch.moderator_note
+                    : current.moderator_note ?? null,
+              moderator_decision:
+                data.card?.moderator_decision !== undefined
+                  ? data.card.moderator_decision ?? null
+                  : patch.moderator_decision !== undefined
+                    ? patch.moderator_decision
+                    : current.moderator_decision ?? null,
+              moderator_reviewed_at:
+                typeof data.card?.moderator_reviewed_at === "string"
+                  ? data.card.moderator_reviewed_at
+                  : new Date().toISOString(),
+              updated_at:
+                typeof data.card?.updated_at === "string"
+                  ? data.card.updated_at
+                  : new Date().toISOString(),
+            };
+          }),
+        );
+
+        setCardsSummary(summarizeCards(nextCards));
+        return nextCards;
+      });
+
+      const updatedBoost =
+        typeof data.card?.moderator_boost === "number"
+          ? data.card.moderator_boost
+          : patch.moderator_boost;
+
+      const boostText =
+        typeof updatedBoost === "number" ? ` Буст: ${updatedBoost > 0 ? "+" : ""}${updatedBoost}.` : "";
+
+      setNotice(`Карточка обновлена.${boostText}`);
+    } catch (error) {
+      setCardsError(error instanceof Error ? error.message : "Не удалось обновить карточку.");
+      setNotice("");
+    } finally {
+      setUpdatingEditorial((prev) => ({ ...prev, [card.id]: false }));
+    }
+  }
+
+  async function adjustModeratorBoost(card: StudioCard, delta: number) {
+    const currentBoost = getModeratorBoost(card);
+    const nextBoost = Math.max(-30, Math.min(30, currentBoost + delta));
+
+    await updateAngleCardEditorial(card, {
+      moderator_boost: nextBoost,
+      moderator_decision: delta > 0 ? `boost_plus_${delta}` : `boost_minus_${Math.abs(delta)}`,
+    });
+  }
+
+  async function setModeratorBoost(card: StudioCard, boost: number) {
+    const nextBoost = Math.max(-30, Math.min(30, Math.round(boost)));
+
+    await updateAngleCardEditorial(card, {
+      moderator_boost: nextBoost,
+      moderator_decision: "boost_set",
+    });
+  }
+
+  async function updateModeratorNote(card: StudioCard) {
+    const current = card.moderator_note ?? "";
+    const next = window.prompt("Заметка модератора для этой карточки:", current);
+
+    if (next === null) return;
+
+    await updateAngleCardEditorial(card, {
+      moderator_note: next.trim() ? next.trim() : null,
+      moderator_decision: "moderator_note",
+    });
   }
 
   async function reEvaluateCard(card: StudioCard) {
@@ -811,34 +1008,36 @@ export default function StudioPage() {
       }
 
       setCards((prevCards) => {
-        const nextCards = prevCards.map((current) => {
-          if (current.id !== card.id) return current;
+        const nextCards = sortStudioCards(
+          prevCards.map((current) => {
+            if (current.id !== card.id) return current;
 
-          return {
-            ...current,
-            score_total:
-              typeof data.applied?.score_total === "number"
-                ? data.applied.score_total
-                : current.score_total,
-            status: data.applied?.status ?? current.status,
-            rank:
-              typeof data.applied?.rank === "number" || data.applied?.rank === null
-                ? data.applied.rank
-                : current.rank,
-            coverage_type:
-              data.applied?.coverage_type === undefined
-                ? current.coverage_type
-                : data.applied.coverage_type,
-            angle_summary:
-              data.applied?.angle_summary === undefined
-                ? current.angle_summary
-                : data.applied.angle_summary,
-            updated_at:
-              typeof data.card?.updated_at === "string"
-                ? data.card.updated_at
-                : new Date().toISOString(),
-          };
-        });
+            return {
+              ...current,
+              score_total:
+                typeof data.applied?.score_total === "number"
+                  ? data.applied.score_total
+                  : current.score_total,
+              status: data.applied?.status ?? current.status,
+              rank:
+                typeof data.applied?.rank === "number" || data.applied?.rank === null
+                  ? data.applied.rank
+                  : current.rank,
+              coverage_type:
+                data.applied?.coverage_type === undefined
+                  ? current.coverage_type
+                  : data.applied.coverage_type,
+              angle_summary:
+                data.applied?.angle_summary === undefined
+                  ? current.angle_summary
+                  : data.applied.angle_summary,
+              updated_at:
+                typeof data.card?.updated_at === "string"
+                  ? data.card.updated_at
+                  : new Date().toISOString(),
+            };
+          }),
+        );
 
         setCardsSummary(summarizeCards(nextCards));
         return nextCards;
@@ -1147,50 +1346,52 @@ export default function StudioPage() {
       }
 
       setCards((prevCards) => {
-        const nextCards = prevCards.map((current) => {
-          if (current.id !== card.id) return current;
+        const nextCards = sortStudioCards(
+          prevCards.map((current) => {
+            if (current.id !== card.id) return current;
 
-          return {
-            ...current,
-            title:
-              typeof data.card?.title === "string"
-                ? data.card.title
-                : state.result?.rewritten_card?.title ?? current.title,
-            anchor:
-              data.card?.anchor !== undefined
-                ? data.card.anchor ?? null
-                : state.result?.rewritten_card?.anchor ?? current.anchor,
-            teaser:
-              typeof data.card?.teaser === "string"
-                ? data.card.teaser
-                : state.result?.rewritten_card?.teaser ?? current.teaser,
-            why_it_matters:
-              data.card?.why_it_matters !== undefined
-                ? data.card.why_it_matters ?? null
-                : state.result?.rewritten_card?.why_it_matters ?? current.why_it_matters,
-            score_total:
-              typeof data.applied?.score_total === "number"
-                ? data.applied.score_total
-                : current.score_total,
-            status: data.applied?.status ?? current.status,
-            rank:
-              typeof data.applied?.rank === "number" || data.applied?.rank === null
-                ? data.applied.rank
-                : current.rank,
-            coverage_type:
-              data.applied?.coverage_type === undefined
-                ? current.coverage_type
-                : data.applied.coverage_type,
-            angle_summary:
-              data.applied?.angle_summary === undefined
-                ? current.angle_summary
-                : data.applied.angle_summary,
-            updated_at:
-              typeof data.card?.updated_at === "string"
-                ? data.card.updated_at
-                : new Date().toISOString(),
-          };
-        });
+            return {
+              ...current,
+              title:
+                typeof data.card?.title === "string"
+                  ? data.card.title
+                  : state.result?.rewritten_card?.title ?? current.title,
+              anchor:
+                data.card?.anchor !== undefined
+                  ? data.card.anchor ?? null
+                  : state.result?.rewritten_card?.anchor ?? current.anchor,
+              teaser:
+                typeof data.card?.teaser === "string"
+                  ? data.card.teaser
+                  : state.result?.rewritten_card?.teaser ?? current.teaser,
+              why_it_matters:
+                data.card?.why_it_matters !== undefined
+                  ? data.card.why_it_matters ?? null
+                  : state.result?.rewritten_card?.why_it_matters ?? current.why_it_matters,
+              score_total:
+                typeof data.applied?.score_total === "number"
+                  ? data.applied.score_total
+                  : current.score_total,
+              status: data.applied?.status ?? current.status,
+              rank:
+                typeof data.applied?.rank === "number" || data.applied?.rank === null
+                  ? data.applied.rank
+                  : current.rank,
+              coverage_type:
+                data.applied?.coverage_type === undefined
+                  ? current.coverage_type
+                  : data.applied.coverage_type,
+              angle_summary:
+                data.applied?.angle_summary === undefined
+                  ? current.angle_summary
+                  : data.applied.angle_summary,
+              updated_at:
+                typeof data.card?.updated_at === "string"
+                  ? data.card.updated_at
+                  : new Date().toISOString(),
+            };
+          }),
+        );
 
         setCardsSummary(summarizeCards(nextCards));
         return nextCards;
@@ -1751,6 +1952,10 @@ export default function StudioPage() {
                     !rewrite.applied,
                 );
 
+                const boost = getModeratorBoost(card);
+                const effectiveScore = getEffectiveScore(card);
+                const editorialBusy = Boolean(updatingEditorial[card.id]);
+
                 return (
                   <article
                     key={card.id}
@@ -1788,10 +1993,14 @@ export default function StudioPage() {
                         {card.title}
                       </h3>
 
-                      {card.score_total !== null ? (
+                      {effectiveScore !== null ? (
                         <span
+                          title={`AI: ${card.score_total ?? "—"} / boost: ${boost > 0 ? "+" : ""}${boost}`}
                           style={{
-                            background: `linear-gradient(180deg, ${SLATE} 0%, ${SLATE_DARK} 100%)`,
+                            background:
+                              boost !== 0
+                                ? `linear-gradient(180deg, ${WARM_ACCENT} 0%, #7f674c 100%)`
+                                : `linear-gradient(180deg, ${SLATE} 0%, ${SLATE_DARK} 100%)`,
                             color: "#fff",
                             borderRadius: 999,
                             minWidth: 42,
@@ -1805,7 +2014,7 @@ export default function StudioPage() {
                             boxShadow: "0 10px 20px rgba(91, 102, 114, 0.18)",
                           }}
                         >
-                          {card.score_total}
+                          {effectiveScore}
                         </span>
                       ) : null}
                     </div>
@@ -1815,6 +2024,10 @@ export default function StudioPage() {
                       {coverageLabel(card.coverage_type) ? (
                         <Badge text={coverageLabel(card.coverage_type) ?? ""} />
                       ) : null}
+                      {boost !== 0 ? (
+                        <Badge text={`буст: ${boost > 0 ? "+" : ""}${boost}`} />
+                      ) : null}
+                      {card.is_locked ? <Badge text="защищена" /> : null}
                     </div>
 
                     <div
@@ -1954,6 +2167,184 @@ export default function StudioPage() {
                           background: `linear-gradient(180deg, ${SLATE_SOFT} 0%, ${SLATE_SOFT_2} 100%)`,
                         }}
                       >
+                        <div
+                          style={{
+                            marginBottom: 12,
+                            padding: 12,
+                            borderRadius: 14,
+                            background: CARD,
+                            border: `1px solid ${LINE}`,
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontSize: 14,
+                              fontWeight: 900,
+                              color: SLATE_DARK,
+                              marginBottom: 9,
+                            }}
+                          >
+                            Редакторский приоритет
+                          </div>
+
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginBottom: 10 }}>
+                            <Badge
+                              text={`AI: ${card.score_total === null ? "—" : card.score_total}`}
+                              strong
+                            />
+                            <Badge text={`Буст: ${boost > 0 ? "+" : ""}${boost}`} />
+                            <Badge
+                              text={`Итог: ${effectiveScore === null ? "—" : effectiveScore}`}
+                              strong
+                            />
+                            {card.is_locked ? <Badge text="Lock: включён" /> : <Badge text="Lock: выключен" />}
+                          </div>
+
+                          <p
+                            style={{
+                              margin: "0 0 10px",
+                              color: MUTED,
+                              fontSize: 13,
+                              lineHeight: 1.55,
+                            }}
+                          >
+                            AI-оценка остаётся справочной. Буст меняет рабочий приоритет
+                            карточки в выдаче и в Studio. Читатель эти цифры не видит.
+                          </p>
+
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 9 }}>
+                            <button
+                              type="button"
+                              disabled={editorialBusy}
+                              onClick={() => adjustModeratorBoost(card, -5)}
+                              style={getSmallButtonStyle(editorialBusy)}
+                            >
+                              -5
+                            </button>
+
+                            <button
+                              type="button"
+                              disabled={editorialBusy}
+                              onClick={() => setModeratorBoost(card, 0)}
+                              style={getSmallButtonStyle(editorialBusy)}
+                            >
+                              0
+                            </button>
+
+                            <button
+                              type="button"
+                              disabled={editorialBusy}
+                              onClick={() => adjustModeratorBoost(card, 5)}
+                              style={getSmallButtonStyle(editorialBusy)}
+                            >
+                              +5
+                            </button>
+
+                            <button
+                              type="button"
+                              disabled={editorialBusy}
+                              onClick={() => adjustModeratorBoost(card, 10)}
+                              style={getSmallButtonStyle(editorialBusy)}
+                            >
+                              +10
+                            </button>
+
+                            <button
+                              type="button"
+                              disabled={editorialBusy}
+                              onClick={() => adjustModeratorBoost(card, 15)}
+                              style={getSmallButtonStyle(editorialBusy)}
+                            >
+                              +15
+                            </button>
+
+                            <button
+                              type="button"
+                              disabled={editorialBusy}
+                              onClick={() => updateModeratorNote(card)}
+                              style={getSmallButtonStyle(editorialBusy)}
+                            >
+                              Заметка
+                            </button>
+                          </div>
+
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                            <button
+                              type="button"
+                              disabled={editorialBusy}
+                              onClick={() =>
+                                updateAngleCardEditorial(card, {
+                                  status: "featured",
+                                  moderator_decision: "force_featured",
+                                })
+                              }
+                              style={getApplyButtonStyle(editorialBusy)}
+                            >
+                              В активные
+                            </button>
+
+                            <button
+                              type="button"
+                              disabled={editorialBusy}
+                              onClick={() =>
+                                updateAngleCardEditorial(card, {
+                                  status: "reserve",
+                                  moderator_decision: "move_reserve",
+                                })
+                              }
+                              style={getSmallButtonStyle(editorialBusy)}
+                            >
+                              В запас
+                            </button>
+
+                            <button
+                              type="button"
+                              disabled={editorialBusy}
+                              onClick={() =>
+                                updateAngleCardEditorial(card, {
+                                  status: "hidden",
+                                  moderator_decision: "hide_card",
+                                })
+                              }
+                              style={getRepairButtonStyle(editorialBusy)}
+                            >
+                              Скрыть
+                            </button>
+
+                            <button
+                              type="button"
+                              disabled={editorialBusy}
+                              onClick={() =>
+                                updateAngleCardEditorial(card, {
+                                  is_locked: !(card.is_locked ?? false),
+                                  moderator_decision: card.is_locked ? "unlock_card" : "lock_card",
+                                })
+                              }
+                              style={getSmallButtonStyle(editorialBusy)}
+                            >
+                              {card.is_locked ? "Unlock" : "Lock"}
+                            </button>
+                          </div>
+
+                          {card.moderator_note ? (
+                            <div
+                              style={{
+                                marginTop: 10,
+                                padding: "9px 10px",
+                                borderRadius: 12,
+                                background: WARM_SOFT,
+                                color: MUTED,
+                                fontSize: 13,
+                                lineHeight: 1.5,
+                                border: `1px solid ${LINE_SOFT}`,
+                              }}
+                            >
+                              <strong style={{ color: WARM_ACCENT }}>Заметка: </strong>
+                              {card.moderator_note}
+                            </div>
+                          ) : null}
+                        </div>
+
                         <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginBottom: 10 }}>
                           <Badge
                             text={`Текущая оценка: ${
@@ -1988,7 +2379,8 @@ export default function StudioPage() {
                               reEval.applying ||
                               retranslation.loading ||
                               rewrite.loading ||
-                              rewrite.applying
+                              rewrite.applying ||
+                              editorialBusy
                             }
                             onClick={() => reEvaluateCard(card)}
                             style={getSmallButtonStyle(
@@ -1996,7 +2388,8 @@ export default function StudioPage() {
                                 reEval.applying ||
                                 retranslation.loading ||
                                 rewrite.loading ||
-                                rewrite.applying,
+                                rewrite.applying ||
+                                editorialBusy,
                             )}
                           >
                             {reEval.loading ? "Оцениваю..." : "Переоценить"}
@@ -2009,7 +2402,8 @@ export default function StudioPage() {
                               reEval.loading ||
                               reEval.applying ||
                               rewrite.loading ||
-                              rewrite.applying
+                              rewrite.applying ||
+                              editorialBusy
                             }
                             onClick={() => retranslateCard(card)}
                             style={getRepairButtonStyle(
@@ -2017,7 +2411,8 @@ export default function StudioPage() {
                                 reEval.loading ||
                                 reEval.applying ||
                                 rewrite.loading ||
-                                rewrite.applying,
+                                rewrite.applying ||
+                                editorialBusy,
                             )}
                           >
                             {retranslation.loading ? "Перевожу..." : "Перевести заново"}
@@ -2254,7 +2649,8 @@ export default function StudioPage() {
                               rewrite.applying ||
                               reEval.loading ||
                               reEval.applying ||
-                              retranslation.loading
+                              retranslation.loading ||
+                              editorialBusy
                             }
                             onClick={() => previewRewrite(card)}
                             style={getSmallButtonStyle(
@@ -2262,7 +2658,8 @@ export default function StudioPage() {
                                 rewrite.applying ||
                                 reEval.loading ||
                                 reEval.applying ||
-                                retranslation.loading,
+                                retranslation.loading ||
+                                editorialBusy,
                             )}
                           >
                             {rewrite.loading ? "Готовлю..." : "Сделать вариант"}
@@ -2450,8 +2847,8 @@ export default function StudioPage() {
             lineHeight: 1.5,
           }}
         >
-          MVP Studio: переоценка, применение оценки, ремонт перевода и доработка
-          карточки RU/EN/ES. Следующий этап — публичный интерфейс.
+          MVP Studio: переоценка, применение оценки, ремонт перевода, доработка
+          карточки и ручной редакторский приоритет RU/EN/ES.
         </p>
       </div>
     </main>
@@ -2525,7 +2922,7 @@ function MessageBox({
 }: {
   kind: "error" | "success";
   text: string;
-  style?: React.CSSProperties;
+  style?: CSSProperties;
 }) {
   const isError = kind === "error";
 
