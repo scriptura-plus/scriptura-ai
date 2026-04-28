@@ -275,8 +275,31 @@ function cleanSource(source: string): string {
     .replace("word_card_article", "word");
 }
 
+function modelLabel(value: string): string {
+  const normalized = value.trim().toLowerCase();
+
+  if (normalized === "gemini") return "Gemini";
+  if (normalized === "claude") return "Claude";
+  if (normalized === "openai") return "OpenAI";
+  if (normalized === "gpt") return "OpenAI";
+  if (normalized === "gpt-5.5") return "GPT-5.5";
+
+  return value;
+}
+
 function readableSourceLabel(source: string): string {
   const cleaned = cleanSource(source);
+
+  if (cleaned.startsWith("manual_material:")) {
+    return `Ручной материал ${modelLabel(cleaned.replace("manual_material:", ""))}`;
+  }
+
+  if (cleaned === "manual_material") return "Ручной материал";
+
+  if (cleaned.startsWith("initial_angles:gemini")) return "Первичная генерация Gemini";
+  if (cleaned.startsWith("initial_angles:claude")) return "Первичная генерация Claude";
+  if (cleaned.startsWith("initial_angles:openai")) return "Первичная генерация OpenAI";
+  if (cleaned.startsWith("initial_angles:gpt")) return "Первичная генерация OpenAI";
 
   if (cleaned === "word") return "Word Lens";
   if (cleaned === "context") return "Context Lens";
@@ -288,18 +311,15 @@ function readableSourceLabel(source: string): string {
   if (cleaned === "historical_scene") return "Историческая сцена";
   if (cleaned === "text_findings") return "Текстовые находки";
   if (cleaned === "scripture_links") return "Связи с другими стихами";
-
-  if (cleaned.startsWith("initial_angles:gemini")) return "Первичная генерация Gemini";
-  if (cleaned.startsWith("initial_angles:claude")) return "Первичная генерация Claude";
-  if (cleaned.startsWith("initial_angles:openai")) return "Первичная генерация OpenAI";
-  if (cleaned.startsWith("initial_angles:gpt")) return "Первичная генерация OpenAI";
+  if (cleaned === "expand-angle") return "Развёрнутая карточка";
+  if (cleaned === "expand_angle") return "Развёрнутая карточка";
 
   if (cleaned === "generated_candidates_v2") return "Ручная генерация кандидатов";
   if (cleaned === "generated_candidates_v1") return "Старая генерация кандидатов";
   if (cleaned === "manual") return "Ручная обработка";
   if (cleaned === "manual_test") return "Ручной тест";
   if (cleaned === "studio_rewrite") return "Доработка в Studio";
-  if (cleaned === "cached_results:gpt-5.5") return "Сохранённая карточка (GPT-5.5)";
+  if (cleaned === "cached_results:gpt-5.5") return "Сохранённая карточка GPT-5.5";
   if (cleaned === "unknown") return "Неизвестно";
 
   return cleaned;
@@ -388,11 +408,6 @@ function sortStudioCards(cards: StudioCard[]): StudioCard[] {
   });
 }
 
-function sourceLabel(sources: string[]): string {
-  if (!sources.length) return "Неизвестно";
-  return sources.map(readableSourceLabel).join(", ");
-}
-
 function getButtonStyle(active = false, disabled = false) {
   return {
     border: `1px solid ${active ? SLATE : "rgba(111, 123, 136, 0.26)"}`,
@@ -477,6 +492,20 @@ function getModeButtonStyle(active = false, disabled = false) {
     opacity: disabled ? 0.62 : 1,
     boxShadow: active ? "0 6px 16px rgba(91, 102, 114, 0.18)" : "none",
   } as const;
+}
+
+function getToggleRejectedButtonStyle(active = false): CSSProperties {
+  return {
+    border: `1px solid ${active ? "rgba(138, 99, 48, 0.34)" : "rgba(111, 123, 136, 0.22)"}`,
+    borderRadius: 999,
+    background: active ? WARNING_BG : SLATE_SOFT_2,
+    color: active ? WARNING_TEXT : SLATE_DARK,
+    padding: "7px 10px",
+    cursor: "pointer",
+    fontSize: 12,
+    fontWeight: 850,
+    fontFamily: "inherit",
+  };
 }
 
 function getEvaluationScore(result: ReEvaluateResponse | RewriteCardResponse | null): number | null {
@@ -587,6 +616,7 @@ export default function StudioPage() {
   const [selectedReference, setSelectedReference] = useState("");
   const [cards, setCards] = useState<StudioCard[]>([]);
   const [cardsSummary, setCardsSummary] = useState<CardsSummary | null>(null);
+  const [showRejected, setShowRejected] = useState(false);
 
   const [loadingVerses, setLoadingVerses] = useState(false);
   const [loadingCards, setLoadingCards] = useState(false);
@@ -603,6 +633,15 @@ export default function StudioPage() {
   const selectedVerse = useMemo(() => {
     return verses.find((verse) => verse.reference === selectedReference) ?? null;
   }, [verses, selectedReference]);
+
+  const visibleCards = useMemo(() => {
+    if (showRejected) return cards;
+    return cards.filter((card) => card.status !== "rejected");
+  }, [cards, showRejected]);
+
+  const hiddenRejectedCount = useMemo(() => {
+    return cards.filter((card) => card.status === "rejected").length;
+  }, [cards]);
 
   useEffect(() => {
     const saved = window.localStorage.getItem("scriptura_admin_secret");
@@ -727,7 +766,7 @@ export default function StudioPage() {
 
       const loadedCards = sortStudioCards(data.cards ?? []);
       setCards(loadedCards);
-      setCardsSummary(data.summary ?? summarizeCards(loadedCards));
+      setCardsSummary(summarizeCards(loadedCards));
       setNotice(`Карточки загружены: ${loadedCards.length}.`);
     } catch (error) {
       setCards([]);
@@ -1907,7 +1946,7 @@ export default function StudioPage() {
 
             {cardsSummary ? (
               <div style={{ display: "grid", gap: 10, marginBottom: 14 }}>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
                   <Badge text={`${cardsSummary.featured} ${shortStatusLabel("featured")}`} strong />
                   {cardsSummary.reserve > 0 ? (
                     <Badge text={`${cardsSummary.reserve} ${shortStatusLabel("reserve")}`} />
@@ -1915,8 +1954,23 @@ export default function StudioPage() {
                   {cardsSummary.hidden > 0 ? (
                     <Badge text={`${cardsSummary.hidden} ${shortStatusLabel("hidden")}`} />
                   ) : null}
+                  {cardsSummary.rejected > 0 ? (
+                    <Badge text={`${cardsSummary.rejected} ${shortStatusLabel("rejected")}`} />
+                  ) : null}
                   {cardsSummary.best_score !== null ? (
                     <Badge text={`лучшая оценка: ${cardsSummary.best_score}`} />
+                  ) : null}
+
+                  {hiddenRejectedCount > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowRejected((value) => !value)}
+                      style={getToggleRejectedButtonStyle(showRejected)}
+                    >
+                      {showRejected
+                        ? "Скрыть отклонённые"
+                        : `Показать отклонённые (${hiddenRejectedCount})`}
+                    </button>
                   ) : null}
                 </div>
 
@@ -1949,6 +2003,13 @@ export default function StudioPage() {
                     </div>
                   </div>
                 ) : null}
+
+                {!showRejected && hiddenRejectedCount > 0 ? (
+                  <MessageBox
+                    kind="success"
+                    text={`Отклонённые карточки скрыты: ${hiddenRejectedCount}. Их можно открыть кнопкой “Показать отклонённые” и восстановить при необходимости.`}
+                  />
+                ) : null}
               </div>
             ) : null}
 
@@ -1972,6 +2033,14 @@ export default function StudioPage() {
               <EmptyBox text="По этому стиху карточки не найдены." />
             ) : null}
 
+            {!loadingCards &&
+            !cardsError &&
+            selectedReference &&
+            cards.length > 0 &&
+            visibleCards.length === 0 ? (
+              <EmptyBox text="Все карточки этого стиха сейчас скрыты как отклонённые. Нажми “Показать отклонённые”, чтобы открыть их." />
+            ) : null}
+
             <ManualMaterialBuilder
               selectedVerse={selectedVerse}
               lang={lang}
@@ -1981,7 +2050,7 @@ export default function StudioPage() {
             />
 
             <div style={{ display: "grid", gap: 14 }}>
-              {cards.map((card) => {
+              {visibleCards.map((card) => {
                 const reEval = reEvaluations[card.id] ?? createEmptyReEvaluateState();
                 const retranslation = retranslations[card.id] ?? createEmptyRetranslateState();
                 const rewrite = rewrites[card.id] ?? createEmptyRewriteState();
@@ -2011,10 +2080,13 @@ export default function StudioPage() {
                     key={card.id}
                     className="studio-card-enter"
                     style={{
-                      border: `1px solid ${LINE}`,
+                      border: `1px solid ${card.status === "rejected" ? "rgba(139, 62, 46, 0.22)" : LINE}`,
                       borderRadius: 20,
                       padding: 16,
-                      background: `linear-gradient(180deg, ${CARD} 0%, ${PANEL} 100%)`,
+                      background:
+                        card.status === "rejected"
+                          ? `linear-gradient(180deg, ${ERROR_BG} 0%, ${PANEL} 100%)`
+                          : `linear-gradient(180deg, ${CARD} 0%, ${PANEL} 100%)`,
                       boxShadow:
                         "0 1px 2px rgba(42, 31, 22, 0.04), 0 12px 26px rgba(42, 31, 22, 0.06)",
                     }}
