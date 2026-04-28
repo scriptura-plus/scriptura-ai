@@ -276,11 +276,11 @@ a:hover { text-decoration: underline; }
 .angle-card {
   background: linear-gradient(
     180deg,
-    rgba(255,255,255,0.42) 0%,
-    rgba(251,246,234,0.96) 18%,
-    rgba(251,246,234,0.98) 100%
+    rgba(255,255,255,0.38) 0%,
+    rgba(251,246,234,0.95) 20%,
+    rgba(251,246,234,0.985) 100%
   );
-  border: 1px solid rgba(216, 201, 168, 0.82);
+  border: 1px solid rgba(216, 201, 168, 0.78);
   border-radius: 24px;
   padding: 18px 18px 16px;
   box-shadow: var(--shadow);
@@ -300,35 +300,35 @@ a:hover { text-decoration: underline; }
 }
 
 .angle-card-index {
-  min-width: 32px;
-  height: 32px;
-  padding: 0 10px;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 9px;
   border-radius: 999px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  color: #64798d;
-  background: linear-gradient(180deg, #f3f4f3 0%, #e6e8e7 100%);
-  border: 1px solid rgba(95, 120, 144, 0.16);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.8);
+  font-size: 12.5px;
+  font-weight: 650;
+  letter-spacing: 0.025em;
+  color: #667b8d;
+  background: linear-gradient(180deg, #f2f4f3 0%, #e7eaea 100%);
+  border: 1px solid rgba(95, 120, 144, 0.14);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.82);
 }
 
 .angle-card-expand {
   appearance: none;
-  border: 1px solid rgba(216, 201, 168, 0.95);
-  background: rgba(251, 246, 234, 0.82);
+  border: 1px solid rgba(216, 201, 168, 0.92);
+  background: rgba(251, 246, 234, 0.78);
   color: #59738b;
-  padding: 9px 14px;
+  padding: 8px 13px;
   border-radius: 999px;
   font-size: 13px;
   font-weight: 600;
   font-family: inherit;
   cursor: pointer;
   transition: background .12s ease, border-color .12s ease, box-shadow .12s ease, transform .06s ease;
-  box-shadow: 0 1px 2px rgba(60, 40, 20, 0.03);
+  box-shadow: 0 1px 2px rgba(60, 40, 20, 0.025);
   flex-shrink: 0;
 }
 
@@ -344,11 +344,11 @@ a:hover { text-decoration: underline; }
 
 .angle-card-title {
   font-family: var(--serif);
-  font-size: 18px;
-  font-weight: 700;
+  font-size: 17.5px;
+  font-weight: 650;
   color: var(--ink);
-  line-height: 1.24;
-  letter-spacing: -0.01em;
+  line-height: 1.29;
+  letter-spacing: -0.008em;
   margin: 0;
   text-wrap: balance;
 }
@@ -358,24 +358,24 @@ a:hover { text-decoration: underline; }
   height: 1px;
   background: linear-gradient(
     90deg,
-    rgba(216, 201, 168, 0.95) 0%,
-    rgba(216, 201, 168, 0.55) 65%,
+    rgba(216, 201, 168, 0.82) 0%,
+    rgba(216, 201, 168, 0.45) 62%,
     rgba(216, 201, 168, 0) 100%
   );
-  margin: 12px 0 14px;
+  margin: 10px 0 12px;
 }
 
 .angle-card-anchor-box {
   background: linear-gradient(
     180deg,
-    rgba(244, 236, 220, 0.60) 0%,
-    rgba(249, 244, 235, 0.88) 100%
+    rgba(244, 236, 220, 0.42) 0%,
+    rgba(249, 244, 235, 0.72) 100%
   );
-  border: 1px solid rgba(216, 201, 168, 0.82);
-  border-radius: 16px;
-  padding: 12px 14px;
-  margin-bottom: 16px;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.55);
+  border: 1px solid rgba(216, 201, 168, 0.68);
+  border-radius: 15px;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.48);
 }
 
 .angle-card-anchor,
@@ -387,33 +387,33 @@ a:hover { text-decoration: underline; }
 
 .angle-anchor-label,
 .angle-card-anchor-label {
-  font-size: 12px;
+  font-size: 11.5px;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.085em;
   color: var(--accent-soft);
   font-weight: 700;
-  margin-bottom: 4px;
+  margin-bottom: 3px;
 }
 
 .angle-card-anchor-text {
-  font-size: 15px;
-  line-height: 1.55;
+  font-size: 14.5px;
+  line-height: 1.5;
 }
 
 .angle-card-teaser {
   font-size: 15.5px;
-  line-height: 1.74;
+  line-height: 1.72;
   color: var(--ink);
-  margin: 0 0 14px;
+  margin: 0 0 13px;
 }
 
 .angle-why {
-  font-size: 14px;
-  line-height: 1.65;
+  font-size: 13.5px;
+  line-height: 1.62;
   color: var(--ink-soft);
-  border-top: 1px solid rgba(216, 201, 168, 0.92);
-  padding-top: 13px;
-  margin-top: 2px;
+  border-top: 1px solid rgba(216, 201, 168, 0.78);
+  padding-top: 11px;
+  margin-top: 0;
 }
 
 .angle-why-label {
@@ -424,7 +424,7 @@ a:hover { text-decoration: underline; }
 .angle-expansion {
   margin-top: 16px;
   padding-top: 16px;
-  border-top: 1px solid rgba(216, 201, 168, 0.92);
+  border-top: 1px solid rgba(216, 201, 168, 0.84);
 }
 
 .expansion-writing {
@@ -673,9 +673,7 @@ a:hover { text-decoration: underline; }
 .picker-btn-number:hover { background: #b5c8d8; }
 
 .picker-free-row {
-  margin-top: 22px;
-  display: flex;
-  align-items: center;
+  display: none;
 }
 
 .picker-free-toggle {
@@ -736,11 +734,20 @@ a:hover { text-decoration: underline; }
 
   .angle-card-teaser {
     font-size: 15px;
-    line-height: 1.7;
+    line-height: 1.68;
   }
 
   .angle-card-anchor-box {
-    padding: 11px 13px;
+    padding: 9px 11px;
+    margin-bottom: 13px;
+  }
+
+  .angle-card-anchor-text {
+    font-size: 14px;
+  }
+
+  .angle-why {
+    font-size: 13.5px;
   }
 }
 
