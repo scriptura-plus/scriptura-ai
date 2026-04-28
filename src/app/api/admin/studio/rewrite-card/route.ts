@@ -94,20 +94,124 @@ function stripCodeFence(text: string): string {
     .trim();
 }
 
-function extractJsonObject(text: string): unknown {
+function extractJsonCandidate(text: string): string {
   const stripped = stripCodeFence(text);
 
+  if (stripped.startsWith("{") && stripped.endsWith("}")) {
+    return stripped;
+  }
+
+  const start = stripped.indexOf("{");
+  const end = stripped.lastIndexOf("}");
+
+  if (start !== -1 && end !== -1 && end > start) {
+    return stripped.slice(start, end + 1).trim();
+  }
+
+  return stripped;
+}
+
+function extractJsonObject(text: string): unknown {
+  const candidate = extractJsonCandidate(text);
+
   try {
-    return JSON.parse(stripped);
-  } catch {
-    const start = stripped.indexOf("{");
-    const end = stripped.lastIndexOf("}");
+    return JSON.parse(candidate);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`AI returned invalid JSON: ${message}`);
+  }
+}
 
-    if (start !== -1 && end !== -1 && end > start) {
-      return JSON.parse(stripped.slice(start, end + 1));
+function buildJsonRepairPrompt(args: {
+  rawText: string;
+  lang: AngleCardLang;
+  expectedShape: "rewrite" | "evaluation";
+}): string {
+  const expected =
+    args.expectedShape === "rewrite"
+      ? `{
+  "card": {
+    "title": "string",
+    "anchor": "string or null",
+    "teaser": "string",
+    "why_it_matters": "string or null"
+  },
+  "editor_note": "string"
+}`
+      : `{
+  "angle_summary": "string or null",
+  "coverage_type": "lexical | grammatical | structural | contextual | translation | rhetorical | historical | conceptual | other",
+  "same_angle": "boolean",
+  "matched_card_id": "string or null",
+  "similarity_confidence": "number",
+  "scores": {},
+  "score_total": "number",
+  "battle": {},
+  "placement": "featured_new | replace_existing | reserve | rewrite | hidden | rejected",
+  "replace_card_id": "string or null",
+  "reason": "string",
+  "risk": "string or null",
+  "rewrite_instruction": "string or null"
+}`;
+
+  return `
+You are repairing malformed JSON.
+
+The following text was intended to be JSON, but may contain invalid quotes, missing commas, trailing commas, markdown, or prose.
+
+Return ONLY valid JSON.
+Do not add markdown.
+Do not explain.
+Do not change the meaning.
+Do not translate.
+Do not invent new content.
+Preserve the original user-visible language.
+
+Expected shape:
+${expected}
+
+Raw malformed JSON/text:
+${args.rawText}
+`.trim();
+}
+
+async function extractJsonObjectWithRepair(args: {
+  text: string;
+  lang: AngleCardLang;
+  expectedShape: "rewrite" | "evaluation";
+}): Promise<unknown> {
+  try {
+    return extractJsonObject(args.text);
+  } catch (firstError) {
+    console.warn("[STUDIO_REWRITE_CARD] JSON parse failed, trying repair", {
+      expectedShape: args.expectedShape,
+      error: firstError instanceof Error ? firstError.message : String(firstError),
+      preview: args.text.slice(0, 1000),
+    });
+
+    const repairPrompt = buildJsonRepairPrompt({
+      rawText: args.text,
+      lang: args.lang,
+      expectedShape: args.expectedShape,
+    });
+
+    const repairedText = await runAI("openai", repairPrompt, args.lang, true);
+
+    try {
+      return extractJsonObject(repairedText);
+    } catch (secondError) {
+      console.error("[STUDIO_REWRITE_CARD] JSON repair failed", {
+        expectedShape: args.expectedShape,
+        firstError:
+          firstError instanceof Error ? firstError.message : String(firstError),
+        secondError:
+          secondError instanceof Error ? secondError.message : String(secondError),
+        rawPreview: args.text.slice(0, 1000),
+        repairedPreview: repairedText.slice(0, 1000),
+      });
+
+      throw secondError;
     }
-
-    throw new Error("AI returned non-JSON response");
   }
 }
 
@@ -276,6 +380,17 @@ Important:
 - Preserve the moderator's required idea when rewrite_mode is from_idea.
 - If the moderator supplied an image/metaphor, do not silently discard it.
 
+JSON safety rules:
+- Return ONLY valid JSON.
+- No markdown.
+- No code fences.
+- No comments.
+- No trailing commas.
+- Escape all quotation marks inside string values.
+- Every property name must be double-quoted.
+- Every string value must be double-quoted.
+- If a value is unknown, use null.
+
 Output language: ${outputLanguage}
 JSON keys must stay in English.
 All user-visible string values must be in ${outputLanguage}.
@@ -311,12 +426,7 @@ ${args.instruction}
 EXTRA MATERIAL, IF ANY:
 ${args.extraMaterial ?? "None provided."}
 
-Return ONLY valid JSON.
-No markdown.
-No code fences.
-No explanation before or after JSON.
-
-JSON shape:
+Return ONLY valid JSON with this exact shape:
 {
   "card": {
     "title": "string",
@@ -439,7 +549,11 @@ export async function POST(req: Request) {
     });
 
     const rewriteText = await runAI("openai", rewritePrompt, lang, true);
-    const rewriteParsed = extractJsonObject(rewriteText);
+    const rewriteParsed = await extractJsonObjectWithRepair({
+      text: rewriteText,
+      lang,
+      expectedShape: "rewrite",
+    });
     const rewrittenCard = normalizeRewrittenCard(rewriteParsed);
 
     const existing = await getAllStudioCardsForVerse({
@@ -475,7 +589,11 @@ export async function POST(req: Request) {
     });
 
     const evaluationText = await runAI("openai", evaluationPrompt, lang, true);
-    const evaluation = extractJsonObject(evaluationText);
+    const evaluation = await extractJsonObjectWithRepair({
+      text: evaluationText,
+      lang,
+      expectedShape: "evaluation",
+    });
 
     return NextResponse.json({
       ok: true,
