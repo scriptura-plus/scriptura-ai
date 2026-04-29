@@ -108,9 +108,16 @@ export function buildLensPrompt(args: {
         `- "Russian 'простите' may hide the fact that Paul did not choose the debt-cancelling verb" — specific to translation gap\n\n` +
 
         // ── STEP 3: BUILD CARDS ────────────────────────────────────────────
-        `STEP 3 — BUILD THE 4 STRONGEST DISCOVERIES INTO CARDS:\n` +
-        `Choose the 4 candidates that survived the rejection test and feel most illuminating. ` +
-        `Prefer discoveries from different categories. No two cards may make the same basic point.\n\n` +
+        `STEP 3 — BUILD THE STRONGEST DISCOVERIES INTO CARDS:\n` +
+        `Return between 4 and 8 cards.\n` +
+        `Start with the strongest 4 discoveries. Add a 5th, 6th, 7th, or 8th card ONLY if the extra card is a genuinely distinct angle and would likely deserve a score of 82+ under a strict Scriptura AI evaluation.\n` +
+        `Do not fill the list just to reach 8. If only 4 strong angles exist, return exactly 4. If 5 or 6 strong angles exist, return 5 or 6. If the verse is unusually rich and 7 or 8 distinct strong angles exist, return 7 or 8.\n` +
+        `Prefer discoveries from different categories. No two cards may make the same basic point. Do not include weaker duplicates, alternate phrasings of the same angle, or generic applications.\n\n` +
+
+        `QUALITY THRESHOLD FOR EXTRA CARDS:\n` +
+        `Cards 1–4 must be the best surviving discoveries.\n` +
+        `Cards 5–8 are optional and must pass a higher bar: they must be distinct, text-grounded, non-obvious, and likely strong enough to become public cards after evaluation.\n` +
+        `If an optional card feels merely useful, familiar, decorative, or only moderately interesting, do not include it.\n\n` +
 
         `TITLE STANDARD:\n` +
         `The title must be a sharp, concrete statement of the discovery — not a topic, not a theme. ` +
@@ -133,7 +140,7 @@ export function buildLensPrompt(args: {
         `One sentence. A perceptual shift — how the verse reads differently after seeing this. ` +
         `Not a moral lesson.\n\n` +
 
-        `Task: Return a JSON array of exactly 4 angle objects. ` +
+        `Task: Return a JSON array of 4 to 8 angle objects. ` +
         `Output JSON only — no markdown fences, no prose before or after.\n\n` +
 
         `Each object has exactly these keys:\n` +
@@ -144,9 +151,9 @@ export function buildLensPrompt(args: {
 
         `No banned words. No generic angles. No angle that fails the rejection test.\n\n` +
 
-        `Output — valid JSON array only:\n` +
-        `[{"title":"...","teaser":"...","anchor":"...","why_it_matters":"..."},{"title":"...","teaser":"...","anchor":"...","why_it_matters":"..."},{"title":"...","teaser":"...","anchor":"...","why_it_matters":"..."},{"title":"...","teaser":"...","anchor":"...","why_it_matters":"..."}]` +
-        `\n\nREMINDER: JSON only. All strings in ${langName}. Every angle must survive the rejection test.`
+        `Output — valid JSON array only. The array length must be 4, 5, 6, 7, or 8 depending on how many strong distinct discoveries actually exist:\n` +
+        `[{"title":"...","teaser":"...","anchor":"...","why_it_matters":"..."}]` +
+        `\n\nREMINDER: JSON only. All strings in ${langName}. Every angle must survive the rejection test. Do not pad the array with weak material.`
       );
 
     // ─── WORD ─────────────────────────────────────────────────────────────────
