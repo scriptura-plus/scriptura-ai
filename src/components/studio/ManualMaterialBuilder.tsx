@@ -141,7 +141,6 @@ const SLATE = "#6f7b88";
 const SLATE_DARK = "#5b6672";
 const SLATE_SOFT = "#eef2f5";
 const WARM_ACCENT = "#9a8061";
-const WARM_SOFT = "#f4ede3";
 const WARNING_BG = "#f5ebd5";
 const WARNING_TEXT = "#8a6330";
 const ERROR_BG = "#f5dfd7";
@@ -595,7 +594,7 @@ export function ManualMaterialBuilder({
 }: Props) {
   const [material, setMaterial] = useState("");
   const [direction, setDirection] = useState("");
-  const [provider, setProvider] = useState<Provider>("gemini");
+  const [provider, setProvider] = useState<Provider>("claude");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [summary, setSummary] = useState("");
@@ -850,8 +849,8 @@ export function ManualMaterialBuilder({
             cursor: loading ? "not-allowed" : "pointer",
           }}
         >
-          <option value="gemini">Gemini</option>
           <option value="claude">Claude</option>
+          <option value="gemini">Gemini</option>
           <option value="openai">OpenAI / GPT</option>
         </select>
 
