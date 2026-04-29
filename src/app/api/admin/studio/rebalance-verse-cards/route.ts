@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isProvider, defaultProvider } from "@/lib/ai/providers";
+import { isProvider, type Provider } from "@/lib/ai/providers";
 import { rebalanceVerseCards } from "@/lib/angles/rebalanceVerseCards";
 import type { AngleCardLang } from "@/lib/cache/angleCards";
 
@@ -38,6 +38,16 @@ function isLang(value: unknown): value is AngleCardLang {
   return value === "ru" || value === "en" || value === "es";
 }
 
+function resolveEditorProvider(bodyProvider: unknown): Provider {
+  if (isProvider(bodyProvider)) return bodyProvider;
+
+  const envProvider = process.env.ANGLE_EDITOR_PROVIDER;
+
+  if (isProvider(envProvider)) return envProvider;
+
+  return "claude";
+}
+
 export async function POST(req: Request) {
   try {
     if (!isAdminRequest(req)) {
@@ -57,15 +67,10 @@ export async function POST(req: Request) {
     const canonical_ref = getString(body.canonical_ref);
     const lang = isLang(body.lang) ? body.lang : null;
     const verseText = getString(body.verseText);
-    const targetFeaturedCount = getNumber(body.targetFeaturedCount) ?? 12;
+    const targetFeaturedCount = getNumber(body.targetFeaturedCount) ?? 100;
     const maxCards = getNumber(body.maxCards) ?? 24;
     const apply = getBoolean(body.apply) ?? false;
-
-    const provider = isProvider(body.provider)
-      ? body.provider
-      : isProvider(process.env.ANGLE_EDITOR_PROVIDER)
-        ? process.env.ANGLE_EDITOR_PROVIDER
-        : defaultProvider();
+    const provider = resolveEditorProvider(body.provider);
 
     if (!reference || !lang) {
       return NextResponse.json(
