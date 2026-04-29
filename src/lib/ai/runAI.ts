@@ -4,7 +4,11 @@ import type { Lang } from "../i18n/dictionary";
 const MISSING_KEY = (envName: string) =>
   `${envName} is not set on the server. Add it to your environment (e.g. .env.local or your Vercel project settings) and restart.`;
 
-const SAFE_OPENAI_MODEL = "gpt-4o-mini";
+// Cost-control defaults.
+// These defaults are used only if the matching Vercel env variable is missing.
+const SAFE_OPENAI_MODEL = "gpt-5.4-mini";
+const SAFE_CLAUDE_MODEL = "claude-sonnet-4-6";
+const SAFE_GEMINI_MODEL = "gemini-2.5-flash";
 
 const LANG_NAME: Record<Lang, string> = {
   en: "English",
@@ -14,6 +18,7 @@ const LANG_NAME: Record<Lang, string> = {
 
 function systemInstruction(lang: Lang): string {
   const name = LANG_NAME[lang];
+
   return (
     `You are a biblical scholar assistant. ` +
     `You MUST respond ONLY in ${name}. ` +
@@ -23,22 +28,35 @@ function systemInstruction(lang: Lang): string {
   );
 }
 
-function getOpenAIModel(): string {
-  const envModel = process.env.OPENAI_MODEL?.trim();
+export function resolveAIModel(provider: Provider): string {
+  if (provider === "openai") {
+    const envModel = process.env.OPENAI_MODEL?.trim();
 
-  // Cost-control safety:
-  // GPT-5.5 was useful for quality tests, but it is too expensive for automatic flows.
-  // Even if Vercel still has OPENAI_MODEL=gpt-5.5, do not use it accidentally.
-  if (!envModel) return SAFE_OPENAI_MODEL;
+    if (!envModel) return SAFE_OPENAI_MODEL;
 
-  if (envModel === "gpt-5.5") {
-    console.warn(
-      `[OpenAI] OPENAI_MODEL is set to gpt-5.5, but automatic use is blocked. Falling back to ${SAFE_OPENAI_MODEL}.`,
-    );
-    return SAFE_OPENAI_MODEL;
+    // Cost-control safety:
+    // GPT-5.5 was useful for quality tests, but it is too expensive for automatic flows.
+    // Even if Vercel still has OPENAI_MODEL=gpt-5.5, do not use it accidentally.
+    if (envModel === "gpt-5.5") {
+      console.warn(
+        `[OpenAI] OPENAI_MODEL is set to gpt-5.5, but automatic use is blocked. Falling back to ${SAFE_OPENAI_MODEL}.`,
+      );
+
+      return SAFE_OPENAI_MODEL;
+    }
+
+    return envModel;
   }
 
-  return envModel;
+  if (provider === "claude") {
+    return process.env.ANTHROPIC_MODEL?.trim() || SAFE_CLAUDE_MODEL;
+  }
+
+  if (provider === "gemini") {
+    return process.env.GEMINI_MODEL?.trim() || SAFE_GEMINI_MODEL;
+  }
+
+  return provider;
 }
 
 export async function runAI(
@@ -50,6 +68,7 @@ export async function runAI(
   if (provider === "openai") return runOpenAI(prompt, lang);
   if (provider === "claude") return runClaude(prompt, lang);
   if (provider === "gemini") return runGemini(prompt, lang, expectJSON);
+
   throw new Error(`Unknown provider: ${provider}`);
 }
 
@@ -57,7 +76,7 @@ async function runOpenAI(prompt: string, lang: Lang): Promise<string> {
   const key = process.env.OPENAI_API_KEY;
   if (!key) throw new Error(MISSING_KEY("OPENAI_API_KEY"));
 
-  const model = getOpenAIModel();
+  const model = resolveAIModel("openai");
 
   const res = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
@@ -123,6 +142,8 @@ async function runClaude(prompt: string, lang: Lang): Promise<string> {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) throw new Error(MISSING_KEY("ANTHROPIC_API_KEY"));
 
+  const model = resolveAIModel("claude");
+
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -131,7 +152,7 @@ async function runClaude(prompt: string, lang: Lang): Promise<string> {
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
-      model: process.env.ANTHROPIC_MODEL || "claude-sonnet-4-5-20250929",
+      model,
       max_tokens: 3000,
       system: systemInstruction(lang),
       messages: [{ role: "user", content: prompt }],
@@ -140,6 +161,14 @@ async function runClaude(prompt: string, lang: Lang): Promise<string> {
 
   if (!res.ok) {
     const body = await res.text();
+
+    console.error("[Claude] API error:", {
+      model,
+      endpoint: "/v1/messages",
+      status: res.status,
+      preview: body.slice(0, 400),
+    });
+
     throw new Error(`Claude error ${res.status}: ${body.slice(0, 400)}`);
   }
 
@@ -158,7 +187,7 @@ async function runGemini(
   const key = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
   if (!key) throw new Error(MISSING_KEY("GEMINI_API_KEY / GOOGLE_API_KEY"));
 
-  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+  const model = resolveAIModel("gemini");
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`;
 
   const finalPrompt = expectJSON
@@ -186,6 +215,14 @@ async function runGemini(
 
   if (!res.ok) {
     const body = await res.text();
+
+    console.error("[Gemini] API error:", {
+      model,
+      endpoint: "generateContent",
+      status: res.status,
+      preview: body.slice(0, 400),
+    });
+
     throw new Error(`Gemini error ${res.status}: ${body.slice(0, 400)}`);
   }
 
