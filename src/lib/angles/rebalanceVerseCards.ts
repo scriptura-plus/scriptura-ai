@@ -1,4 +1,4 @@
-import { runAI } from "@/lib/ai/runAI";
+import { runAI, resolveAIModel } from "@/lib/ai/runAI";
 import { type Provider } from "@/lib/ai/providers";
 import { getVerseText } from "@/lib/bible/getVerseText";
 import { buildEvaluateAnglePrompt } from "@/lib/prompts/buildEvaluateAnglePrompt";
@@ -33,6 +33,8 @@ type RebalanceResult = {
   reference: string;
   canonical_ref: string | null;
   lang: AngleCardLang;
+  editor_provider: Provider;
+  editor_model: string;
   target_featured_count: number;
   total_cards_seen: number;
   eligible_cards_count: number;
@@ -285,7 +287,10 @@ async function evaluateCardInCurrentSet(args: {
   return extractJsonObject(text);
 }
 
-async function applyDecisionToDatabase(decision: RebalanceCardDecision): Promise<{
+async function applyDecisionToDatabase(args: {
+  decision: RebalanceCardDecision;
+  provider: Provider;
+}): Promise<{
   ok: boolean;
   error: string | null;
 }> {
@@ -299,19 +304,21 @@ async function applyDecisionToDatabase(decision: RebalanceCardDecision): Promise
   }
 
   const patch = {
-    status: decision.new_status,
-    rank: decision.new_rank,
-    score_total: decision.new_score,
-    evaluation: decision.evaluation,
-    moderator_decision: "auto_rebalance_threshold_v1",
+    status: args.decision.new_status,
+    rank: args.decision.new_rank,
+    score_total: args.decision.new_score,
+    evaluation: args.decision.evaluation,
+    editor_provider: args.provider,
+    editor_model: resolveAIModel(args.provider),
+    moderator_decision: "auto_rebalance_threshold_v2",
     updated_at: new Date().toISOString(),
   };
 
-  if (decision.translation_group_id) {
+  if (args.decision.translation_group_id) {
     const { error } = await client
       .from("angle_cards")
       .update(patch)
-      .eq("translation_group_id", decision.translation_group_id);
+      .eq("translation_group_id", args.decision.translation_group_id);
 
     if (error) {
       return {
@@ -329,7 +336,7 @@ async function applyDecisionToDatabase(decision: RebalanceCardDecision): Promise
   const { error } = await client
     .from("angle_cards")
     .update(patch)
-    .eq("id", decision.card_id);
+    .eq("id", args.decision.card_id);
 
   if (error) {
     return {
@@ -383,7 +390,8 @@ function buildDecisions(evaluated: EvaluatedCard[]): RebalanceCardDecision[] {
 export async function rebalanceVerseCards(
   args: RebalanceArgs,
 ): Promise<RebalanceResult> {
-  const provider = args.provider ?? "openai";
+  const provider = args.provider ?? "claude";
+  const editorModel = resolveAIModel(provider);
 
   const targetFeaturedCount = args.targetFeaturedCount ?? 100;
   const maxCards = args.maxCards ?? 48;
@@ -403,6 +411,8 @@ export async function rebalanceVerseCards(
       reference: args.reference,
       canonical_ref: args.canonical_ref ?? null,
       lang: args.lang,
+      editor_provider: provider,
+      editor_model: editorModel,
       target_featured_count: targetFeaturedCount,
       total_cards_seen: 0,
       eligible_cards_count: 0,
@@ -507,7 +517,10 @@ export async function rebalanceVerseCards(
 
   if (apply) {
     for (const decision of changedDecisions) {
-      const result = await applyDecisionToDatabase(decision);
+      const result = await applyDecisionToDatabase({
+        decision,
+        provider,
+      });
 
       if (!result.ok) {
         errors.push(
@@ -523,6 +536,8 @@ export async function rebalanceVerseCards(
     reference: args.reference,
     canonical_ref: args.canonical_ref ?? null,
     lang: args.lang,
+    editor_provider: provider,
+    editor_model: editorModel,
     target_featured_count: targetFeaturedCount,
     total_cards_seen: allCards.length,
     eligible_cards_count: eligibleCards.length,
