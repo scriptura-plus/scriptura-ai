@@ -374,6 +374,12 @@ export async function rebalanceVerseCards(
     stillEligible.slice(0, featuredSlots).map((item) => item.card.id),
   );
 
+  const promotedOrder = new Map<string, number>();
+
+  stillEligible.slice(0, featuredSlots).forEach((item, index) => {
+    promotedOrder.set(item.card.id, index + 1);
+  });
+
   const decisions: RebalanceCardDecision[] = evaluated.map((item, index) => {
     const hardStatus = item.hardStatus;
 
@@ -383,10 +389,8 @@ export async function rebalanceVerseCards(
         ? "featured"
         : "reserve";
 
-    const newRank =
-      newStatus === "featured"
-        ? Array.from(promotedIds).indexOf(item.card.id) + 1
-        : null;
+    const computedRank =
+      newStatus === "featured" ? promotedOrder.get(item.card.id) ?? null : null;
 
     return {
       card_id: item.card.id,
@@ -396,7 +400,7 @@ export async function rebalanceVerseCards(
       old_rank: item.card.rank,
       old_score: item.card.score_total,
       new_status: newStatus,
-      new_rank: newRank > 0 ? newRank : null,
+      new_rank: computedRank,
       new_score: item.score,
       is_locked: item.card.is_locked,
       reason:
