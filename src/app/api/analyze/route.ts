@@ -1,5 +1,5 @@
 import { after, NextResponse } from "next/server";
-import { runAI } from "@/lib/ai/runAI";
+import { runAI, resolveAIModel } from "@/lib/ai/runAI";
 import { isProvider, defaultProvider } from "@/lib/ai/providers";
 import { normalizeReference } from "@/lib/bible/normalizeReference";
 import { getChapterText } from "@/lib/bible/getVerseText";
@@ -111,16 +111,8 @@ function parseReference(reference: string): {
 }
 
 function getModelName(provider: string): string {
-  if (provider === "openai") {
-    return process.env.OPENAI_MODEL || "gpt-5.5";
-  }
-
-  if (provider === "claude") {
-    return process.env.ANTHROPIC_MODEL || "claude";
-  }
-
-  if (provider === "gemini") {
-    return process.env.GEMINI_MODEL || "gemini-2.5-flash";
+  if (isProvider(provider)) {
+    return resolveAIModel(provider);
   }
 
   return provider;
@@ -722,6 +714,7 @@ export async function POST(req: Request) {
             chapterReference,
             lang,
             provider,
+            model: getModelName(provider),
             length: chapterText.length,
           });
         } catch (error) {
@@ -729,6 +722,7 @@ export async function POST(req: Request) {
             reference,
             lang,
             provider,
+            model: getModelName(provider),
             error: error instanceof Error ? error.message : String(error),
           });
         }
@@ -802,6 +796,7 @@ export async function POST(req: Request) {
       console.log("[DEBUG gemini raw]", {
         kind,
         id: id ?? null,
+        model: getModelName(provider),
         len: text.length,
         first: text[0] ?? "(empty)",
         last: text[text.length - 1] ?? "(empty)",
@@ -867,6 +862,7 @@ export async function POST(req: Request) {
           lens: "angles",
           lang,
           provider,
+          model: getModelName(provider),
           preview: text.slice(0, 1000),
         });
       }
