@@ -210,7 +210,6 @@ export async function POST(req: Request) {
     const requestedProcessLimit = getNumber(body?.processLimit) ?? 3;
     const processLimit = Math.max(1, Math.min(3, requestedProcessLimit));
 
-    // 🔥 НОВОЕ (ничего не ломает)
     const incomingExistingCards = Array.isArray(body?.existing_cards)
       ? body.existing_cards
       : null;
@@ -243,7 +242,12 @@ export async function POST(req: Request) {
 
     if (!existing.ok) {
       return NextResponse.json(
-        { error: existing.error ?? "Failed to read existing angle cards" },
+        {
+          error:
+            "error" in existing
+              ? existing.error ?? "Failed to read existing angle cards"
+              : "Failed to read existing angle cards",
+        },
         { status: 500 },
       );
     }
