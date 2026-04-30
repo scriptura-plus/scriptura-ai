@@ -707,7 +707,7 @@ function shouldSkipInsteadOfSave(evaluation: Evaluation): {
     };
   }
 
-  if (scoreTotal < 65) {
+  if (scoreTotal < 55) {
     return {
       skip: true,
       reason: "score_below_save_threshold",
@@ -1181,12 +1181,19 @@ export async function POST(req: Request) {
 
     const referenceParts = parseReferenceParts(reference);
     const cardForSave = getFinalCardForSave(finalCard);
-    const status =
+    let status =
       forceStatus ??
       (forceSaveDuplicate
         ? "reserve"
         : normalizeStatusFromPlacement(finalEvaluation.placement));
+
     const scoreTotal = getNumber(finalEvaluation.score_total);
+
+    // Force weaker cards into reserve instead of featured
+    if (typeof scoreTotal === "number" && scoreTotal < 80) {
+      status = "reserve";
+    }
+
     const translationGroupId = randomUUID();
 
     const translationResult = await translateAngleCard({
