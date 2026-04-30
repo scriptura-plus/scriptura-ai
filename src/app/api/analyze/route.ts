@@ -565,7 +565,7 @@ async function autoProcessSecondBatch(args: {
   reference: string;
   verseText: string;
   lang: Lang;
-  provider: string;
+  provider: Provider;
   existingTitles: string[];
 }) {
   const adminSecret = process.env.ADMIN_SECRET;
