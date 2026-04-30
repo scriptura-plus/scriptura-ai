@@ -253,7 +253,7 @@ export async function POST(req: Request) {
     const count = Math.max(1, Math.min(5, requestedCount));
 
     const requestedProcessLimit = getNumber(body?.processLimit) ?? 3;
-    const processLimit = Math.max(1, Math.min(3, requestedProcessLimit));
+    const processLimit = Math.max(1, Math.min(6, requestedProcessLimit));
 
     if (!reference || !verseText || !lang || !sourceArticle) {
       return NextResponse.json(
