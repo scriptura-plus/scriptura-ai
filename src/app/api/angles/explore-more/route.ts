@@ -227,6 +227,19 @@ export async function POST(req: Request) {
         provider,
         count: decision.generation_count,
         processLimit: decision.process_limit,
+
+        // 🔥 ДОБАВЛЕНО — КОНТЕКСТ ДЛЯ УМНОЙ ГЕНЕРАЦИИ
+        existing_cards: beforeCards.map(getPublicCard),
+
+        weak_cards: beforeCards
+          .filter((c) => (c.score_total ?? 0) < FEATURED_QUALITY_THRESHOLD)
+          .slice(0, 5)
+          .map(getPublicCard),
+
+        best_score: Math.max(
+          0,
+          ...beforeCards.map((c) => c.score_total ?? 0),
+        ),
       }),
     });
 
