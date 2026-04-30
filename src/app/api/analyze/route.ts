@@ -31,7 +31,7 @@ export const dynamic = "force-dynamic";
 type Lang = "en" | "ru" | "es";
 
 const TARGET_ANGLE_COUNT = 12;
-const INITIAL_ANGLE_PROCESS_LIMIT = 6;
+const INITIAL_ANGLE_PROCESS_LIMIT = 12;
 
 const isLang = (v: unknown): v is Lang =>
   v === "en" || v === "ru" || v === "es";
@@ -560,6 +560,61 @@ async function autoProcessInitialAngles(args: {
   }
 }
 
+async function autoProcessSecondBatch(args: {
+  req: Request;
+  reference: string;
+  verseText: string;
+  lang: Lang;
+  provider: string;
+  existingTitles: string[];
+}) {
+  const adminSecret = process.env.ADMIN_SECRET;
+
+  if (!adminSecret) {
+    console.warn("[SECOND_BATCH] skipped: ADMIN_SECRET is not configured", {
+      reference: args.reference,
+      lang: args.lang,
+    });
+    return;
+  }
+
+  console.log("[SECOND_BATCH] start", { reference: args.reference, lang: args.lang });
+
+  const basePrompt = buildLensPrompt({
+    lens: "angles",
+    reference: args.reference,
+    verseText: args.verseText,
+    lang: args.lang,
+  });
+
+  const avoidList = args.existingTitles
+    .map((t, i) => (i + 1) + ". " + t)
+    .join("\n");
+
+  const prompt =
+    basePrompt +
+    "\n\nCRITICAL: Do NOT repeat any of the following angles that already exist:\n" +
+    avoidList +
+    "\nGenerate entirely new and distinct angles not covered above.";
+
+  const text = await runAI(args.provider, prompt, args.lang, true);
+  const rawJson = parseCacheableJson(text);
+
+  if (rawJson) {
+    await autoProcessInitialAngles({
+      req: args.req,
+      reference: args.reference,
+      verseText: args.verseText,
+      lang: args.lang,
+      provider: args.provider,
+      rawJson,
+      sourceLabel: "second_batch:" + getModelName(args.provider),
+    });
+  }
+
+  console.log("[SECOND_BATCH] done", { reference: args.reference, lang: args.lang });
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -845,8 +900,8 @@ export async function POST(req: Request) {
           raw_json: cacheableJson,
         });
 
-        after(() =>
-          autoProcessInitialAngles({
+        after(async () => {
+          await autoProcessInitialAngles({
             req,
             reference,
             verseText,
@@ -854,8 +909,27 @@ export async function POST(req: Request) {
             provider,
             rawJson: cacheableJson,
             sourceLabel: `initial_angles:${getModelName(provider)}`,
-          }),
-        );
+          });
+
+          const currentCards = await getAngleCards({
+            reference,
+            lang,
+            statuses: ["featured"],
+            limit: 12,
+          });
+
+          if (currentCards.ok && currentCards.cards.length < 6) {
+            const existingTitles = currentCards.cards.map((card) => card.title);
+            await autoProcessSecondBatch({
+              req,
+              reference,
+              verseText,
+              lang,
+              provider,
+              existingTitles,
+            });
+          }
+        });
       } else {
         console.warn("[CACHE] skipped save because response was not valid JSON", {
           reference,
