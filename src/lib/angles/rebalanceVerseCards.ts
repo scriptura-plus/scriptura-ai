@@ -205,8 +205,9 @@ function chooseStatusFromEvaluation(args: {
     return "hidden";
   }
 
+  // 🔒 FIX: rewrite больше не сигнал к переписыванию
   if (placement === "rewrite") {
-    return "reserve";
+    return score >= RESERVE_SCORE_THRESHOLD ? "reserve" : "hidden";
   }
 
   if (placement === "needs_human_review") {
