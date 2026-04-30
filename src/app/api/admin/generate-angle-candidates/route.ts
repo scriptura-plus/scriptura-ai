@@ -175,62 +175,17 @@ ${JSON.stringify(existing, null, 2)}
 Main goal:
 Find genuinely NEW angles that are NOT already represented by the existing cards.
 
-Already represented angles — DO NOT repeat:
-1. "compassion" as inner organs / inward bodily reaction / εὔσπλαγχνοι.
-2. forgiveness "in Christ" / through Christ as sphere / ἐν Χριστῷ.
-3. pronoun shift around "one another" / ἀλλήλους vs ἑαυτοῖς.
-4. forgiveness as gift / χαρίζομαι / charis-root word.
-5. sequence: kindness → compassion → forgiveness.
-6. Ephesians 4:31 replaced by kindness / bitterness removed and replaced.
-7. "be" as "become" / γίνεσθε / process of becoming.
-8. forgiveness grammatically built into "be kind" / forgiving as how kindness acts.
-
-Before writing candidates, mentally select ONLY from still-underrepresented categories.
-
-Preferred underrepresented categories:
-A. imitation logic: the force of "as God..." / pattern, not payment.
-B. received-before-given logic: God forgave first; human forgiveness responds.
-C. plural/community layer: "you", "one another", "you" as community culture, but do NOT repeat the pronoun-shift card.
-D. relation to Ephesians 4:30: grieving the holy spirit and community speech.
-E. rhetorical hinge: "And/but you" as identity contrast, but do NOT repeat the verse 31 replacement card.
-F. moral logic of reciprocity: forgiven people become forgiving people.
-G. relation to "new personality/new self" context in Ephesians 4:24.
-H. passive/active contrast in the verse: God acted toward you; you act toward one another.
-I. sentence-level grounding: why the final clause is the foundation of the whole command.
-J. lexical or contextual detail not already covered.
-
 Critical rules:
-1. Do NOT repeat the same angles already represented in existing cards.
-2. Do NOT merely repackage a covered card with a different title.
-3. Each candidate must name a clear angle category in its own thinking, but do not output the category separately.
-4. Each card must be text-anchored: it must point to a specific word, phrase, syntax, structure, contrast, or immediate context.
-5. Avoid generic moral comments.
-6. Avoid invented facts.
-7. Prefer "I never noticed that" discoveries.
-8. If an idea is uncertain, phrase it carefully.
-9. Do NOT overstate Greek grammar.
-10. Do NOT make theological claims that are not anchored in the verse/context.
+1. Do NOT repeat the same angles already represented.
+2. Do NOT repackage existing ideas.
+3. Each card must be text-anchored.
+4. Avoid generic comments.
+5. Prefer "I never noticed that" insights.
 
-Output ONLY valid JSON.
-
-Return this exact shape:
+Return JSON:
 {
-  "candidates": [
-    {
-      "id": "generated_candidate_1",
-      "title": "...",
-      "anchor": "...",
-      "teaser": "...",
-      "why_it_matters": "..."
-    }
-  ]
+  "candidates": [...]
 }
-
-Card style:
-- title: short, memorable, not clickbait
-- anchor: exact textual support
-- teaser: 3-5 sentences, specific and explanatory
-- why_it_matters: 1-2 sentences
 `.trim();
 }
 
@@ -255,6 +210,18 @@ export async function POST(req: Request) {
     const requestedProcessLimit = getNumber(body?.processLimit) ?? 3;
     const processLimit = Math.max(1, Math.min(3, requestedProcessLimit));
 
+    // 🔥 НОВОЕ (ничего не ломает)
+    const incomingExistingCards = Array.isArray(body?.existing_cards)
+      ? body.existing_cards
+      : null;
+
+    const incomingWeakCards = Array.isArray(body?.weak_cards)
+      ? body.weak_cards
+      : [];
+
+    const incomingBestScore =
+      typeof body?.best_score === "number" ? body.best_score : null;
+
     if (!reference || !verseText || !lang) {
       return NextResponse.json(
         { error: "reference, verseText, and lang are required" },
@@ -262,12 +229,17 @@ export async function POST(req: Request) {
       );
     }
 
-    const existing = await getAngleCards({
-      reference,
-      lang,
-      statuses: ["featured", "reserve"],
-      limit: 100,
-    });
+    const existing = incomingExistingCards
+      ? {
+          ok: true,
+          cards: incomingExistingCards as AngleCardRow[],
+        }
+      : await getAngleCards({
+          reference,
+          lang,
+          statuses: ["featured", "reserve"],
+          limit: 100,
+        });
 
     if (!existing.ok) {
       return NextResponse.json(
@@ -284,7 +256,23 @@ export async function POST(req: Request) {
       count,
     });
 
-    const raw = await runAI(provider, prompt, lang, true);
+    const enhancedPrompt = `
+${prompt}
+
+ADDITIONAL CONTEXT:
+Weak cards:
+${JSON.stringify(incomingWeakCards, null, 2)}
+
+Best score so far: ${incomingBestScore ?? "unknown"}
+
+Rules:
+- Prefer stronger insights
+- Avoid repetition
+- Fewer but better is OK
+`;
+
+    const raw = await runAI(provider, enhancedPrompt, lang, true);
+
     const parsed = extractJson(raw);
     const candidates = normalizeCandidates(parsed);
     const selectedCandidates = candidates.slice(0, processLimit);
