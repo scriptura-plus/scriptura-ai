@@ -1,6 +1,6 @@
 import { after, NextResponse } from "next/server";
 import { runAI, resolveAIModel } from "@/lib/ai/runAI";
-import { isProvider, defaultProvider } from "@/lib/ai/providers";
+import { isProvider, defaultProvider, type Provider } from "@/lib/ai/providers";
 import { normalizeReference } from "@/lib/bible/normalizeReference";
 import { getChapterText } from "@/lib/bible/getVerseText";
 import {
