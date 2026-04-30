@@ -21,6 +21,8 @@ type ExploreDecision = {
   public_label: string;
 };
 
+const FEATURED_QUALITY_THRESHOLD = 82; // 🔥 НОВОЕ
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -52,6 +54,27 @@ function decideExploration(cards: AngleCardRow[]): ExploreDecision {
 
   const featuredCount = featured.length;
   const reserveCount = reserve.length;
+
+  // 🔥 НОВОЕ: анализ качества
+  const bestScore = Math.max(
+    0,
+    ...cards.map((c) => c.score_total ?? 0),
+  );
+
+  const hasStrongCard = bestScore >= FEATURED_QUALITY_THRESHOLD;
+
+  // 🔥 КЛЮЧЕВОЙ ФИКС: если нет сильных карточек — всегда генерируем
+  if (!hasStrongCard) {
+    return {
+      set_maturity: "thin",
+      should_explore: true,
+      generation_count: 10,
+      process_limit: 4,
+      public_label: "Найти сильные жемчужины",
+      message:
+        "В текущем наборе нет по-настоящему сильных жемчужин. Попробуем найти новые открытия с более сильным вау-эффектом.",
+    };
+  }
 
   if (featuredCount <= 3) {
     return {
@@ -245,7 +268,7 @@ export async function POST(req: Request) {
       explored: true,
       decision,
       result_message: noNewStrongCards
-        ? "Новых сильных жемчужин пока не найдено. Система в основном встретила повторы существующих углов."
+        ? "Новых сильных жемчужин пока не найдено."
         : "Найдены и сохранены новые жемчужины.",
       added_count: addedCount,
       added_featured_count: addedFeaturedCount,
