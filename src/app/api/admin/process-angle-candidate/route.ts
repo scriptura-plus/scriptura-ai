@@ -1190,7 +1190,7 @@ export async function POST(req: Request) {
     const scoreTotal = getNumber(finalEvaluation.score_total);
 
     // Force weaker cards into reserve instead of featured
-    if (typeof scoreTotal === "number" && scoreTotal < 80) {
+    if (typeof scoreTotal === "number" && scoreTotal < 75) {
       status = "reserve";
     }
 
