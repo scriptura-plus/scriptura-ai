@@ -10,58 +10,51 @@ type Quote = {
   text: string;
 };
 
-type Divergence = {
+type LegacyDivergence = {
   title: string;
   quotes: Quote[];
   analysis: string | string[];
 };
 
-type TranslationData = {
+type LegacyTranslationData = {
   versions: Record<string, string>;
-  divergences: Divergence[];
+  divergences: LegacyDivergence[];
   verdict: string;
 };
 
-function toParas(analysis: string | string[]): string[] {
-  if (Array.isArray(analysis)) {
-    return analysis.map((s) => s.trim()).filter(Boolean);
+type TranslationDiscoveryCard = {
+  kicker: string;
+  title: string;
+  body: string | string[];
+  quotes?: Quote[];
+};
+
+type TranslationDiscoveryData = {
+  cards: TranslationDiscoveryCard[];
+  summary?: string;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function toParas(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => (typeof item === "string" ? item.trim() : ""))
+      .filter(Boolean);
   }
 
-  const byNewline = analysis
+  if (typeof value !== "string") return [];
+
+  const byNewline = value
     .split(/\n\n+/)
     .map((s) => s.trim())
     .filter(Boolean);
 
   if (byNewline.length > 1) return byNewline;
 
-  return [analysis.trim()].filter(Boolean);
-}
-
-function extractData(raw: string): TranslationData | null {
-  const parsed = extractJSONObject<TranslationData>(raw);
-
-  if (
-    !parsed ||
-    !parsed.versions ||
-    !Array.isArray(parsed.divergences) ||
-    typeof parsed.verdict !== "string"
-  ) {
-    return null;
-  }
-
-  return parsed;
-}
-
-function getTranslationKicker(lang: Lang): string {
-  if (lang === "ru") return "Сравнение переводов";
-  if (lang === "es") return "Comparación de traducciones";
-  return "Translation comparison";
-}
-
-function getVerdictTitle(lang: Lang): string {
-  if (lang === "ru") return "Итоговый сдвиг";
-  if (lang === "es") return "Cambio principal";
-  return "Main shift";
+  return [value.trim()].filter(Boolean);
 }
 
 function normalizeLabel(label: string): string {
@@ -77,6 +70,134 @@ function normalizeLabel(label: string): string {
   return upper;
 }
 
+function getTranslationKicker(lang: Lang): string {
+  if (lang === "ru") return "Сравнение переводов";
+  if (lang === "es") return "Comparación de traducciones";
+  return "Translation comparison";
+}
+
+function getFallbackDiscoveryKicker(lang: Lang): string {
+  if (lang === "ru") return "Переводческое открытие";
+  if (lang === "es") return "Descubrimiento de traducción";
+  return "Translation discovery";
+}
+
+function getSummaryKicker(lang: Lang): string {
+  if (lang === "ru") return "Главный сдвиг";
+  if (lang === "es") return "Cambio principal";
+  return "Main shift";
+}
+
+function normalizeQuotes(value: unknown): Quote[] {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((item) => {
+      if (!isRecord(item)) return null;
+
+      const label = typeof item.label === "string" ? item.label.trim() : "";
+      const text = typeof item.text === "string" ? item.text.trim() : "";
+
+      if (!label || !text) return null;
+
+      return { label, text };
+    })
+    .filter((item): item is Quote => Boolean(item));
+}
+
+function parseNewData(parsed: unknown): TranslationDiscoveryData | null {
+  if (!isRecord(parsed) || !Array.isArray(parsed.cards)) return null;
+
+  const cards = parsed.cards
+    .map((item, index) => {
+      if (!isRecord(item)) return null;
+
+      const kicker =
+        typeof item.kicker === "string" && item.kicker.trim()
+          ? item.kicker.trim()
+          : "";
+
+      const title =
+        typeof item.title === "string" && item.title.trim()
+          ? item.title.trim()
+          : "";
+
+      const body = toParas(item.body);
+      const quotes = normalizeQuotes(item.quotes);
+
+      if (!title || body.length === 0) return null;
+
+      return {
+        kicker: kicker || `Card ${index + 1}`,
+        title,
+        body,
+        quotes,
+      };
+    })
+    .filter((item): item is TranslationDiscoveryCard => Boolean(item));
+
+  if (cards.length === 0) return null;
+
+  const summary =
+    typeof parsed.summary === "string" && parsed.summary.trim()
+      ? parsed.summary.trim()
+      : undefined;
+
+  return { cards, summary };
+}
+
+function parseLegacyData(
+  parsed: unknown,
+  lang: Lang
+): TranslationDiscoveryData | null {
+  if (
+    !isRecord(parsed) ||
+    !isRecord(parsed.versions) ||
+    !Array.isArray(parsed.divergences) ||
+    typeof parsed.verdict !== "string"
+  ) {
+    return null;
+  }
+
+  const kicker = getTranslationKicker(lang);
+
+  const cards = parsed.divergences
+    .map((item) => {
+      if (!isRecord(item)) return null;
+
+      const title =
+        typeof item.title === "string" && item.title.trim()
+          ? item.title.trim()
+          : "";
+
+      const body = toParas(item.analysis);
+      const quotes = normalizeQuotes(item.quotes);
+
+      if (!title || body.length === 0) return null;
+
+      return {
+        kicker,
+        title,
+        body,
+        quotes,
+      };
+    })
+    .filter((item): item is TranslationDiscoveryCard => Boolean(item));
+
+  if (cards.length === 0) return null;
+
+  return {
+    cards,
+    summary: parsed.verdict.trim(),
+  };
+}
+
+function extractData(raw: string, lang: Lang): TranslationDiscoveryData | null {
+  const parsed = extractJSONObject<unknown>(raw);
+
+  return parseNewData(parsed) ?? parseLegacyData(parsed, lang);
+}
+
 export function TranslationView({
   reference,
   verseText,
@@ -90,7 +211,7 @@ export function TranslationView({
 }) {
   const t = dictionary[lang];
 
-  const [data, setData] = useState<TranslationData | null>(null);
+  const [data, setData] = useState<TranslationDiscoveryData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -122,7 +243,7 @@ export function TranslationView({
       })
       .then((j: { text?: string }) => {
         if (!cancelled) {
-          setData(extractData(j.text ?? ""));
+          setData(extractData(j.text ?? "", lang));
         }
       })
       .catch((e: Error) => {
@@ -160,20 +281,17 @@ export function TranslationView({
     return <div className="card error">{t.error}</div>;
   }
 
-  const kicker = getTranslationKicker(lang);
-  const verdictTitle = getVerdictTitle(lang);
-
   return (
     <div className="angle-cards-stack">
-      {data.divergences.map((div, index) => {
+      {data.cards.map((card, index) => {
         const cardNumber = String(index + 1).padStart(2, "0");
-        const paragraphs = toParas(div.analysis);
-        const firstParagraph = paragraphs[0];
-        const restParagraphs = paragraphs.slice(1);
+        const paragraphs = toParas(card.body);
+        const kicker =
+          card.kicker?.trim() || getFallbackDiscoveryKicker(lang);
 
         return (
           <article
-            key={`${div.title}-${index}`}
+            key={`${card.title}-${index}`}
             className="angle-card angle-card-premium"
           >
             <div className="angle-card-topline">
@@ -181,29 +299,32 @@ export function TranslationView({
               <div className="editorial-kicker">{kicker}</div>
             </div>
 
-            <h3 className="angle-card-title">{div.title}</h3>
+            <h3 className="angle-card-title">{card.title}</h3>
 
-            <div className="angle-card-divider" />
+            {card.quotes && card.quotes.length > 0 && (
+              <>
+                <div className="angle-card-divider" />
 
-            <div className="translation-lines">
-              {div.quotes.map((q, qIndex) => (
-                <div key={`${q.label}-${qIndex}`} className="translation-line">
-                  <span className="translation-label">
-                    {normalizeLabel(q.label)}
-                  </span>
-                  <span className="translation-text">“{q.text}”</span>
+                <div className="translation-lines">
+                  {card.quotes.map((q, qIndex) => (
+                    <div
+                      key={`${q.label}-${qIndex}`}
+                      className="translation-line"
+                    >
+                      <span className="translation-label">
+                        {normalizeLabel(q.label)}
+                      </span>
+                      <span className="translation-text">“{q.text}”</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </>
+            )}
 
             <div className="angle-card-divider" />
 
             <div className="editorial-article" style={{ marginTop: 0 }}>
-              {firstParagraph && (
-                <p className="editorial-paragraph">{firstParagraph}</p>
-              )}
-
-              {restParagraphs.map((paragraph, paragraphIndex) => (
+              {paragraphs.map((paragraph, paragraphIndex) => (
                 <p
                   key={`${paragraph.slice(0, 24)}-${paragraphIndex}`}
                   className="editorial-paragraph"
@@ -216,17 +337,26 @@ export function TranslationView({
         );
       })}
 
-      <article className="angle-card angle-card-premium">
-        <div className="editorial-kicker">{verdictTitle}</div>
+      {data.summary && (
+        <article className="angle-card angle-card-premium">
+          <div className="editorial-kicker">{getSummaryKicker(lang)}</div>
 
-        <h3 className="angle-card-title">{t.verdict}</h3>
+          <h3 className="angle-card-title">{t.verdict}</h3>
 
-        <div className="angle-card-divider" />
+          <div className="angle-card-divider" />
 
-        <p className="editorial-lead" style={{ marginBottom: 0, paddingBottom: 0, borderBottom: "none" }}>
-          {data.verdict}
-        </p>
-      </article>
+          <p
+            className="editorial-lead"
+            style={{
+              marginBottom: 0,
+              paddingBottom: 0,
+              borderBottom: "none",
+            }}
+          >
+            {data.summary}
+          </p>
+        </article>
+      )}
 
       <p className="translation-disclaimer">{t.translationDisclaimer}</p>
     </div>
