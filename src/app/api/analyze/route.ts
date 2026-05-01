@@ -24,6 +24,11 @@ import {
   saveResearchArticle,
   updateResearchArticleExtractionStatus,
 } from "@/lib/cache/researchArticles";
+import {
+  getActiveLensDiscoveryCards,
+  normalizeLensDiscoveryOutput,
+  saveLensDiscoveryCards,
+} from "@/lib/cache/lensDiscoveryCards";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -578,7 +583,10 @@ async function autoProcessSecondBatch(args: {
     return;
   }
 
-  console.log("[SECOND_BATCH] start", { reference: args.reference, lang: args.lang });
+  console.log("[SECOND_BATCH] start", {
+    reference: args.reference,
+    lang: args.lang,
+  });
 
   const basePrompt = buildLensPrompt({
     lens: "angles",
@@ -612,7 +620,10 @@ async function autoProcessSecondBatch(args: {
     });
   }
 
-  console.log("[SECOND_BATCH] done", { reference: args.reference, lang: args.lang });
+  console.log("[SECOND_BATCH] done", {
+    reference: args.reference,
+    lang: args.lang,
+  });
 }
 
 export async function POST(req: Request) {
@@ -641,6 +652,11 @@ export async function POST(req: Request) {
 
     const shouldUseAnglesCache =
       kind === "lens" && id === "angles" && isLensId(id);
+
+    const shouldUseTranslationsCache =
+      kind === "lens" && id === "translations" && isLensId(id);
+
+    const lensCacheReference = normalizedReference.canonical_ref ?? reference;
 
     if (shouldUseAnglesCache) {
       console.log("[ANGLE_CARDS] lookup", {
@@ -699,6 +715,46 @@ export async function POST(req: Request) {
           canonical_ref: normalizedReference.canonical_ref,
         });
       }
+    }
+
+    if (shouldUseTranslationsCache) {
+      console.log("[LENS_DISCOVERY_CARDS] lookup", {
+        reference: lensCacheReference,
+        originalReference: reference,
+        lens: "translations",
+        lang,
+      });
+
+      const cachedTranslationCards = await getActiveLensDiscoveryCards({
+        reference: lensCacheReference,
+        lensId: "translations",
+        lang,
+        limit: 3,
+      });
+
+      if (cachedTranslationCards) {
+        console.log("[LENS_DISCOVERY_CARDS] hit", {
+          reference: lensCacheReference,
+          originalReference: reference,
+          lens: "translations",
+          lang,
+          count: cachedTranslationCards.cards.length,
+        });
+
+        return NextResponse.json({
+          text: JSON.stringify(cachedTranslationCards),
+          cached: true,
+          source: "lens_discovery_cards",
+          canonical_ref: normalizedReference.canonical_ref,
+        });
+      }
+
+      console.log("[LENS_DISCOVERY_CARDS] miss", {
+        reference: lensCacheReference,
+        originalReference: reference,
+        lens: "translations",
+        lang,
+      });
     }
 
     if (kind === "extra" && isExtraId(id)) {
@@ -857,6 +913,47 @@ export async function POST(req: Request) {
         last: text[text.length - 1] ?? "(empty)",
         preview: text.slice(0, 2000),
       });
+    }
+
+    if (shouldUseTranslationsCache) {
+      const rawJson = parseCacheableJson(text);
+      const normalizedOutput = normalizeLensDiscoveryOutput(rawJson);
+
+      if (normalizedOutput) {
+        await saveLensDiscoveryCards({
+          reference: lensCacheReference,
+          lensId: "translations",
+          lang,
+          protocolVersion: "translation_discovery_v2.1",
+          provider,
+          model: getModelName(provider),
+          output: normalizedOutput,
+          status: "active",
+          score: 75,
+          sourceKind: "translation_lens_generation",
+        });
+
+        console.log("[LENS_DISCOVERY_CARDS] saved", {
+          reference: lensCacheReference,
+          originalReference: reference,
+          lens: "translations",
+          lang,
+          count: normalizedOutput.cards.length,
+        });
+      } else {
+        console.warn(
+          "[LENS_DISCOVERY_CARDS] skipped save: invalid translation output",
+          {
+            reference: lensCacheReference,
+            originalReference: reference,
+            lens: "translations",
+            lang,
+            provider,
+            model: getModelName(provider),
+            preview: text.slice(0, 1000),
+          },
+        );
+      }
     }
 
     if (kind === "extra" && isExtraId(id)) {
