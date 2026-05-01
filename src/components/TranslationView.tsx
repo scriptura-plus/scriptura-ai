@@ -10,23 +10,11 @@ type Quote = {
   text: string;
 };
 
-type LegacyDivergence = {
-  title: string;
-  quotes: Quote[];
-  analysis: string | string[];
-};
-
-type LegacyTranslationData = {
-  versions: Record<string, string>;
-  divergences: LegacyDivergence[];
-  verdict: string;
-};
-
 type TranslationDiscoveryCard = {
   kicker: string;
   title: string;
-  body: string | string[];
-  quotes?: Quote[];
+  body: string[];
+  quotes: Quote[];
 };
 
 type TranslationDiscoveryData = {
@@ -102,20 +90,20 @@ function normalizeQuotes(value: unknown): Quote[] {
 
       return { label, text };
     })
-    .filter((item): item is Quote => Boolean(item));
+    .filter((item): item is Quote => item !== null);
 }
 
 function parseNewData(parsed: unknown): TranslationDiscoveryData | null {
   if (!isRecord(parsed) || !Array.isArray(parsed.cards)) return null;
 
   const cards = parsed.cards
-    .map((item, index) => {
+    .map((item, index): TranslationDiscoveryCard | null => {
       if (!isRecord(item)) return null;
 
       const kicker =
         typeof item.kicker === "string" && item.kicker.trim()
           ? item.kicker.trim()
-          : "";
+          : `Card ${index + 1}`;
 
       const title =
         typeof item.title === "string" && item.title.trim()
@@ -128,13 +116,13 @@ function parseNewData(parsed: unknown): TranslationDiscoveryData | null {
       if (!title || body.length === 0) return null;
 
       return {
-        kicker: kicker || `Card ${index + 1}`,
+        kicker,
         title,
         body,
         quotes,
       };
     })
-    .filter((item): item is TranslationDiscoveryCard => Boolean(item));
+    .filter((item): item is TranslationDiscoveryCard => item !== null);
 
   if (cards.length === 0) return null;
 
@@ -162,7 +150,7 @@ function parseLegacyData(
   const kicker = getTranslationKicker(lang);
 
   const cards = parsed.divergences
-    .map((item) => {
+    .map((item): TranslationDiscoveryCard | null => {
       if (!isRecord(item)) return null;
 
       const title =
@@ -182,7 +170,7 @@ function parseLegacyData(
         quotes,
       };
     })
-    .filter((item): item is TranslationDiscoveryCard => Boolean(item));
+    .filter((item): item is TranslationDiscoveryCard => item !== null);
 
   if (cards.length === 0) return null;
 
@@ -285,9 +273,7 @@ export function TranslationView({
     <div className="angle-cards-stack">
       {data.cards.map((card, index) => {
         const cardNumber = String(index + 1).padStart(2, "0");
-        const paragraphs = toParas(card.body);
-        const kicker =
-          card.kicker?.trim() || getFallbackDiscoveryKicker(lang);
+        const kicker = card.kicker.trim() || getFallbackDiscoveryKicker(lang);
 
         return (
           <article
@@ -301,7 +287,7 @@ export function TranslationView({
 
             <h3 className="angle-card-title">{card.title}</h3>
 
-            {card.quotes && card.quotes.length > 0 && (
+            {card.quotes.length > 0 && (
               <>
                 <div className="angle-card-divider" />
 
@@ -324,7 +310,7 @@ export function TranslationView({
             <div className="angle-card-divider" />
 
             <div className="editorial-article" style={{ marginTop: 0 }}>
-              {paragraphs.map((paragraph, paragraphIndex) => (
+              {card.body.map((paragraph, paragraphIndex) => (
                 <p
                   key={`${paragraph.slice(0, 24)}-${paragraphIndex}`}
                   className="editorial-paragraph"
