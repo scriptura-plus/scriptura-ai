@@ -34,10 +34,6 @@ export function buildLensPrompt(args: {
       return (
         `${fence}\n\n` +
         `Verse: ${args.reference}\n"${args.verseText}"\n\n` +
-        `Full chapter context: ${args.chapterReference ?? "the chapter containing the target verse"}\n` +
-        (args.chapterText?.trim()
-          ? `"${args.chapterText.trim()}"\n\n`
-          : `[CHAPTER TEXT WAS NOT PROVIDED. Use context only if you can do so cautiously; do not invent nearby wording.]\n\n`) +
         `All string values must be written in ${langName}.\n\n` +
         `${EDITORIAL_VOICE(langName)}\n\n` +
         `${JARGON_BAN}\n\n` +
@@ -85,37 +81,31 @@ export function buildLensPrompt(args: {
         `What sounds ordinary in ${langName} but was strange or sharp in the original language?\n` +
         `Example: Russian "простите" (forgive) hides the gift-giving etymology entirely.\n\n` +
 
-        `Category 7 — CONTEXTUAL TURN:\n` +
-        `Use the full chapter context provided above. Look for what changes immediately before and after the target verse. ` +
-        `Does the speaker change, the audience change, the tone change, or the argument move from reason to command, from command to promise, from scene to interpretation? ` +
-        `Does the target verse function as a hinge, climax, answer, interruption, transition, reversal, or landing point? ` +
-        `Only use context visible in the provided chapter text. Do not invent context.\n\n` +
+        `Category 7 — EXPECTATION REVERSAL:\n` +
+        `What would a careful reader naturally assume this verse is doing, and does the wording, sequence, grammar, or structure show that it is actually doing something sharper, stranger, or more specific? ` +
+        `Does it sound like a definition but function as a contrast, sound like a command but depend on a hidden reason, sound like comfort but carry pressure, or sound ordinary while the wording is unusually precise?\n\n` +
 
         `ADDITIONAL HIGH-YIELD DISCOVERY PATTERNS:\n` +
-        `After scanning the 7 categories above, also check these three patterns before moving to Step 2:\n\n` +
+        `After scanning the 7 categories above, also check these two patterns before moving to Step 2:\n\n` +
 
-        `Pattern A — EXPECTATION REVERSAL:\n` +
-        `What would a careful reader naturally assume this verse is doing, and does the wording, structure, or context show that it is actually doing something sharper, stranger, or more specific?\n` +
-        `Example: a line may sound like a definition, but in context it functions as an argument, appeal, warning, answer, or pivot.\n\n` +
-
-        `Pattern B — MEANINGFUL ABSENCE:\n` +
+        `Pattern A — MEANINGFUL ABSENCE:\n` +
         `What does the verse not say that the reader might expect it to say? ` +
         `Is there a missing explanation, missing emotion, missing command, missing subject, missing reason, or missing transition? ` +
         `Does that absence change the force of the verse?\n\n` +
 
-        `Pattern C — AGENCY / PRESSURE POINT:\n` +
+        `Pattern B — AGENCY / PRESSURE POINT:\n` +
         `Map who acts, who receives, who speaks, who is silent, who initiates, and who merely responds. ` +
         `Then identify the load-bearing word, phrase, or clause: the detail that would change the whole verse if it were removed, translated differently, or moved elsewhere.\n\n` +
 
-        `Do not force original-language discoveries. If the strongest discovery is contextual, structural, rhetorical, narrative, based on absence, or based on agency, prefer that over a weaker Greek/Hebrew word note. Original-language claims must be concrete and modest.\n\n` +
+        `Do not force original-language discoveries. If the strongest discovery is structural, rhetorical, based on absence, based on agency, or based on the exact wording of the verse, prefer that over a weaker Greek/Hebrew word note. Original-language claims must be concrete and modest.\n\n` +
 
         // ── STEP 2: REJECTION TEST ─────────────────────────────────────────
         `STEP 2 — REJECTION TEST (apply to every candidate from Step 1):\n` +
         `For each candidate, ask this single question:\n` +
         `"Could this angle be written without knowing anything specific about the wording, ` +
-        `original language, structure, or context of this verse?"\n\n` +
+        `original language, structure, sequence, grammar, translation, or exact phrasing of this verse?"\n\n` +
         `If the answer is YES — reject immediately. ` +
-        `Angles that survive rejection must be rooted in something that exists only in this specific verse.\n\n` +
+        `Angles that survive rejection must be rooted in something that exists in this specific verse, not in a general biblical theme.\n\n` +
 
         `REJECTED immediately (examples of what fails the test):\n` +
         `- "Forgiveness depends on receiving mercy" — this is a theological claim, not a textual observation\n` +
