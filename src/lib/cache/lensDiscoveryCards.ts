@@ -152,25 +152,35 @@ export async function saveLensDiscoveryCards(args: {
     return;
   }
 
-  const status = args.status ?? "active";
-  const score = args.score ?? 75;
+  const baseStatus = args.status ?? "active";
+  const baseScore = args.score ?? 75;
 
-  const rows = args.output.cards.map((card) => ({
-    reference: args.reference,
-    lens_id: args.lensId,
-    lang: args.lang,
-    protocol_version: args.protocolVersion ?? null,
-    provider: args.provider ?? null,
-    model: args.model ?? null,
-    status,
-    score,
-    title: card.title,
-    kicker: card.kicker,
-    content_json: card,
-    summary: args.output.summary ?? null,
-    source_kind: args.sourceKind ?? "ai_lens_generation",
-    source_id: args.sourceId ?? null,
-  }));
+  const rows = args.output.cards.map((card, index) => {
+    const status =
+      baseStatus === "active" && index >= 3 ? "reserve" : baseStatus;
+
+    const score =
+      baseStatus === "active" && index >= 3
+        ? Math.max(baseScore - 5, 0)
+        : baseScore;
+
+    return {
+      reference: args.reference,
+      lens_id: args.lensId,
+      lang: args.lang,
+      protocol_version: args.protocolVersion ?? null,
+      provider: args.provider ?? null,
+      model: args.model ?? null,
+      status,
+      score,
+      title: card.title,
+      kicker: card.kicker,
+      content_json: card,
+      summary: args.output.summary ?? null,
+      source_kind: args.sourceKind ?? "ai_lens_generation",
+      source_id: args.sourceId ?? null,
+    };
+  });
 
   const { error } = await supabase.from("lens_discovery_cards").insert(rows);
 
