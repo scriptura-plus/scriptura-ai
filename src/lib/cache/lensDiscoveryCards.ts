@@ -1,24 +1,4 @@
-import { getSupabaseServerClient } from "@/lib/supabase/server";
-
-export type LensDiscoveryCard = {
-  id?: string;
-  reference: string;
-  lens_id: string;
-  lang: string;
-  protocol_version?: string | null;
-  provider?: string | null;
-  model?: string | null;
-  status?: string | null;
-  score?: number | null;
-  title?: string | null;
-  kicker?: string | null;
-  content_json: Record<string, unknown>;
-  summary?: string | null;
-  source_kind?: string | null;
-  source_id?: string | null;
-  created_at?: string;
-  updated_at?: string;
-};
+import { createAdminClient } from "@/lib/supabase/server";
 
 export type LensDiscoveryOutputCard = {
   kicker: string;
@@ -111,7 +91,12 @@ export async function getActiveLensDiscoveryCards(args: {
   lang: string;
   limit?: number;
 }): Promise<LensDiscoveryOutput | null> {
-  const supabase = getSupabaseServerClient();
+  const supabase = createAdminClient();
+
+  if (!supabase) {
+    console.error("[lens_discovery_cards] Supabase admin client is not configured");
+    return null;
+  }
 
   const { data, error } = await supabase
     .from("lens_discovery_cards")
@@ -160,7 +145,12 @@ export async function saveLensDiscoveryCards(args: {
   sourceKind?: string | null;
   sourceId?: string | null;
 }): Promise<void> {
-  const supabase = getSupabaseServerClient();
+  const supabase = createAdminClient();
+
+  if (!supabase) {
+    console.error("[lens_discovery_cards] Supabase admin client is not configured");
+    return;
+  }
 
   const status = args.status ?? "active";
   const score = args.score ?? 75;
