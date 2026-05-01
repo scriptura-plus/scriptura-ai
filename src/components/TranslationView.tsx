@@ -181,7 +181,7 @@ function parseLegacyData(
 }
 
 function extractData(raw: string, lang: Lang): TranslationDiscoveryData | null {
-  const parsed = extractJSONObject<unknown>(raw);
+  const parsed = extractJSONObject<Record<string, unknown>>(raw);
 
   return parseNewData(parsed) ?? parseLegacyData(parsed, lang);
 }
