@@ -34,6 +34,10 @@ export function buildLensPrompt(args: {
       return (
         `${fence}\n\n` +
         `Verse: ${args.reference}\n"${args.verseText}"\n\n` +
+        `Full chapter context: ${args.chapterReference ?? "the chapter containing the target verse"}\n` +
+        (args.chapterText?.trim()
+          ? `"${args.chapterText.trim()}"\n\n`
+          : `[CHAPTER TEXT WAS NOT PROVIDED. Use context only if you can do so cautiously; do not invent nearby wording.]\n\n`) +
         `All string values must be written in ${langName}.\n\n` +
         `${EDITORIAL_VOICE(langName)}\n\n` +
         `${JARGON_BAN}\n\n` +
@@ -81,9 +85,29 @@ export function buildLensPrompt(args: {
         `What sounds ordinary in ${langName} but was strange or sharp in the original language?\n` +
         `Example: Russian "простите" (forgive) hides the gift-giving etymology entirely.\n\n` +
 
-        `Category 7 — CONTEXT-TRIGGERED TWIST:\n` +
-        `Is there a verse just before or after that changes the force of this one? ` +
-        `An argument that makes this line pivot or land differently than it does in isolation?\n\n` +
+        `Category 7 — CONTEXTUAL TURN:\n` +
+        `Use the full chapter context provided above. Look for what changes immediately before and after the target verse. ` +
+        `Does the speaker change, the audience change, the tone change, or the argument move from reason to command, from command to promise, from scene to interpretation? ` +
+        `Does the target verse function as a hinge, climax, answer, interruption, transition, reversal, or landing point? ` +
+        `Only use context visible in the provided chapter text. Do not invent context.\n\n` +
+
+        `ADDITIONAL HIGH-YIELD DISCOVERY PATTERNS:\n` +
+        `After scanning the 7 categories above, also check these three patterns before moving to Step 2:\n\n` +
+
+        `Pattern A — EXPECTATION REVERSAL:\n` +
+        `What would a careful reader naturally assume this verse is doing, and does the wording, structure, or context show that it is actually doing something sharper, stranger, or more specific?\n` +
+        `Example: a line may sound like a definition, but in context it functions as an argument, appeal, warning, answer, or pivot.\n\n` +
+
+        `Pattern B — MEANINGFUL ABSENCE:\n` +
+        `What does the verse not say that the reader might expect it to say? ` +
+        `Is there a missing explanation, missing emotion, missing command, missing subject, missing reason, or missing transition? ` +
+        `Does that absence change the force of the verse?\n\n` +
+
+        `Pattern C — AGENCY / PRESSURE POINT:\n` +
+        `Map who acts, who receives, who speaks, who is silent, who initiates, and who merely responds. ` +
+        `Then identify the load-bearing word, phrase, or clause: the detail that would change the whole verse if it were removed, translated differently, or moved elsewhere.\n\n` +
+
+        `Do not force original-language discoveries. If the strongest discovery is contextual, structural, rhetorical, narrative, based on absence, or based on agency, prefer that over a weaker Greek/Hebrew word note. Original-language claims must be concrete and modest.\n\n` +
 
         // ── STEP 2: REJECTION TEST ─────────────────────────────────────────
         `STEP 2 — REJECTION TEST (apply to every candidate from Step 1):\n` +
