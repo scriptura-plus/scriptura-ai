@@ -393,7 +393,20 @@ export function buildLensPrompt(args: {
         `Tone: calm, precise, confident — never sensational, never apologetic, never devotional.\n` +
         `Style: a quiet expert pointing to a wording detail the reader had in front of them but never noticed.\n\n` +
 
-        `Default output language: English unless the app specifies otherwise.\n\n` +
+        `Default output language: ${langName}.\n\n` +
+
+        `═══════════════════════════════════════════\n` +
+        `LANGUAGE-SPECIFIC DISCOVERY RULE\n` +
+        `═══════════════════════════════════════════\n\n` +
+
+        `This lens is language-specific.\n` +
+        `Do not merely translate an English or Russian insight into ${langName}.\n` +
+        `Find the translation effect that a ${langName} reader would actually feel.\n\n` +
+
+        `If ${langName} has its own lexical contrast, familiar religious phrasing, traditional wording, or reader assumption, use that.\n` +
+        `For example, a Russian reader may feel a difference between "знать" and "познавать"; a Spanish reader may feel a different difference between "saber" and "conocer"; an English reader may feel another difference between "know", "come to know", and "take in knowledge".\n\n` +
+
+        `The Greek/Hebrew packet is shared across languages, but the translation discovery must be shaped for the output language.\n\n` +
 
         `═══════════════════════════════════════════\n` +
         `CORE PRINCIPLE — TRANSLATION WOW\n` +
@@ -431,6 +444,32 @@ export function buildLensPrompt(args: {
         `- a divine-name rendering that changes the reader’s perception of the speaker, covenant, or context.\n\n` +
 
         `═══════════════════════════════════════════\n` +
+        `SEMANTIC HUMILITY RULE — VERY IMPORTANT\n` +
+        `═══════════════════════════════════════════\n\n` +
+
+        `Never overstate original-language claims.\n\n` +
+
+        `Avoid absolute formulas like:\n` +
+        `- "X does not mean A; it means B."\n` +
+        `- "The Greek word means exactly..."\n` +
+        `- "The original says not this, but that."\n` +
+        `- "This translation is inaccurate because..."\n\n` +
+
+        `Prefer careful formulas like:\n` +
+        `- "X can carry a wider range than A."\n` +
+        `- "In this context, X can sound less like A and more like B."\n` +
+        `- "The translation can make the phrase feel like A, while the Greek wording leaves room for B."\n` +
+        `- "The supplied Greek data supports this distinction, but the conclusion should remain modest."\n` +
+        `- "This rendering narrows the reader’s perception rather than simply getting the word wrong."\n\n` +
+
+        `Strong claims are allowed only when the supplied data directly supports them.\n` +
+        `If the packet gives a lemma, gloss, Strong’s number, or morphology, you may cite it. But do not build a large semantic claim that goes beyond the packet.\n\n` +
+
+        `Do not use modern word-etymology examples unless they directly clarify the verse and are historically safe.\n` +
+        `Avoid decorative examples like "architect", "archive", or modern derivative words unless they are necessary for understanding the verse.\n` +
+        `Prefer the supplied Greek/Hebrew data and the immediate wording of the verse over external etymological illustrations.\n\n` +
+
+        `═══════════════════════════════════════════\n` +
         `DISCOVERY HUNT — INTERNAL ONLY\n` +
         `═══════════════════════════════════════════\n\n` +
 
@@ -452,7 +491,7 @@ export function buildLensPrompt(args: {
         `- translator interpretation?\n\n` +
 
         `3. READER ASSUMPTION\n` +
-        `What does the familiar rendering make the reader assume?\n\n` +
+        `What does the familiar rendering make the ${langName} reader assume?\n\n` +
 
         `4. HIDDEN ALTERNATIVE\n` +
         `What does another rendering or the original wording preserve, expose, or leave open?\n\n` +
@@ -464,7 +503,8 @@ export function buildLensPrompt(args: {
         `- Non-obvious? 1–5\n` +
         `- Verifiable? 1–5\n` +
         `- Consequential? 1–5\n` +
-        `- Translation-centered? 1–5\n\n` +
+        `- Translation-centered? 1–5\n` +
+        `- Language-specific for ${langName}? 1–5\n\n` +
 
         `Only the highest-scoring translation-centered finding becomes THE WOW.\n\n` +
 
@@ -476,6 +516,15 @@ export function buildLensPrompt(args: {
 
         `Use only verified or supplied data. Never invent.\n\n` +
 
+        `The supplied STEPBible packet, when present, is the only source for:\n` +
+        `- Greek forms;\n` +
+        `- Strong’s numbers;\n` +
+        `- morphology;\n` +
+        `- lemma;\n` +
+        `- basic glosses.\n\n` +
+
+        `If the packet does not contain a form, Strong’s number, morphology, or lemma, do not invent it.\n\n` +
+
         `If original-language data, morphology, Strong’s numbers, footnotes, or cross-references are available, use them carefully.\n\n` +
 
         `If they are not available:\n` +
@@ -485,15 +534,16 @@ export function buildLensPrompt(args: {
         `- base the answer on visible translation comparison and phrase claims cautiously.\n\n` +
 
         `Preferred source order when available:\n` +
-        `1. Original-language text and parsing\n` +
-        `2. NWT Reference Bible 1984 notes, footnotes, marginal readings, cross-references\n` +
-        `3. NWT 2013\n` +
-        `4. Major formal translations\n` +
-        `5. Major readable/dynamic translations\n` +
-        `6. Jewish translation tradition for Hebrew Bible\n` +
-        `7. Septuagint/Peshitta only if relevant to the translation issue\n\n` +
+        `1. Supplied STEPBible original-language packet\n` +
+        `2. Original-language text and parsing\n` +
+        `3. NWT Reference Bible 1984 notes, footnotes, marginal readings, cross-references\n` +
+        `4. NWT 2013\n` +
+        `5. Major formal translations\n` +
+        `6. Major readable/dynamic translations\n` +
+        `7. Jewish translation tradition for Hebrew Bible\n` +
+        `8. Septuagint/Peshitta only if relevant to the translation issue\n\n` +
 
-        `The original-language wording controls the analysis.\n` +
+        `The original-language wording controls the analysis, but only within the limits of available data.\n` +
         `NWT Reference Bible 1984 is a primary comparison source because of its notes and cross-references, not a substitute for the original.\n\n` +
 
         `For Psalms, verify Masoretic vs Septuagint numbering when relevant.\n\n` +
@@ -507,7 +557,8 @@ export function buildLensPrompt(args: {
         `- identify what each rendering highlights, narrows, smooths, or leaves open;\n` +
         `- distinguish linguistic fact from interpretive possibility;\n` +
         `- explain reader effect, not just word difference;\n` +
-        `- keep the focus on wording.\n\n` +
+        `- keep the focus on wording;\n` +
+        `- write for a ${langName} reader, not for an abstract multilingual audience.\n\n` +
 
         `Use language like:\n` +
         `- “This rendering makes the phrase sound…”\n` +
@@ -515,7 +566,8 @@ export function buildLensPrompt(args: {
         `- “A more literal rendering preserves…”\n` +
         `- “A smoother rendering helps the reader see…”\n` +
         `- “The familiar wording can make the reader assume…”\n` +
-        `- “The translation choice quietly shifts the emphasis from…”\n\n` +
+        `- “The translation choice quietly shifts the emphasis from…”\n` +
+        `- “For a ${langName} reader, the familiar word can feel like…”\n\n` +
 
         `Do NOT:\n` +
         `- call a translation “wrong” unless the evidence is clear;\n` +
@@ -548,11 +600,11 @@ export function buildLensPrompt(args: {
         `Card 2:\n` +
         `⚡ THE TRANSLATION DISCOVERY\n\n` +
 
-        `- State the single sharpest discovery first.\n` +
+        `- State the single sharpest discovery first, but avoid overstatement.\n` +
         `- Then explain the translation difference and the evidence.\n` +
         `- If original-language data is verified, include it briefly.\n` +
         `- This is the heart of the answer.\n` +
-        `Length: 120–200 words.\n\n` +
+        `Length: 100–170 words.\n\n` +
 
         `Card 3:\n` +
         `🔄 HOW THE READING CHANGES\n\n` +
@@ -560,20 +612,20 @@ export function buildLensPrompt(args: {
         `- Explain what the reader now sees differently.\n` +
         `- Focus on emphasis, tone, agency, timing, relationship, or implication.\n` +
         `- Concrete, not devotional.\n` +
-        `Length: 80–140 words.\n\n` +
+        `Length: 70–120 words.\n\n` +
 
         `Optional Card 4:\n` +
         `🪞 WHY TRANSLATORS CHOOSE DIFFERENTLY\n\n` +
 
         `- Use only if it strengthens the main discovery.\n` +
         `- Explain the trade-off: literal vs clear, broad vs narrow, formal vs warm, open vs interpreted.\n` +
-        `Length: 70–120 words.\n\n` +
+        `Length: 60–100 words.\n\n` +
 
         `Optional Card 5:\n` +
         `📜 WHY YOU MAY NEVER HAVE NOTICED\n\n` +
 
         `- Use only if the discovery was hidden by tradition, familiar wording, idiom, supplied words, textual history, or divine-name rendering.\n` +
-        `Length: 60–100 words.\n\n` +
+        `Length: 50–90 words.\n\n` +
 
         `Total length: 250–500 words.\n` +
         `Hard ceiling: 600 words.\n\n` +
@@ -591,7 +643,8 @@ export function buildLensPrompt(args: {
         `2. A concrete wording difference.\n` +
         `3. A reason why the difference exists.\n` +
         `4. A reader-perception shift.\n` +
-        `5. Evidence, not assertion.\n\n` +
+        `5. Evidence, not assertion.\n` +
+        `6. Language-specific sensitivity for ${langName}.\n\n` +
 
         `Reject output if it becomes:\n` +
         `- general commentary;\n` +
@@ -600,7 +653,9 @@ export function buildLensPrompt(args: {
         `- translation trivia;\n` +
         `- a list of versions;\n` +
         `- multiple equal-weight observations;\n` +
-        `- unsupported Greek/Hebrew claims.\n\n` +
+        `- unsupported Greek/Hebrew claims;\n` +
+        `- overconfident claims about what a word “really means”;\n` +
+        `- decorative etymology not needed for the verse.\n\n` +
 
         `═══════════════════════════════════════════\n` +
         `PRE-OUTPUT CHECKLIST\n` +
@@ -616,6 +671,9 @@ export function buildLensPrompt(args: {
         `□ Did I explain what wording creates the shift?\n` +
         `□ Did I explain how the reader’s perception changes?\n` +
         `□ Did I avoid devotional and apologetic framing?\n` +
+        `□ Did I avoid “X is not A, it is B” unless absolutely supported?\n` +
+        `□ Did I avoid decorative modern etymology?\n` +
+        `□ Did I write for a ${langName} reader?\n` +
         `□ Did I cut everything that does not serve the central discovery?\n` +
         `□ Is the answer under 600 words?\n\n` +
 
