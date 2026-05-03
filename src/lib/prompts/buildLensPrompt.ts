@@ -5,6 +5,10 @@ import {
   JARGON_BAN,
 } from "./editorial";
 import type { Lang } from "./editorial";
+import {
+  formatOriginalLanguagePacketForPrompt,
+  getOriginalLanguagePacket,
+} from "@/lib/bible/getOriginalLanguagePacket";
 
 export type { Lang };
 
@@ -27,6 +31,13 @@ export function buildLensPrompt(args: {
 }): string {
   const langName = LANG_NAME[args.lang];
   const fence = LANG_FENCE(langName);
+
+  const originalLanguagePrompt =
+    args.lens === "translations"
+      ? formatOriginalLanguagePacketForPrompt(
+          getOriginalLanguagePacket(args.reference),
+        )
+      : "";
 
   switch (args.lens) {
     // ─── ANGLES ──────────────────────────────────────────────────────────────
@@ -353,11 +364,12 @@ export function buildLensPrompt(args: {
       );
     }
 
-        // ─── TRANSLATIONS ─────────────────────────────────────────────────────────
+    // ─── TRANSLATIONS ─────────────────────────────────────────────────────────
     case "translations": {
       return (
         `${fence}\n\n` +
         `Verse: ${args.reference}\n"${args.verseText}"\n\n` +
+        `${originalLanguagePrompt}\n\n` +
         `All string values must be written in ${langName} unless a field explicitly contains a Bible translation label, transliteration, or original-language form.\n\n` +
         `${EDITORIAL_VOICE(langName)}\n\n` +
         `${JARGON_BAN}\n\n` +
