@@ -103,6 +103,18 @@ function getShareLabel(lang: Lang): string {
   return "Share this insight";
 }
 
+function getPreviousLabel(lang: Lang): string {
+  if (lang === "ru") return "Назад";
+  if (lang === "es") return "Anterior";
+  return "Previous";
+}
+
+function getNextLabel(lang: Lang): string {
+  if (lang === "ru") return "Дальше";
+  if (lang === "es") return "Siguiente";
+  return "Next";
+}
+
 function stripCodeFence(text: string): string {
   const trimmed = text.trim();
 
@@ -233,7 +245,9 @@ function EditorialArticle({
     <div className="editorial-article">
       <div className="editorial-kicker">{articleLabel}</div>
 
-      <p className="editorial-lead">{renderInlineText(cleanInlineMarkdown(first))}</p>
+      <p className="editorial-lead">
+        {renderInlineText(cleanInlineMarkdown(first))}
+      </p>
 
       {rest.map((paragraph, index) => {
         const cleaned = cleanInlineMarkdown(paragraph);
@@ -280,6 +294,11 @@ export function AngleCards({
   const t = dictionary[lang];
   const cards = extractCards(rawText);
 
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
+  const [touchStartX, setTouchStartX] = useState<number | null>(null);
+  const [touchStartY, setTouchStartY] = useState<number | null>(null);
+
   if (!cards || cards.length === 0) {
     return (
       <div className="card error">
@@ -288,19 +307,217 @@ export function AngleCards({
     );
   }
 
+  const safeIndex = Math.min(currentIndex, cards.length - 1);
+  const currentCard = cards[safeIndex];
+  const canGoPrevious = safeIndex > 0;
+  const canGoNext = safeIndex < cards.length - 1;
+  const isCurrentExpanded = expandedIndex === safeIndex;
+
+  function goPrevious() {
+    if (!canGoPrevious) return;
+    setExpandedIndex(null);
+    setCurrentIndex((value) => Math.max(0, value - 1));
+  }
+
+  function goNext() {
+    if (!canGoNext) return;
+    setExpandedIndex(null);
+    setCurrentIndex((value) => Math.min(cards.length - 1, value + 1));
+  }
+
+  function handleTouchStart(event: React.TouchEvent<HTMLDivElement>) {
+    if (isCurrentExpanded) return;
+
+    const touch = event.touches[0];
+    if (!touch) return;
+
+    setTouchStartX(touch.clientX);
+    setTouchStartY(touch.clientY);
+  }
+
+  function handleTouchEnd(event: React.TouchEvent<HTMLDivElement>) {
+    if (isCurrentExpanded) return;
+    if (touchStartX === null || touchStartY === null) return;
+
+    const touch = event.changedTouches[0];
+    if (!touch) return;
+
+    const diffX = touch.clientX - touchStartX;
+    const diffY = touch.clientY - touchStartY;
+
+    setTouchStartX(null);
+    setTouchStartY(null);
+
+    const absX = Math.abs(diffX);
+    const absY = Math.abs(diffY);
+
+    if (absX < 45) return;
+    if (absY > absX * 0.8) return;
+
+    if (diffX < 0) {
+      goNext();
+    } else {
+      goPrevious();
+    }
+  }
+
   return (
-    <div className="angle-cards-stack">
-      {cards.map((card, i) => (
+    <div className="angle-cards-carousel">
+      <style>{`
+        .angle-cards-carousel {
+          display: grid;
+          gap: 14px;
+        }
+
+        .angle-carousel-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          padding: 0 4px;
+        }
+
+        .angle-carousel-count {
+          color: rgba(90, 74, 55, 0.78);
+          font-size: 14px;
+          font-weight: 750;
+          letter-spacing: 0.03em;
+        }
+
+        .angle-carousel-hint {
+          color: rgba(90, 74, 55, 0.52);
+          font-size: 12px;
+          font-weight: 650;
+        }
+
+        .angle-carousel-stage {
+          touch-action: pan-y;
+        }
+
+        .angle-carousel-stage.is-expanded {
+          touch-action: auto;
+        }
+
+        .angle-carousel-nav {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 12px;
+          margin-top: 6px;
+        }
+
+        .angle-carousel-btn {
+          border: 1px solid rgba(138, 90, 43, 0.18);
+          border-radius: 999px;
+          background: rgba(255, 253, 250, 0.78);
+          color: rgba(47, 41, 35, 0.78);
+          padding: 13px 16px;
+          font: inherit;
+          font-size: 14px;
+          font-weight: 800;
+          cursor: pointer;
+          box-shadow: 0 6px 18px rgba(42, 31, 22, 0.06);
+          transition:
+            opacity 0.14s ease,
+            transform 0.14s ease,
+            box-shadow 0.14s ease,
+            background 0.14s ease;
+        }
+
+        .angle-carousel-btn:hover:not(:disabled) {
+          transform: translateY(-1px);
+          box-shadow: 0 10px 24px rgba(42, 31, 22, 0.09);
+          background: rgba(255, 253, 250, 0.94);
+        }
+
+        .angle-carousel-btn:disabled {
+          opacity: 0.35;
+          cursor: not-allowed;
+          box-shadow: none;
+        }
+
+        .angle-carousel-btn.is-primary {
+          background: linear-gradient(180deg, #2f2923 0%, #1f1a16 100%);
+          color: #fffaf3;
+          border-color: rgba(47, 41, 35, 0.28);
+          box-shadow: 0 12px 26px rgba(42, 31, 22, 0.16);
+        }
+
+        .angle-carousel-btn.is-primary:disabled {
+          background: rgba(255, 253, 250, 0.78);
+          color: rgba(47, 41, 35, 0.5);
+        }
+
+        @media (max-width: 520px) {
+          .angle-carousel-nav {
+            gap: 9px;
+          }
+
+          .angle-carousel-btn {
+            padding: 12px 13px;
+            font-size: 13px;
+          }
+
+          .angle-carousel-hint {
+            display: none;
+          }
+        }
+      `}</style>
+
+      <div className="angle-carousel-header">
+        <div className="angle-carousel-count">
+          {safeIndex + 1} / {cards.length}
+        </div>
+
+        <div className="angle-carousel-hint">
+          {lang === "ru"
+            ? "Свайпайте влево или вправо"
+            : lang === "es"
+              ? "Desliza a izquierda o derecha"
+              : "Swipe left or right"}
+        </div>
+      </div>
+
+      <div
+        className={`angle-carousel-stage${isCurrentExpanded ? " is-expanded" : ""}`}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+      >
         <AngleCardItem
-          key={`${card.title}-${i}`}
-          index={i}
-          card={card}
+          key={`${currentCard.title}-${safeIndex}`}
+          index={safeIndex}
+          card={currentCard}
           reference={reference}
           verseText={verseText}
           lang={lang}
           provider={provider}
+          expanded={isCurrentExpanded}
+          onExpandedChange={(nextExpanded) =>
+            setExpandedIndex(nextExpanded ? safeIndex : null)
+          }
         />
-      ))}
+      </div>
+
+      {cards.length > 1 && (
+        <div className="angle-carousel-nav">
+          <button
+            type="button"
+            className="angle-carousel-btn"
+            onClick={goPrevious}
+            disabled={!canGoPrevious}
+          >
+            ← {getPreviousLabel(lang)}
+          </button>
+
+          <button
+            type="button"
+            className="angle-carousel-btn is-primary"
+            onClick={goNext}
+            disabled={!canGoNext}
+          >
+            {getNextLabel(lang)} →
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -312,6 +529,8 @@ function AngleCardItem({
   verseText,
   lang,
   provider,
+  expanded,
+  onExpandedChange,
 }: {
   index: number;
   card: AngleCard;
@@ -319,12 +538,13 @@ function AngleCardItem({
   verseText: string;
   lang: Lang;
   provider: Provider;
+  expanded: boolean;
+  onExpandedChange: (expanded: boolean) => void;
 }) {
   const t = dictionary[lang];
   const collapseLabel = getCollapseLabel(lang);
   const shareLabel = getShareLabel(lang);
 
-  const [expanded, setExpanded] = useState(false);
   const [article, setArticle] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -334,12 +554,12 @@ function AngleCardItem({
 
   async function handleExpand() {
     if (expanded) {
-      setExpanded(false);
+      onExpandedChange(false);
       if (error) setError("");
       return;
     }
 
-    setExpanded(true);
+    onExpandedChange(true);
     if (article) return;
 
     setLoading(true);
@@ -372,7 +592,8 @@ function AngleCardItem({
   }
 
   async function handleShare() {
-    const shareText = `${reference} — ${card.title}\n\n${article}\n\n${t.shareFrom}`;
+    const baseText = article || card.teaser;
+    const shareText = `${reference} — ${card.title}\n\n${baseText}\n\n${t.shareFrom}`;
 
     if (typeof navigator !== "undefined" && navigator.share) {
       try {
@@ -425,6 +646,17 @@ function AngleCardItem({
       <div className="angle-why">
         <span className="angle-why-label">{t.whyItMatters}: </span>
         <span className="angle-why-text">{card.why_it_matters}</span>
+      </div>
+
+      <div className="editorial-footer" style={{ marginTop: 18 }}>
+        <div className="editorial-footer-label">{shareLabel}</div>
+        <button
+          type="button"
+          className="editorial-share-btn"
+          onClick={handleShare}
+        >
+          {shareState === "copied" ? t.copied : t.share}
+        </button>
       </div>
 
       {expanded && (
