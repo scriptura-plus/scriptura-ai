@@ -433,6 +433,10 @@ function getSourceNote(packet: OriginalLanguagePacket): string {
   if (packet.language === "hebrew") {
     return [
       "Use this Hebrew packet as the only source for Strong's numbers, Hebrew forms, morphology, lemma, and glosses.",
+      "Do not add transliterations unless the packet explicitly supplies transliteration. If transliteration is missing, quote the Hebrew surface form directly instead.",
+      "Do not invent common transliterations from memory.",
+      "Do not describe Hebrew qatal simply as 'past tense'. Explain it cautiously as a perfective/completed verbal form that is often rendered with a past-tense verb in translation, depending on context.",
+      "Do not describe Hebrew yiqtol simply as 'future tense'. Explain it cautiously as an imperfective/non-completed verbal form whose translation depends on context.",
       "Do not overbuild theology from Hebrew roots.",
       "Do not treat root/lemma gloss as the same as full contextual meaning.",
       "Explain Hebrew morphology in reader-friendly language; do not foreground raw morphology codes unless they are essential.",
@@ -447,7 +451,7 @@ export function formatOriginalLanguagePacketForPrompt(
   packet: OriginalLanguagePacket | null,
 ): string {
   if (!packet) {
-    return "VERIFIED ORIGINAL-LANGUAGE DATA: not available for this verse in the local STEPBible packet. Do not invent Greek/Hebrew morphology, Strong's numbers, or parsing.";
+    return "VERIFIED ORIGINAL-LANGUAGE DATA: not available for this verse in the local STEPBible packet. Do not invent Greek/Hebrew morphology, Strong's numbers, transliterations, or parsing.";
   }
 
   const lines = packet.words.map((word) => {
