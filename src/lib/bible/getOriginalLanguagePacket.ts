@@ -34,9 +34,37 @@ const NT_BOOK_DATA: Record<string, BookData> = {
 const CANONICAL_TO_STEP_BOOK: Record<string, string> = {
   john: "Jhn",
   jhn: "Jhn",
+  "gospel-of-john": "Jhn",
+  "gospel-of-jhn": "Jhn",
+
+  "иоанна": "Jhn",
+  "иона": "Jhn",
+  "ин": "Jhn",
+  "иоанн": "Jhn",
+  "евангелие-от-иоанна": "Jhn",
+  "евангелие от иоанна": "Jhn",
+  "от-иоанна": "Jhn",
+  "от иоанна": "Jhn",
+
   colossians: "Col",
   col: "Col",
+
+  "колоссянам": "Col",
+  "кол": "Col",
+  "к-колоссянам": "Col",
+  "к колоссянам": "Col",
+  "послание-к-колоссянам": "Col",
+  "послание к колоссянам": "Col",
 };
+
+function normalizeBookKey(book: string): string {
+  return book
+    .trim()
+    .toLowerCase()
+    .replace(/[.,;:!?()[\]{}"“”«»]/g, "")
+    .replace(/\s+/g, " ")
+    .replace(/\s/g, "-");
+}
 
 function parseReferenceFallback(reference: string): {
   book: string;
@@ -48,16 +76,16 @@ function parseReferenceFallback(reference: string): {
   const stepMatch = trimmed.match(/^([1-3]?[A-Za-z]{3})\.(\d+)\.(\d+)$/);
   if (stepMatch) {
     return {
-      book: stepMatch[1].toLowerCase(),
+      book: normalizeBookKey(stepMatch[1]),
       chapter: Number(stepMatch[2]),
       verse: Number(stepMatch[3]),
     };
   }
 
-  const slugMatch = trimmed.match(/^([a-z0-9-]+)-(\d+)-(\d+)$/i);
+  const slugMatch = trimmed.match(/^([a-zа-яё0-9-]+)-(\d+)-(\d+)$/i);
   if (slugMatch) {
     return {
-      book: slugMatch[1].toLowerCase(),
+      book: normalizeBookKey(slugMatch[1]),
       chapter: Number(slugMatch[2]),
       verse: Number(slugMatch[3]),
     };
@@ -66,7 +94,7 @@ function parseReferenceFallback(reference: string): {
   const plainMatch = trimmed.match(/^(.+?)\s+(\d+):(\d+)$/);
   if (plainMatch) {
     return {
-      book: plainMatch[1].trim().toLowerCase(),
+      book: normalizeBookKey(plainMatch[1]),
       chapter: Number(plainMatch[2]),
       verse: Number(plainMatch[3]),
     };
@@ -81,7 +109,7 @@ function resolveStepReference(reference: string): string | null {
   const parsed =
     normalized.book && normalized.chapter && normalized.verse
       ? {
-          book: normalized.book.toLowerCase(),
+          book: normalizeBookKey(normalized.book),
           chapter: normalized.chapter,
           verse: normalized.verse,
         }
