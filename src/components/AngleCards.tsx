@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useState, type ReactNode, type TouchEvent } from "react";
 import { dictionary, type Lang } from "@/lib/i18n/dictionary";
 import type { Provider } from "@/lib/ai/providers";
 import { extractJSONArray } from "@/lib/ai/parseJSON";
@@ -113,6 +113,12 @@ function getNextLabel(lang: Lang): string {
   if (lang === "ru") return "Дальше";
   if (lang === "es") return "Siguiente";
   return "Next";
+}
+
+function getSwipeHint(lang: Lang): string {
+  if (lang === "ru") return "Свайпайте влево или вправо";
+  if (lang === "es") return "Desliza a izquierda o derecha";
+  return "Swipe left or right";
 }
 
 function stripCodeFence(text: string): string {
@@ -292,14 +298,14 @@ export function AngleCards({
   provider: Provider;
 }) {
   const t = dictionary[lang];
-  const cards = extractCards(rawText);
+  const parsedCards = extractCards(rawText);
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
   const [touchStartY, setTouchStartY] = useState<number | null>(null);
 
-  if (!cards || cards.length === 0) {
+  if (!parsedCards || parsedCards.length === 0) {
     return (
       <div className="card error">
         {t.error} (Could not parse angles — the AI may have returned non-JSON.)
@@ -307,6 +313,7 @@ export function AngleCards({
     );
   }
 
+  const cards = parsedCards;
   const safeIndex = Math.min(currentIndex, cards.length - 1);
   const currentCard = cards[safeIndex];
   const canGoPrevious = safeIndex > 0;
@@ -325,7 +332,7 @@ export function AngleCards({
     setCurrentIndex((value) => Math.min(cards.length - 1, value + 1));
   }
 
-  function handleTouchStart(event: React.TouchEvent<HTMLDivElement>) {
+  function handleTouchStart(event: TouchEvent<HTMLDivElement>) {
     if (isCurrentExpanded) return;
 
     const touch = event.touches[0];
@@ -335,7 +342,7 @@ export function AngleCards({
     setTouchStartY(touch.clientY);
   }
 
-  function handleTouchEnd(event: React.TouchEvent<HTMLDivElement>) {
+  function handleTouchEnd(event: TouchEvent<HTMLDivElement>) {
     if (isCurrentExpanded) return;
     if (touchStartX === null || touchStartY === null) return;
 
@@ -468,13 +475,7 @@ export function AngleCards({
           {safeIndex + 1} / {cards.length}
         </div>
 
-        <div className="angle-carousel-hint">
-          {lang === "ru"
-            ? "Свайпайте влево или вправо"
-            : lang === "es"
-              ? "Desliza a izquierda o derecha"
-              : "Swipe left or right"}
-        </div>
+        <div className="angle-carousel-hint">{getSwipeHint(lang)}</div>
       </div>
 
       <div
