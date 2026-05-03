@@ -1,4 +1,5 @@
 import { normalizeReference } from "@/lib/bible/normalizeReference";
+import { resolveLocalPsalmToStepReference } from "@/lib/bible/psalmReferenceMap";
 
 import matData from "@/lib/bible/data/original-language/nt/mat.json";
 import mrkData from "@/lib/bible/data/original-language/nt/mrk.json";
@@ -51,6 +52,7 @@ export type OriginalLanguagePacket = {
   source: "STEPBible TAGNT" | "STEPBible TOTHT";
   license: "CC BY 4.0";
   words: OriginalLanguageWord[];
+  numberingNote?: string | null;
 };
 
 type BookData = Record<string, OriginalLanguageWord[]>;
@@ -349,6 +351,7 @@ function resolveParsedReference(reference: string): {
 function resolveStepReference(reference: string): {
   stepReference: string;
   stepBook: string;
+  numberingNote?: string | null;
 } | null {
   const parsed = resolveParsedReference(reference);
 
@@ -362,9 +365,33 @@ function resolveStepReference(reference: string): {
     return null;
   }
 
+  if (stepBook === "Psa") {
+    const resolvedPsalm = resolveLocalPsalmToStepReference({
+      chapter: parsed.chapter,
+      verse: parsed.verse,
+    });
+
+    if (resolvedPsalm.blocked) {
+      console.warn("[ORIGINAL_LANGUAGE] Psalm Hebrew lookup blocked", {
+        reference,
+        chapter: parsed.chapter,
+        verse: parsed.verse,
+        note: resolvedPsalm.note,
+      });
+      return null;
+    }
+
+    return {
+      stepBook,
+      stepReference: `Psa.${resolvedPsalm.stepChapter}.${resolvedPsalm.stepVerse}`,
+      numberingNote: resolvedPsalm.note,
+    };
+  }
+
   return {
     stepBook,
     stepReference: `${stepBook}.${parsed.chapter}.${parsed.verse}`,
+    numberingNote: null,
   };
 }
 
@@ -418,6 +445,7 @@ export function getOriginalLanguagePacket(
     source: bookData.source,
     license: "CC BY 4.0",
     words,
+    numberingNote: resolved.numberingNote ?? null,
   };
 }
 
@@ -472,9 +500,17 @@ export function formatOriginalLanguagePacketForPrompt(
     return `- ${parts.join("; ")}`;
   });
 
+  const numberingLine =
+    packet.numberingNote && packet.language === "hebrew"
+      ? `REFERENCE MAPPING NOTE: ${packet.numberingNote}`
+      : null;
+
   return [
     `VERIFIED ORIGINAL-LANGUAGE DATA from ${packet.source} (${packet.license}) for ${packet.stepReference}:`,
+    numberingLine,
     ...lines,
     getSourceNote(packet),
-  ].join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
