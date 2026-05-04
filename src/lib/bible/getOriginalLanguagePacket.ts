@@ -29,6 +29,11 @@ import threeJnData from "@/lib/bible/data/original-language/nt/3jn.json";
 import judData from "@/lib/bible/data/original-language/nt/jud.json";
 import revData from "@/lib/bible/data/original-language/nt/rev.json";
 
+import genData from "@/lib/bible/data/original-language/ot/gen.json";
+import exoData from "@/lib/bible/data/original-language/ot/exo.json";
+import levData from "@/lib/bible/data/original-language/ot/lev.json";
+import numData from "@/lib/bible/data/original-language/ot/num.json";
+import deuData from "@/lib/bible/data/original-language/ot/deu.json";
 import psaData from "@/lib/bible/data/original-language/ot/psa.json";
 
 export type OriginalLanguageWord = {
@@ -88,6 +93,11 @@ const NT_BOOK_DATA: Record<string, BookData> = {
 };
 
 const OT_BOOK_DATA: Record<string, BookData> = {
+  gen: genData as BookData,
+  exo: exoData as BookData,
+  lev: levData as BookData,
+  num: numData as BookData,
+  deu: deuData as BookData,
   psa: psaData as BookData,
 };
 
@@ -263,6 +273,48 @@ const CANONICAL_TO_STEP_BOOK: Record<string, string> = {
   "3 juan": "3Jn",
   judas: "Jud",
   apocalipsis: "Rev",
+
+  // OT — Pentateuch pilot
+  genesis: "Gen",
+  gen: "Gen",
+  "book of genesis": "Gen",
+  "бытие": "Gen",
+  "быт": "Gen",
+  génesis: "Gen",
+
+  exodus: "Exo",
+  exo: "Exo",
+  ex: "Exo",
+  "book of exodus": "Exo",
+  "исход": "Exo",
+  "исх": "Exo",
+  éxodo: "Exo",
+  exodo: "Exo",
+
+  leviticus: "Lev",
+  lev: "Lev",
+  "book of leviticus": "Lev",
+  "левит": "Lev",
+  "лев": "Lev",
+  levítico: "Lev",
+  levitico: "Lev",
+
+  numbers: "Num",
+  num: "Num",
+  "book of numbers": "Num",
+  "числа": "Num",
+  "чис": "Num",
+  números: "Num",
+  numeros: "Num",
+
+  deuteronomy: "Deu",
+  deut: "Deu",
+  deu: "Deu",
+  dt: "Deu",
+  "book of deuteronomy": "Deu",
+  "второзаконие": "Deu",
+  "втор": "Deu",
+  deuteronomio: "Deu",
 
   // OT pilot — Psalms only
   psalm: "Psa",
