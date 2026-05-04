@@ -283,6 +283,72 @@ type ApplyAutoCuratorPreviewResponse = {
   }>;
 };
 
+type RunAutoCuratorDecision = {
+  candidate: {
+    title: string;
+    anchor: string | null;
+    teaser: string;
+    why_it_matters: string | null;
+  };
+  score_total: number;
+  scores?: Record<string, number>;
+  coverage_type: string | null;
+  angle_summary: string | null;
+  angle_relationship:
+    | "duplicate"
+    | "stronger_version"
+    | "sibling_angle"
+    | "distinct_angle"
+    | "uncertain";
+  relationship_confidence: "low" | "medium" | "high";
+  matched_card_id: string | null;
+  matched_card_title: string | null;
+  risk_level: "low" | "medium" | "high" | "unknown";
+  risk: string | null;
+  reason: string;
+  source_basis: string | null;
+  recommended_action: "auto_add" | "auto_reject" | "editorial_suggestion";
+  suggestion_type:
+    | "replacement"
+    | "needs_review"
+    | "locked_card_challenger"
+    | "style_review"
+    | "promote_candidate"
+    | "duplicate_uncertain"
+    | null;
+  decision_reason: string;
+  applied: boolean;
+  inserted_card_id: string | null;
+  inserted_suggestion_id: string | null;
+  error: string | null;
+};
+
+type RunAutoCuratorResponse = {
+  ok?: boolean;
+  error?: string;
+  mode?: "preview" | "apply";
+  reference?: string;
+  canonical_ref?: string | null;
+  lang?: Lang;
+  generator_provider?: string;
+  generator_model?: string;
+  evaluator_provider?: string;
+  evaluator_model?: string;
+  source_count?: number;
+  note_count?: number;
+  existing_card_count?: number;
+  generated_count?: number;
+  evaluated_count?: number;
+  auto_add_count?: number;
+  editorial_suggestion_count?: number;
+  auto_reject_count?: number;
+  applied_count?: number;
+  error_count?: number;
+  summary?: string;
+  raw_generation?: string;
+  decisions?: RunAutoCuratorDecision[];
+};
+
 type ReEvaluation = {
   score_total?: number;
   placement?: string;
@@ -886,6 +952,20 @@ function readableRiskLevel(level: AutoCuratorPreviewCandidate["risk_level"]): st
   return "риск неизвестен";
 }
 
+function readableRunAction(action: RunAutoCuratorDecision["recommended_action"]): string {
+  if (action === "auto_add") return "auto-add";
+  if (action === "editorial_suggestion") return "в очередь";
+  if (action === "auto_reject") return "reject";
+  return action;
+}
+
+function readableRunActionLong(action: RunAutoCuratorDecision["recommended_action"]): string {
+  if (action === "auto_add") return "Автоматически добавить";
+  if (action === "editorial_suggestion") return "Создать редакторское предложение";
+  if (action === "auto_reject") return "Автоматически отклонить";
+  return action;
+}
+
 function getPayloadString(payload: unknown, key: string): string | null {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
   const value = (payload as Record<string, unknown>)[key];
@@ -950,6 +1030,12 @@ export default function StudioPage() {
   const [applyAutoCuratorPreviewResult, setApplyAutoCuratorPreviewResult] =
     useState<ApplyAutoCuratorPreviewResponse | null>(null);
   const [applyAutoCuratorPreviewError, setApplyAutoCuratorPreviewError] = useState("");
+
+  const [runAutoCuratorResult, setRunAutoCuratorResult] =
+    useState<RunAutoCuratorResponse | null>(null);
+  const [runningAutoCuratorPreview, setRunningAutoCuratorPreview] = useState(false);
+  const [applyingRunAutoCurator, setApplyingRunAutoCurator] = useState(false);
+  const [runAutoCuratorError, setRunAutoCuratorError] = useState("");
 
   const selectedVerse = useMemo(() => {
     return verses.find((verse) => verse.reference === selectedReference) ?? null;
@@ -1070,6 +1156,8 @@ export default function StudioPage() {
     setAutoCuratorPreviewError("");
     setApplyAutoCuratorPreviewResult(null);
     setApplyAutoCuratorPreviewError("");
+    setRunAutoCuratorResult(null);
+    setRunAutoCuratorError("");
     setNotice(`Открываю ${displayReference(verse)}...`);
 
     try {
@@ -1111,6 +1199,8 @@ export default function StudioPage() {
       setAutoCuratorPreviewError("");
       setApplyAutoCuratorPreviewResult(null);
       setApplyAutoCuratorPreviewError("");
+      setRunAutoCuratorResult(null);
+      setRunAutoCuratorError("");
       setCardsError(
         error instanceof Error ? error.message : "Не удалось загрузить карточки.",
       );
@@ -1261,6 +1351,94 @@ export default function StudioPage() {
       setNotice("");
     } finally {
       setCreatingTestSuggestion(false);
+    }
+  }
+
+  async function runAutoCuratorEngine(apply: boolean) {
+    if (!selectedVerse) {
+      setCardsError("Сначала выбери стих.");
+      return;
+    }
+
+    if (!adminSecret.trim()) {
+      setCardsError("Вставь Admin Secret.");
+      return;
+    }
+
+    if (apply) {
+      const confirmed = window.confirm(
+        "Применить Auto Curator Engine v1? Безопасные distinct-angle кандидаты могут быть добавлены в angle_cards, спорные уйдут в редакторскую очередь, слабые будут отклонены в отчёте.",
+      );
+
+      if (!confirmed) return;
+    }
+
+    setRunAutoCuratorError("");
+    setRunAutoCuratorResult(null);
+    setApplyAutoCuratorPreviewResult(null);
+    setApplyAutoCuratorPreviewError("");
+
+    if (apply) {
+      setApplyingRunAutoCurator(true);
+      setNotice("Auto Curator применяет решения...");
+    } else {
+      setRunningAutoCuratorPreview(true);
+      setNotice("Auto Curator Engine v1 строит preview...");
+    }
+
+    try {
+      const response = await fetch("/api/admin/studio/run-auto-curator", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-secret": adminSecret,
+        },
+        body: JSON.stringify({
+          reference: selectedVerse.reference,
+          canonical_ref: selectedVerse.canonical_ref,
+          book_key: selectedVerse.book_key,
+          book: selectedVerse.book,
+          chapter: selectedVerse.chapter,
+          verse: selectedVerse.verse,
+          lang,
+          maxCandidates: 5,
+          apply,
+        }),
+      });
+
+      const data = (await response.json()) as RunAutoCuratorResponse;
+
+      if (!response.ok || data.ok === false) {
+        const failedDecision = data.decisions?.find((decision) => decision.error);
+        throw new Error(
+          data.error ||
+            failedDecision?.error ||
+            "Не удалось запустить Auto Curator Engine.",
+        );
+      }
+
+      setRunAutoCuratorResult(data);
+
+      if (apply && selectedVerse) {
+        await loadCards(selectedVerse, adminSecret);
+        await loadEditorialSuggestions(selectedVerse, adminSecret);
+      }
+
+      setNotice(
+        apply
+          ? `Auto Curator применён: действий — ${data.applied_count ?? 0}.`
+          : `Auto Curator preview готов: решений — ${data.decisions?.length ?? 0}.`,
+      );
+    } catch (error) {
+      setRunAutoCuratorError(
+        error instanceof Error
+          ? error.message
+          : "Не удалось запустить Auto Curator Engine.",
+      );
+      setNotice("");
+    } finally {
+      setRunningAutoCuratorPreview(false);
+      setApplyingRunAutoCurator(false);
     }
   }
 
@@ -3359,6 +3537,273 @@ export default function StudioPage() {
                   текущего набора, выбирает топ для публичной выдачи и отправляет остальные
                   хорошие варианты в запас. Отклонённые, скрытые и защищённые карточки не поднимаются автоматически.
                 </p>
+
+                <div
+                  style={{
+                    border: `1px solid rgba(111, 123, 136, 0.24)`,
+                    borderRadius: 18,
+                    padding: 14,
+                    background: `linear-gradient(180deg, ${SLATE_SOFT} 0%, ${SLATE_SOFT_2} 100%)`,
+                    marginBottom: 12,
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 950,
+                      color: SLATE_DARK,
+                      marginBottom: 7,
+                    }}
+                  >
+                    Auto Curator Engine v1
+                  </div>
+
+                  <p
+                    style={{
+                      margin: "0 0 10px",
+                      color: MUTED,
+                      fontSize: 12,
+                      lineHeight: 1.55,
+                    }}
+                  >
+                    Цельный контур: Claude 4.6 генерирует кандидатов из Озера,
+                    GPT-5.5 оценивает и сравнивает, decision engine решает:
+                    auto-add / очередь / reject.
+                  </p>
+
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    <button
+                      type="button"
+                      disabled={runningAutoCuratorPreview || applyingRunAutoCurator || loadingCards}
+                      onClick={() => runAutoCuratorEngine(false)}
+                      style={getSmallButtonStyle(
+                        runningAutoCuratorPreview || applyingRunAutoCurator || loadingCards,
+                      )}
+                    >
+                      {runningAutoCuratorPreview ? "Смотрю..." : "Preview Engine"}
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={runningAutoCuratorPreview || applyingRunAutoCurator || loadingCards}
+                      onClick={() => runAutoCuratorEngine(true)}
+                      style={getApplyButtonStyle(
+                        runningAutoCuratorPreview || applyingRunAutoCurator || loadingCards,
+                      )}
+                    >
+                      {applyingRunAutoCurator ? "Применяю..." : "Применить Engine"}
+                    </button>
+                  </div>
+
+                  {runAutoCuratorError ? (
+                    <MessageBox kind="error" text={runAutoCuratorError} style={{ marginTop: 10 }} />
+                  ) : null}
+
+                  {runAutoCuratorResult ? (
+                    <div
+                      style={{
+                        marginTop: 12,
+                        padding: 12,
+                        borderRadius: 14,
+                        background: CARD,
+                        border: `1px solid ${LINE}`,
+                      }}
+                    >
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginBottom: 9 }}>
+                        <Badge text={`Режим: ${runAutoCuratorResult.mode ?? "—"}`} strong />
+                        <Badge text={`Claude: ${runAutoCuratorResult.generator_model ?? "—"}`} />
+                        <Badge text={`Evaluator: ${runAutoCuratorResult.evaluator_model ?? "—"}`} />
+                        <Badge text={`Источников: ${runAutoCuratorResult.source_count ?? 0}`} />
+                        <Badge text={`Заметок: ${runAutoCuratorResult.note_count ?? 0}`} />
+                        <Badge text={`auto-add: ${runAutoCuratorResult.auto_add_count ?? 0}`} strong />
+                        <Badge text={`очередь: ${runAutoCuratorResult.editorial_suggestion_count ?? 0}`} strong />
+                        <Badge text={`reject: ${runAutoCuratorResult.auto_reject_count ?? 0}`} />
+                        {runAutoCuratorResult.mode === "apply" ? (
+                          <Badge text={`применено: ${runAutoCuratorResult.applied_count ?? 0}`} strong />
+                        ) : null}
+                      </div>
+
+                      {runAutoCuratorResult.summary ? (
+                        <p
+                          style={{
+                            margin: "0 0 10px",
+                            color: MUTED,
+                            fontSize: 13,
+                            lineHeight: 1.55,
+                          }}
+                        >
+                          {runAutoCuratorResult.summary}
+                        </p>
+                      ) : null}
+
+                      {runAutoCuratorResult.decisions && runAutoCuratorResult.decisions.length > 0 ? (
+                        <div style={{ display: "grid", gap: 9 }}>
+                          {runAutoCuratorResult.decisions.map((decision, index) => (
+                            <div
+                              key={`${decision.candidate.title}-${index}`}
+                              style={{
+                                border: `1px solid ${decision.error ? "rgba(139, 62, 46, 0.22)" : LINE_SOFT}`,
+                                borderRadius: 12,
+                                background: decision.error ? ERROR_BG : SLATE_SOFT_2,
+                                padding: 10,
+                              }}
+                            >
+                              <div
+                                style={{
+                                  display: "flex",
+                                  justifyContent: "space-between",
+                                  gap: 10,
+                                  alignItems: "flex-start",
+                                  marginBottom: 6,
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    fontSize: 13,
+                                    fontWeight: 900,
+                                    color: INK,
+                                    lineHeight: 1.35,
+                                  }}
+                                >
+                                  {decision.candidate.title}
+                                </div>
+
+                                <span
+                                  style={{
+                                    minWidth: 38,
+                                    height: 34,
+                                    borderRadius: 999,
+                                    background:
+                                      decision.recommended_action === "auto_add"
+                                        ? `linear-gradient(180deg, ${SUCCESS_TEXT} 0%, #3f5730 100%)`
+                                        : decision.recommended_action === "editorial_suggestion"
+                                          ? `linear-gradient(180deg, ${SLATE} 0%, ${SLATE_DARK} 100%)`
+                                          : `linear-gradient(180deg, ${MUTED_2} 0%, ${MUTED} 100%)`,
+                                    color: "#fff",
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    fontSize: 13,
+                                    fontWeight: 900,
+                                    flexShrink: 0,
+                                  }}
+                                >
+                                  {decision.score_total}
+                                </span>
+                              </div>
+
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 7 }}>
+                                <Badge text={readableRunAction(decision.recommended_action)} strong />
+                                <Badge text={readableAngleRelationship(decision.angle_relationship) ?? "угол: —"} />
+                                <Badge text={readableRiskLevel(decision.risk_level)} />
+                                {decision.suggestion_type ? (
+                                  <Badge text={readableSuggestionType(decision.suggestion_type)} />
+                                ) : null}
+                                {decision.applied ? <Badge text="applied" strong /> : null}
+                                {decision.inserted_card_id ? <Badge text="card saved" /> : null}
+                                {decision.inserted_suggestion_id ? <Badge text="suggestion saved" /> : null}
+                              </div>
+
+                              {decision.candidate.anchor ? (
+                                <p
+                                  style={{
+                                    margin: "0 0 7px",
+                                    color: WARM_ACCENT,
+                                    fontSize: 12,
+                                    lineHeight: 1.45,
+                                    fontStyle: "italic",
+                                  }}
+                                >
+                                  “{decision.candidate.anchor}”
+                                </p>
+                              ) : null}
+
+                              <p
+                                style={{
+                                  margin: "0 0 7px",
+                                  color: TEXT,
+                                  fontSize: 12,
+                                  lineHeight: 1.5,
+                                }}
+                              >
+                                {decision.candidate.teaser}
+                              </p>
+
+                              <p
+                                style={{
+                                  margin: "0 0 7px",
+                                  color: MUTED,
+                                  fontSize: 12,
+                                  lineHeight: 1.45,
+                                }}
+                              >
+                                <strong style={{ color: SLATE_DARK }}>
+                                  {readableRunActionLong(decision.recommended_action)}:{" "}
+                                </strong>
+                                {decision.decision_reason}
+                              </p>
+
+                              <p
+                                style={{
+                                  margin: 0,
+                                  color: MUTED,
+                                  fontSize: 12,
+                                  lineHeight: 1.45,
+                                }}
+                              >
+                                <strong style={{ color: SLATE_DARK }}>Evaluator: </strong>
+                                {decision.reason}
+                              </p>
+
+                              {decision.error ? (
+                                <p
+                                  style={{
+                                    margin: "7px 0 0",
+                                    color: ERROR_TEXT,
+                                    fontSize: 12,
+                                    lineHeight: 1.45,
+                                    fontWeight: 800,
+                                  }}
+                                >
+                                  Ошибка: {decision.error}
+                                </p>
+                              ) : null}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <EmptyBox text="Auto Curator Engine не нашёл решений для этого стиха." />
+                      )}
+
+                      {runAutoCuratorResult.raw_generation ? (
+                        <details style={{ marginTop: 10 }}>
+                          <summary
+                            style={{
+                              cursor: "pointer",
+                              color: SLATE_DARK,
+                              fontSize: 12,
+                              fontWeight: 900,
+                            }}
+                          >
+                            Показать raw generation
+                          </summary>
+                          <pre
+                            style={{
+                              margin: "8px 0 0",
+                              whiteSpace: "pre-wrap",
+                              wordBreak: "break-word",
+                              color: MUTED,
+                              fontSize: 11,
+                              lineHeight: 1.45,
+                            }}
+                          >
+                            {runAutoCuratorResult.raw_generation}
+                          </pre>
+                        </details>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
 
                 <div
                   style={{
