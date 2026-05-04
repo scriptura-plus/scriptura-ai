@@ -352,7 +352,6 @@ const CANONICAL_TO_STEP_BOOK: Record<string, string> = {
   "песнь песней соломона": "Sng",
 
   // OT wisdom books — Spanish
-  job: "Job",
   proverbios: "Pro",
   eclesiastes: "Ecc",
   eclesiastés: "Ecc",
