@@ -35,6 +35,10 @@ import levData from "@/lib/bible/data/original-language/ot/lev.json";
 import numData from "@/lib/bible/data/original-language/ot/num.json";
 import deuData from "@/lib/bible/data/original-language/ot/deu.json";
 import psaData from "@/lib/bible/data/original-language/ot/psa.json";
+import jobData from "@/lib/bible/data/original-language/ot/job.json";
+import proData from "@/lib/bible/data/original-language/ot/pro.json";
+import eccData from "@/lib/bible/data/original-language/ot/ecc.json";
+import sngData from "@/lib/bible/data/original-language/ot/sng.json";
 
 export type OriginalLanguageWord = {
   position: number;
@@ -99,6 +103,10 @@ const OT_BOOK_DATA: Record<string, BookData> = {
   num: numData as BookData,
   deu: deuData as BookData,
   psa: psaData as BookData,
+  job: jobData as BookData,
+  pro: proData as BookData,
+  ecc: eccData as BookData,
+  sng: sngData as BookData,
 };
 
 const CANONICAL_TO_STEP_BOOK: Record<string, string> = {
@@ -315,6 +323,41 @@ const CANONICAL_TO_STEP_BOOK: Record<string, string> = {
   "второзаконие": "Deu",
   "втор": "Deu",
   deuteronomio: "Deu",
+
+  // OT wisdom books — English
+  job: "Job",
+  proverbs: "Pro",
+  proverb: "Pro",
+  pro: "Pro",
+  ecclesiastes: "Ecc",
+  ecc: "Ecc",
+  "song-of-songs": "Sng",
+  "song of songs": "Sng",
+  "song-of-solomon": "Sng",
+  "song of solomon": "Sng",
+  sng: "Sng",
+  sos: "Sng",
+
+  // OT wisdom books — Russian
+  "иов": "Job",
+  "иова": "Job",
+  "книга иова": "Job",
+  "притчи": "Pro",
+  "притчи соломона": "Pro",
+  "экклезиаст": "Ecc",
+  "екклесиаст": "Ecc",
+  "экклезиаста": "Ecc",
+  "екклесиаста": "Ecc",
+  "песнь песней": "Sng",
+  "песнь песней соломона": "Sng",
+
+  // OT wisdom books — Spanish
+  job: "Job",
+  proverbios: "Pro",
+  eclesiastes: "Ecc",
+  eclesiastés: "Ecc",
+  "cantar de los cantares": "Sng",
+  cantares: "Sng",
 
   // OT pilot — Psalms only
   psalm: "Psa",
