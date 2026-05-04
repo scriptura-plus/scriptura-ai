@@ -143,6 +143,71 @@ type ResearchMemoryResponse = {
   latest_notes?: ResearchMemoryNote[];
 };
 
+type EditorialSuggestion = {
+  id: string;
+  reference: string;
+  canonical_ref: string | null;
+  book_key: string | null;
+  book: string | null;
+  chapter: number | null;
+  verse: number | null;
+  lang: string;
+
+  suggestion_type: string;
+  status: string;
+
+  existing_card_id: string | null;
+  candidate_card_id: string | null;
+  candidate_payload: unknown | null;
+
+  score_existing: number | null;
+  score_candidate: number | null;
+  score_delta: number | null;
+
+  angle_relationship: string | null;
+  relationship_confidence: string | null;
+  same_angle_summary: string | null;
+  matched_card_id: string | null;
+
+  reason: string | null;
+  risk: string | null;
+  risk_level: string | null;
+  source_summary: string | null;
+
+  source_id: string | null;
+  note_id: string | null;
+
+  provider: string | null;
+  model: string | null;
+  evaluator_version: string | null;
+  decision_engine_version: string | null;
+
+  reviewed_at: string | null;
+  reviewed_by: string | null;
+  review_note: string | null;
+  moderator_decision: string | null;
+
+  created_at: string;
+  updated_at: string;
+};
+
+type EditorialSuggestionsResponse = {
+  ok?: boolean;
+  error?: string;
+  reference?: string | null;
+  canonical_ref?: string | null;
+  lang?: Lang;
+  status?: string;
+  count?: number;
+  summary?: {
+    statuses: Record<string, number>;
+    suggestion_types: Record<string, number>;
+    angle_relationships: Record<string, number>;
+    risk_levels: Record<string, number>;
+  };
+  suggestions?: EditorialSuggestion[];
+};
+
 type ReEvaluation = {
   score_total?: number;
   placement?: string;
@@ -712,6 +777,50 @@ function splitSourcesForPreview(sources: string[], limit = 3) {
   };
 }
 
+function readableSuggestionType(type: string): string {
+  if (type === "replacement") return "Возможная замена";
+  if (type === "needs_review") return "Нужна проверка";
+  if (type === "locked_card_challenger") return "Альтернатива к locked";
+  if (type === "style_review") return "Проверка стиля";
+  if (type === "promote_candidate") return "Продвинуть кандидата";
+  if (type === "duplicate_uncertain") return "Возможный дубль";
+  return type;
+}
+
+function readableAngleRelationship(value: string | null): string | null {
+  if (!value) return null;
+  if (value === "duplicate") return "дубль";
+  if (value === "stronger_version") return "сильнее того же угла";
+  if (value === "sibling_angle") return "родственный угол";
+  if (value === "distinct_angle") return "новый угол";
+  if (value === "uncertain") return "неясно";
+  return value;
+}
+
+function getPayloadString(payload: unknown, key: string): string | null {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  const value = (payload as Record<string, unknown>)[key];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function getSuggestionCandidateTitle(suggestion: EditorialSuggestion): string {
+  return (
+    getPayloadString(suggestion.candidate_payload, "title") ??
+    getPayloadString(suggestion.candidate_payload, "heading") ??
+    getPayloadString(suggestion.candidate_payload, "name") ??
+    "Кандидат без заголовка"
+  );
+}
+
+function getSuggestionCandidatePreview(suggestion: EditorialSuggestion): string | null {
+  return (
+    getPayloadString(suggestion.candidate_payload, "teaser") ??
+    getPayloadString(suggestion.candidate_payload, "body") ??
+    getPayloadString(suggestion.candidate_payload, "text") ??
+    getPayloadString(suggestion.candidate_payload, "why_it_matters")
+  );
+}
+
 export default function StudioPage() {
   const [adminSecret, setAdminSecret] = useState("");
   const [secretLoaded, setSecretLoaded] = useState(false);
@@ -739,6 +848,9 @@ export default function StudioPage() {
   const [researchMemory, setResearchMemory] = useState<ResearchMemoryResponse | null>(null);
   const [loadingResearchMemory, setLoadingResearchMemory] = useState(false);
   const [researchMemoryError, setResearchMemoryError] = useState("");
+  const [editorialSuggestions, setEditorialSuggestions] = useState<EditorialSuggestionsResponse | null>(null);
+  const [loadingEditorialSuggestions, setLoadingEditorialSuggestions] = useState(false);
+  const [editorialSuggestionsError, setEditorialSuggestionsError] = useState("");
 
   const selectedVerse = useMemo(() => {
     return verses.find((verse) => verse.reference === selectedReference) ?? null;
@@ -853,6 +965,8 @@ export default function StudioPage() {
     setRebalance(createEmptyRebalanceState());
     setResearchMemory(null);
     setResearchMemoryError("");
+    setEditorialSuggestions(null);
+    setEditorialSuggestionsError("");
     setNotice(`Открываю ${displayReference(verse)}...`);
 
     try {
@@ -881,12 +995,15 @@ export default function StudioPage() {
       setCards(loadedCards);
       setCardsSummary(summarizeCards(loadedCards));
       void loadResearchMemory(verse, secret);
+      void loadEditorialSuggestions(verse, secret);
       setNotice(`Карточки загружены: ${loadedCards.length}.`);
     } catch (error) {
       setCards([]);
       setCardsSummary(null);
       setResearchMemory(null);
       setResearchMemoryError("");
+      setEditorialSuggestions(null);
+      setEditorialSuggestionsError("");
       setCardsError(
         error instanceof Error ? error.message : "Не удалось загрузить карточки.",
       );
@@ -937,6 +1054,53 @@ export default function StudioPage() {
       );
     } finally {
       setLoadingResearchMemory(false);
+    }
+  }
+
+  async function loadEditorialSuggestions(verse: VerseSummary, secretOverride?: string) {
+    const secret = secretOverride ?? adminSecret;
+
+    if (!secret.trim()) {
+      setEditorialSuggestionsError("Вставь Admin Secret.");
+      return;
+    }
+
+    setLoadingEditorialSuggestions(true);
+    setEditorialSuggestionsError("");
+
+    try {
+      const params = new URLSearchParams({
+        reference: verse.reference,
+        lang,
+        status: "pending",
+        limit: "8",
+      });
+
+      if (verse.canonical_ref) {
+        params.set("canonical_ref", verse.canonical_ref);
+      }
+
+      const response = await fetch(`/api/admin/studio/editorial-suggestions?${params}`, {
+        method: "GET",
+        headers: { "x-admin-secret": secret },
+      });
+
+      const data = (await response.json()) as EditorialSuggestionsResponse;
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || "Не удалось загрузить редакторские предложения.");
+      }
+
+      setEditorialSuggestions(data);
+    } catch (error) {
+      setEditorialSuggestions(null);
+      setEditorialSuggestionsError(
+        error instanceof Error
+          ? error.message
+          : "Не удалось загрузить редакторские предложения.",
+      );
+    } finally {
+      setLoadingEditorialSuggestions(false);
     }
   }
 
@@ -2559,6 +2723,227 @@ export default function StudioPage() {
                 researchMemory.summary.sources_count === 0 &&
                 researchMemory.summary.notes_count === 0 ? (
                   <EmptyBox text="В Озере пока нет материалов по этому стиху." />
+                ) : null}
+              </section>
+            ) : null}
+
+            {selectedVerse ? (
+              <section
+                className="studio-card-enter"
+                style={{
+                  border: `1px solid ${LINE_SOFT}`,
+                  borderRadius: 18,
+                  padding: 14,
+                  background: CARD,
+                  marginBottom: 14,
+                  boxShadow: "0 1px 2px rgba(42, 31, 22, 0.04)",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 900,
+                    letterSpacing: "0.16em",
+                    textTransform: "uppercase",
+                    color: WARM_ACCENT,
+                    marginBottom: 8,
+                  }}
+                >
+                  Редакторские предложения
+                </div>
+
+                <h3
+                  style={{
+                    margin: "0 0 8px",
+                    fontSize: 18,
+                    lineHeight: 1.18,
+                    letterSpacing: "-0.02em",
+                    fontFamily:
+                      'ui-serif, Georgia, "Iowan Old Style", "Times New Roman", serif',
+                    color: INK,
+                  }}
+                >
+                  Очередь решений
+                </h3>
+
+                <p
+                  style={{
+                    margin: "0 0 12px",
+                    color: MUTED,
+                    fontSize: 13,
+                    lineHeight: 1.6,
+                  }}
+                >
+                  Здесь будут появляться только спорные случаи: возможные замены,
+                  сильные кандидаты с риском, неясные дубли и предложения системы.
+                  Обычные безопасные углы должны добавляться автоматически.
+                </p>
+
+                {loadingEditorialSuggestions ? (
+                  <div style={{ display: "grid", gap: 8 }}>
+                    <Skeleton width="70%" />
+                    <Skeleton width="86%" />
+                  </div>
+                ) : null}
+
+                {editorialSuggestionsError ? (
+                  <MessageBox kind="error" text={editorialSuggestionsError} />
+                ) : null}
+
+                {!loadingEditorialSuggestions &&
+                !editorialSuggestionsError &&
+                editorialSuggestions ? (
+                  <div style={{ display: "grid", gap: 12 }}>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
+                      <Badge text={`Pending: ${editorialSuggestions.count ?? 0}`} strong />
+                      {editorialSuggestions.summary?.suggestion_types
+                        ? Object.entries(editorialSuggestions.summary.suggestion_types).map(
+                            ([kind, count]) => (
+                              <MiniSourceChip
+                                key={kind}
+                                text={`${readableSuggestionType(kind)}: ${count}`}
+                              />
+                            ),
+                          )
+                        : null}
+                    </div>
+
+                    {editorialSuggestions.suggestions &&
+                    editorialSuggestions.suggestions.length > 0 ? (
+                      <details>
+                        <summary
+                          style={{
+                            cursor: "pointer",
+                            color: SLATE_DARK,
+                            fontSize: 13,
+                            fontWeight: 900,
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 8,
+                          }}
+                        >
+                          <span style={{ fontSize: 12 }}>▼</span>
+                          Показать предложения
+                        </summary>
+
+                        <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
+                          {editorialSuggestions.suggestions.slice(0, 5).map((suggestion) => {
+                            const candidatePreview = getSuggestionCandidatePreview(suggestion);
+                            const relationship = readableAngleRelationship(
+                              suggestion.angle_relationship,
+                            );
+
+                            return (
+                              <div
+                                key={suggestion.id}
+                                style={{
+                                  border: `1px solid ${LINE_SOFT}`,
+                                  borderRadius: 12,
+                                  background: SLATE_SOFT_2,
+                                  padding: 10,
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    gap: 10,
+                                    alignItems: "flex-start",
+                                    marginBottom: 6,
+                                  }}
+                                >
+                                  <div
+                                    style={{
+                                      fontSize: 13,
+                                      fontWeight: 900,
+                                      color: INK,
+                                      lineHeight: 1.35,
+                                    }}
+                                  >
+                                    {getSuggestionCandidateTitle(suggestion)}
+                                  </div>
+
+                                  {suggestion.score_candidate !== null ? (
+                                    <span
+                                      style={{
+                                        minWidth: 38,
+                                        height: 34,
+                                        borderRadius: 999,
+                                        background: `linear-gradient(180deg, ${SLATE} 0%, ${SLATE_DARK} 100%)`,
+                                        color: "#fff",
+                                        display: "inline-flex",
+                                        alignItems: "center",
+                                        justifyContent: "center",
+                                        fontSize: 13,
+                                        fontWeight: 900,
+                                        flexShrink: 0,
+                                      }}
+                                    >
+                                      {suggestion.score_candidate}
+                                    </span>
+                                  ) : null}
+                                </div>
+
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    flexWrap: "wrap",
+                                    gap: 6,
+                                    marginBottom: candidatePreview || suggestion.reason ? 7 : 0,
+                                  }}
+                                >
+                                  <Badge text={readableSuggestionType(suggestion.suggestion_type)} strong />
+                                  {relationship ? <Badge text={relationship} /> : null}
+                                  {suggestion.score_existing !== null ? (
+                                    <Badge text={`старая: ${suggestion.score_existing}`} />
+                                  ) : null}
+                                  {suggestion.score_delta !== null ? (
+                                    <Badge
+                                      text={`delta: ${
+                                        suggestion.score_delta > 0 ? "+" : ""
+                                      }${suggestion.score_delta}`}
+                                    />
+                                  ) : null}
+                                  {suggestion.risk_level ? (
+                                    <Badge text={`risk: ${suggestion.risk_level}`} />
+                                  ) : null}
+                                </div>
+
+                                {candidatePreview ? (
+                                  <p
+                                    style={{
+                                      margin: "0 0 7px",
+                                      color: TEXT,
+                                      fontSize: 12,
+                                      lineHeight: 1.5,
+                                    }}
+                                  >
+                                    {candidatePreview}
+                                  </p>
+                                ) : null}
+
+                                {suggestion.reason ? (
+                                  <p
+                                    style={{
+                                      margin: 0,
+                                      color: MUTED,
+                                      fontSize: 12,
+                                      lineHeight: 1.45,
+                                    }}
+                                  >
+                                    <strong style={{ color: SLATE_DARK }}>Причина: </strong>
+                                    {suggestion.reason}
+                                  </p>
+                                ) : null}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </details>
+                    ) : (
+                      <EmptyBox text="Пока нет редакторских предложений по этому стиху." />
+                    )}
+                  </div>
                 ) : null}
               </section>
             ) : null}
