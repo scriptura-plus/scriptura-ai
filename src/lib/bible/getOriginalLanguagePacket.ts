@@ -39,6 +39,18 @@ import jobData from "@/lib/bible/data/original-language/ot/job.json";
 import proData from "@/lib/bible/data/original-language/ot/pro.json";
 import eccData from "@/lib/bible/data/original-language/ot/ecc.json";
 import sngData from "@/lib/bible/data/original-language/ot/sng.json";
+import josData from "@/lib/bible/data/original-language/ot/jos.json";
+import jdgData from "@/lib/bible/data/original-language/ot/jdg.json";
+import rutData from "@/lib/bible/data/original-language/ot/rut.json";
+import oneSaData from "@/lib/bible/data/original-language/ot/1sa.json";
+import twoSaData from "@/lib/bible/data/original-language/ot/2sa.json";
+import oneKiData from "@/lib/bible/data/original-language/ot/1ki.json";
+import twoKiData from "@/lib/bible/data/original-language/ot/2ki.json";
+import oneChData from "@/lib/bible/data/original-language/ot/1ch.json";
+import twoChData from "@/lib/bible/data/original-language/ot/2ch.json";
+import ezrData from "@/lib/bible/data/original-language/ot/ezr.json";
+import nehData from "@/lib/bible/data/original-language/ot/neh.json";
+import estData from "@/lib/bible/data/original-language/ot/est.json";
 
 export type OriginalLanguageWord = {
   position: number;
@@ -107,6 +119,18 @@ const OT_BOOK_DATA: Record<string, BookData> = {
   pro: proData as BookData,
   ecc: eccData as BookData,
   sng: sngData as BookData,
+  jos: josData as BookData,
+  jdg: jdgData as BookData,
+  rut: rutData as BookData,
+  "1sa": oneSaData as BookData,
+  "2sa": twoSaData as BookData,
+  "1ki": oneKiData as BookData,
+  "2ki": twoKiData as BookData,
+  "1ch": oneChData as BookData,
+  "2ch": twoChData as BookData,
+  ezr: ezrData as BookData,
+  neh: nehData as BookData,
+  est: estData as BookData,
 };
 
 const CANONICAL_TO_STEP_BOOK: Record<string, string> = {
@@ -323,6 +347,112 @@ const CANONICAL_TO_STEP_BOOK: Record<string, string> = {
   "второзаконие": "Deu",
   "втор": "Deu",
   deuteronomio: "Deu",
+
+  // OT historical books — English
+  joshua: "Jos",
+  jos: "Jos",
+  judges: "Jdg",
+  jdg: "Jdg",
+  ruth: "Rut",
+  rut: "Rut",
+  "1-samuel": "1Sa",
+  "1 samuel": "1Sa",
+  "first samuel": "1Sa",
+  "1sa": "1Sa",
+  "2-samuel": "2Sa",
+  "2 samuel": "2Sa",
+  "second samuel": "2Sa",
+  "2sa": "2Sa",
+  "1-kings": "1Ki",
+  "1 kings": "1Ki",
+  "first kings": "1Ki",
+  "1ki": "1Ki",
+  "2-kings": "2Ki",
+  "2 kings": "2Ki",
+  "second kings": "2Ki",
+  "2ki": "2Ki",
+  "1-chronicles": "1Ch",
+  "1 chronicles": "1Ch",
+  "first chronicles": "1Ch",
+  "1ch": "1Ch",
+  "2-chronicles": "2Ch",
+  "2 chronicles": "2Ch",
+  "second chronicles": "2Ch",
+  "2ch": "2Ch",
+  ezra: "Ezr",
+  ezr: "Ezr",
+  nehemiah: "Neh",
+  neh: "Neh",
+  esther: "Est",
+  est: "Est",
+
+  // OT historical books — Russian
+  "иисус навин": "Jos",
+  "книга иисуса навина": "Jos",
+  "иошуа": "Jos",
+  "судей": "Jdg",
+  "книга судей": "Jdg",
+  "руфь": "Rut",
+  "книга руфь": "Rut",
+  "1 самуила": "1Sa",
+  "1-я самуила": "1Sa",
+  "первая самуила": "1Sa",
+  "1 царств": "1Sa",
+  "1-я царств": "1Sa",
+  "первая царств": "1Sa",
+  "2 самуила": "2Sa",
+  "2-я самуила": "2Sa",
+  "вторая самуила": "2Sa",
+  "2 царств": "2Sa",
+  "2-я царств": "2Sa",
+  "вторая царств": "2Sa",
+  "1 царей": "1Ki",
+  "1-я царей": "1Ki",
+  "первая царей": "1Ki",
+  "3 царств": "1Ki",
+  "3-я царств": "1Ki",
+  "третья царств": "1Ki",
+  "2 царей": "2Ki",
+  "2-я царей": "2Ki",
+  "вторая царей": "2Ki",
+  "4 царств": "2Ki",
+  "4-я царств": "2Ki",
+  "четвертая царств": "2Ki",
+  "четвёртая царств": "2Ki",
+  "1 летопись": "1Ch",
+  "1-я летопись": "1Ch",
+  "первая летопись": "1Ch",
+  "1 хроник": "1Ch",
+  "2 летопись": "2Ch",
+  "2-я летопись": "2Ch",
+  "вторая летопись": "2Ch",
+  "2 хроник": "2Ch",
+  "ездра": "Ezr",
+  "книга ездры": "Ezr",
+  "неемия": "Neh",
+  "книга неемии": "Neh",
+  "неемии": "Neh",
+  "эсфирь": "Est",
+  "книга эсфирь": "Est",
+  "эсфири": "Est",
+
+  // OT historical books — Spanish
+  josue: "Jos",
+  josué: "Jos",
+  jueces: "Jdg",
+  rut: "Rut",
+  "1 samuel": "1Sa",
+  "2 samuel": "2Sa",
+  "1 reyes": "1Ki",
+  "2 reyes": "2Ki",
+  "1 cronicas": "1Ch",
+  "1 crónicas": "1Ch",
+  "2 cronicas": "2Ch",
+  "2 crónicas": "2Ch",
+  esdras: "Ezr",
+  nehemias: "Neh",
+  nehemías: "Neh",
+  ester: "Est",
 
   // OT wisdom books — English
   job: "Job",
