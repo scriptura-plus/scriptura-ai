@@ -850,6 +850,7 @@ export default function StudioPage() {
   const [researchMemoryError, setResearchMemoryError] = useState("");
   const [editorialSuggestions, setEditorialSuggestions] = useState<EditorialSuggestionsResponse | null>(null);
   const [loadingEditorialSuggestions, setLoadingEditorialSuggestions] = useState(false);
+  const [creatingTestSuggestion, setCreatingTestSuggestion] = useState(false);
   const [editorialSuggestionsError, setEditorialSuggestionsError] = useState("");
 
   const selectedVerse = useMemo(() => {
@@ -1101,6 +1102,59 @@ export default function StudioPage() {
       );
     } finally {
       setLoadingEditorialSuggestions(false);
+    }
+  }
+
+  async function createTestEditorialSuggestion() {
+    if (!selectedVerse) {
+      setCardsError("Сначала выбери стих.");
+      return;
+    }
+
+    if (!adminSecret.trim()) {
+      setCardsError("Вставь Admin Secret.");
+      return;
+    }
+
+    setCreatingTestSuggestion(true);
+    setEditorialSuggestionsError("");
+    setNotice("Создаю тестовое редакторское предложение...");
+
+    try {
+      const response = await fetch("/api/admin/studio/create-test-editorial-suggestion", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-secret": adminSecret,
+        },
+        body: JSON.stringify({
+          reference: selectedVerse.reference,
+          canonical_ref: selectedVerse.canonical_ref,
+          book_key: selectedVerse.book_key,
+          book: selectedVerse.book,
+          chapter: selectedVerse.chapter,
+          verse: selectedVerse.verse,
+          lang,
+        }),
+      });
+
+      const data = (await response.json()) as { ok?: boolean; error?: string };
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || "Не удалось создать тестовое предложение.");
+      }
+
+      await loadEditorialSuggestions(selectedVerse, adminSecret);
+      setNotice("Тестовое редакторское предложение создано.");
+    } catch (error) {
+      setEditorialSuggestionsError(
+        error instanceof Error
+          ? error.message
+          : "Не удалось создать тестовое предложение.",
+      );
+      setNotice("");
+    } finally {
+      setCreatingTestSuggestion(false);
     }
   }
 
@@ -2778,6 +2832,41 @@ export default function StudioPage() {
                   сильные кандидаты с риском, неясные дубли и предложения системы.
                   Обычные безопасные углы должны добавляться автоматически.
                 </p>
+
+                <div
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: 8,
+                    marginBottom: 12,
+                  }}
+                >
+                  <button
+                    type="button"
+                    disabled={creatingTestSuggestion || loadingEditorialSuggestions}
+                    onClick={createTestEditorialSuggestion}
+                    style={getRepairButtonStyle(
+                      creatingTestSuggestion || loadingEditorialSuggestions,
+                    )}
+                  >
+                    {creatingTestSuggestion ? "Создаю..." : "Создать тестовое предложение"}
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={creatingTestSuggestion || loadingEditorialSuggestions}
+                    onClick={() =>
+                      selectedVerse
+                        ? void loadEditorialSuggestions(selectedVerse)
+                        : undefined
+                    }
+                    style={getSmallButtonStyle(
+                      creatingTestSuggestion || loadingEditorialSuggestions,
+                    )}
+                  >
+                    {loadingEditorialSuggestions ? "Обновляю..." : "Обновить очередь"}
+                  </button>
+                </div>
 
                 {loadingEditorialSuggestions ? (
                   <div style={{ display: "grid", gap: 8 }}>
