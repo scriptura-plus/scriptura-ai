@@ -259,6 +259,30 @@ type AutoCuratorPreviewResponse = {
   raw_preview?: string;
 };
 
+type ApplyAutoCuratorPreviewResponse = {
+  ok?: boolean;
+  error?: string;
+  mode?: "editorial_suggestion_only";
+  reference?: string;
+  canonical_ref?: string | null;
+  lang?: Lang;
+  inserted_count?: number;
+  skipped_count?: number;
+  error_count?: number;
+  inserted_suggestions?: unknown[];
+  skipped?: Array<{
+    index: number;
+    reason: string;
+    title?: string | null;
+    recommended_action?: string | null;
+  }>;
+  errors?: Array<{
+    index: number;
+    title?: string | null;
+    error: string;
+  }>;
+};
+
 type ReEvaluation = {
   score_total?: number;
   placement?: string;
@@ -922,6 +946,11 @@ export default function StudioPage() {
   const [loadingAutoCuratorPreview, setLoadingAutoCuratorPreview] = useState(false);
   const [autoCuratorPreviewError, setAutoCuratorPreviewError] = useState("");
 
+  const [applyingAutoCuratorPreview, setApplyingAutoCuratorPreview] = useState(false);
+  const [applyAutoCuratorPreviewResult, setApplyAutoCuratorPreviewResult] =
+    useState<ApplyAutoCuratorPreviewResponse | null>(null);
+  const [applyAutoCuratorPreviewError, setApplyAutoCuratorPreviewError] = useState("");
+
   const selectedVerse = useMemo(() => {
     return verses.find((verse) => verse.reference === selectedReference) ?? null;
   }, [verses, selectedReference]);
@@ -1039,6 +1068,8 @@ export default function StudioPage() {
     setEditorialSuggestionsError("");
     setAutoCuratorPreview(null);
     setAutoCuratorPreviewError("");
+    setApplyAutoCuratorPreviewResult(null);
+    setApplyAutoCuratorPreviewError("");
     setNotice(`Открываю ${displayReference(verse)}...`);
 
     try {
@@ -1078,6 +1109,8 @@ export default function StudioPage() {
       setEditorialSuggestionsError("");
       setAutoCuratorPreview(null);
       setAutoCuratorPreviewError("");
+      setApplyAutoCuratorPreviewResult(null);
+      setApplyAutoCuratorPreviewError("");
       setCardsError(
         error instanceof Error ? error.message : "Не удалось загрузить карточки.",
       );
@@ -1245,6 +1278,8 @@ export default function StudioPage() {
     setLoadingAutoCuratorPreview(true);
     setAutoCuratorPreviewError("");
     setAutoCuratorPreview(null);
+    setApplyAutoCuratorPreviewResult(null);
+    setApplyAutoCuratorPreviewError("");
     setNotice("Auto Curator смотрит Озеро и ищет новые кандидаты...");
 
     try {
@@ -1281,6 +1316,85 @@ export default function StudioPage() {
       setNotice("");
     } finally {
       setLoadingAutoCuratorPreview(false);
+    }
+  }
+
+  async function applyAutoCuratorPreviewToQueue() {
+    if (!selectedVerse) {
+      setCardsError("Сначала выбери стих.");
+      return;
+    }
+
+    if (!adminSecret.trim()) {
+      setCardsError("Вставь Admin Secret.");
+      return;
+    }
+
+    if (!autoCuratorPreview?.candidates || autoCuratorPreview.candidates.length === 0) {
+      setAutoCuratorPreviewError("Сначала сделай preview и получи кандидатов.");
+      return;
+    }
+
+    const reviewCandidates = autoCuratorPreview.candidates.filter(
+      (candidate) => candidate.recommended_action === "editorial_suggestion",
+    );
+
+    if (reviewCandidates.length === 0) {
+      setAutoCuratorPreviewError(
+        "В этом preview нет кандидатов для редакторской очереди.",
+      );
+      return;
+    }
+
+    setApplyingAutoCuratorPreview(true);
+    setApplyAutoCuratorPreviewError("");
+    setApplyAutoCuratorPreviewResult(null);
+    setNotice("Отправляю кандидатов Auto Curator в очередь решений...");
+
+    try {
+      const response = await fetch("/api/admin/studio/apply-auto-curator-preview", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-secret": adminSecret,
+        },
+        body: JSON.stringify({
+          reference: selectedVerse.reference,
+          canonical_ref: selectedVerse.canonical_ref,
+          book_key: selectedVerse.book_key,
+          book: selectedVerse.book,
+          chapter: selectedVerse.chapter,
+          verse: selectedVerse.verse,
+          lang,
+          provider: autoCuratorPreview.provider,
+          model: autoCuratorPreview.model,
+          generator_provider: autoCuratorPreview.generator_provider,
+          generator_model: autoCuratorPreview.generator_model,
+          candidates: autoCuratorPreview.candidates,
+        }),
+      });
+
+      const data = (await response.json()) as ApplyAutoCuratorPreviewResponse;
+
+      if (!response.ok || data.ok === false) {
+        const firstError = data.errors?.[0]?.error;
+        throw new Error(
+          data.error || firstError || "Не удалось отправить preview в очередь решений.",
+        );
+      }
+
+      setApplyAutoCuratorPreviewResult(data);
+      await loadEditorialSuggestions(selectedVerse, adminSecret);
+      setNotice(`Очередь обновлена: добавлено ${data.inserted_count ?? 0}.`);
+    } catch (error) {
+      setApplyAutoCuratorPreviewError(
+        error instanceof Error
+          ? error.message
+          : "Не удалось отправить preview в очередь решений.",
+      );
+      setNotice("");
+    } finally {
+      setApplyingAutoCuratorPreview(false);
     }
   }
 
@@ -3483,6 +3597,63 @@ export default function StudioPage() {
                       ) : (
                         <EmptyBox text="Auto Curator не нашёл новых сильных кандидатов в текущем Озере." />
                       )}
+
+                      {autoCuratorPreview.candidates?.some(
+                        (candidate) => candidate.recommended_action === "editorial_suggestion",
+                      ) ? (
+                        <div
+                          style={{
+                            marginTop: 12,
+                            paddingTop: 12,
+                            borderTop: `1px solid ${LINE_SOFT}`,
+                          }}
+                        >
+                          <button
+                            type="button"
+                            disabled={applyingAutoCuratorPreview || loadingAutoCuratorPreview}
+                            onClick={applyAutoCuratorPreviewToQueue}
+                            style={getApplyButtonStyle(
+                              applyingAutoCuratorPreview || loadingAutoCuratorPreview,
+                            )}
+                          >
+                            {applyingAutoCuratorPreview
+                              ? "Отправляю..."
+                              : "Отправить в очередь решений"}
+                          </button>
+
+                          <p
+                            style={{
+                              margin: "8px 0 0",
+                              color: MUTED,
+                              fontSize: 12,
+                              lineHeight: 1.45,
+                            }}
+                          >
+                            Сейчас применяются только кандидаты “в редакторские”.
+                            Auto-add и auto-reject пока не записываются.
+                          </p>
+                        </div>
+                      ) : null}
+
+                      {applyAutoCuratorPreviewError ? (
+                        <MessageBox
+                          kind="error"
+                          text={applyAutoCuratorPreviewError}
+                          style={{ marginTop: 10 }}
+                        />
+                      ) : null}
+
+                      {applyAutoCuratorPreviewResult ? (
+                        <MessageBox
+                          kind="success"
+                          text={`Очередь решений обновлена. Добавлено: ${
+                            applyAutoCuratorPreviewResult.inserted_count ?? 0
+                          }, пропущено: ${
+                            applyAutoCuratorPreviewResult.skipped_count ?? 0
+                          }.`}
+                          style={{ marginTop: 10 }}
+                        />
+                      ) : null}
 
                       {autoCuratorPreview.raw_preview ? (
                         <details style={{ marginTop: 10 }}>
