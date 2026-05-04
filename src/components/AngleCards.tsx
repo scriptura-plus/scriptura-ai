@@ -511,10 +511,15 @@ export function AngleCards({
             font-weight: 620;
           }
 
-          .angle-card-progress-separator,
-          .angle-card-progress-total {
-            font-size: 10px;
-          }
+          .angle-card-progress-separator {
+  font-size: 10px;
+}
+
+.angle-card-progress-total {
+  font-size: 10px;
+  color: rgba(96, 110, 123, 0.62);
+  font-weight: 620;
+}
         }
       `}</style>
 
