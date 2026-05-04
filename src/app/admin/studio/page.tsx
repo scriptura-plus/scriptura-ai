@@ -208,6 +208,57 @@ type EditorialSuggestionsResponse = {
   suggestions?: EditorialSuggestion[];
 };
 
+type AutoCuratorPreviewCandidate = {
+  candidate: {
+    title: string;
+    anchor: string | null;
+    teaser: string;
+    why_it_matters: string | null;
+  };
+  score_total: number | null;
+  angle_relationship:
+    | "duplicate"
+    | "stronger_version"
+    | "sibling_angle"
+    | "distinct_angle"
+    | "uncertain";
+  relationship_confidence: "low" | "medium" | "high";
+  matched_card_id: string | null;
+  matched_card_title: string | null;
+  recommended_action: "auto_add" | "auto_reject" | "editorial_suggestion";
+  suggestion_type:
+    | "replacement"
+    | "needs_review"
+    | "locked_card_challenger"
+    | "style_review"
+    | "promote_candidate"
+    | "duplicate_uncertain"
+    | null;
+  reason: string;
+  risk_level: "low" | "medium" | "high" | "unknown";
+  risk: string | null;
+  source_basis: string | null;
+};
+
+type AutoCuratorPreviewResponse = {
+  ok?: boolean;
+  error?: string;
+  mode?: "preview_only";
+  reference?: string;
+  canonical_ref?: string | null;
+  lang?: Lang;
+  provider?: string;
+  model?: string;
+  generator_provider?: string;
+  generator_model?: string;
+  source_count?: number;
+  note_count?: number;
+  existing_card_count?: number;
+  summary?: string | null;
+  candidates?: AutoCuratorPreviewCandidate[];
+  raw_preview?: string;
+};
+
 type ReEvaluation = {
   score_total?: number;
   placement?: string;
@@ -797,6 +848,20 @@ function readableAngleRelationship(value: string | null): string | null {
   return value;
 }
 
+function readableRecommendedAction(action: AutoCuratorPreviewCandidate["recommended_action"]): string {
+  if (action === "auto_add") return "авто-добавить";
+  if (action === "auto_reject") return "авто-отклонить";
+  if (action === "editorial_suggestion") return "в редакторские";
+  return action;
+}
+
+function readableRiskLevel(level: AutoCuratorPreviewCandidate["risk_level"]): string {
+  if (level === "low") return "низкий риск";
+  if (level === "medium") return "средний риск";
+  if (level === "high") return "высокий риск";
+  return "риск неизвестен";
+}
+
 function getPayloadString(payload: unknown, key: string): string | null {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
   const value = (payload as Record<string, unknown>)[key];
@@ -852,6 +917,10 @@ export default function StudioPage() {
   const [loadingEditorialSuggestions, setLoadingEditorialSuggestions] = useState(false);
   const [creatingTestSuggestion, setCreatingTestSuggestion] = useState(false);
   const [editorialSuggestionsError, setEditorialSuggestionsError] = useState("");
+
+  const [autoCuratorPreview, setAutoCuratorPreview] = useState<AutoCuratorPreviewResponse | null>(null);
+  const [loadingAutoCuratorPreview, setLoadingAutoCuratorPreview] = useState(false);
+  const [autoCuratorPreviewError, setAutoCuratorPreviewError] = useState("");
 
   const selectedVerse = useMemo(() => {
     return verses.find((verse) => verse.reference === selectedReference) ?? null;
@@ -968,6 +1037,8 @@ export default function StudioPage() {
     setResearchMemoryError("");
     setEditorialSuggestions(null);
     setEditorialSuggestionsError("");
+    setAutoCuratorPreview(null);
+    setAutoCuratorPreviewError("");
     setNotice(`Открываю ${displayReference(verse)}...`);
 
     try {
@@ -1005,6 +1076,8 @@ export default function StudioPage() {
       setResearchMemoryError("");
       setEditorialSuggestions(null);
       setEditorialSuggestionsError("");
+      setAutoCuratorPreview(null);
+      setAutoCuratorPreviewError("");
       setCardsError(
         error instanceof Error ? error.message : "Не удалось загрузить карточки.",
       );
@@ -1155,6 +1228,59 @@ export default function StudioPage() {
       setNotice("");
     } finally {
       setCreatingTestSuggestion(false);
+    }
+  }
+
+  async function previewAutoCurator() {
+    if (!selectedVerse) {
+      setCardsError("Сначала выбери стих.");
+      return;
+    }
+
+    if (!adminSecret.trim()) {
+      setCardsError("Вставь Admin Secret.");
+      return;
+    }
+
+    setLoadingAutoCuratorPreview(true);
+    setAutoCuratorPreviewError("");
+    setAutoCuratorPreview(null);
+    setNotice("Auto Curator смотрит Озеро и ищет новые кандидаты...");
+
+    try {
+      const response = await fetch("/api/admin/studio/auto-curator-preview", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-secret": adminSecret,
+        },
+        body: JSON.stringify({
+          reference: selectedVerse.reference,
+          canonical_ref: selectedVerse.canonical_ref,
+          lang,
+          provider: "claude",
+          maxCandidates: 5,
+        }),
+      });
+
+      const data = (await response.json()) as AutoCuratorPreviewResponse;
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || "Не удалось выполнить предпросмотр Auto Curator.");
+      }
+
+      setAutoCuratorPreview(data);
+      setNotice(`Auto Curator preview готов: кандидатов — ${data.candidates?.length ?? 0}.`);
+    } catch (error) {
+      setAutoCuratorPreview(null);
+      setAutoCuratorPreviewError(
+        error instanceof Error
+          ? error.message
+          : "Не удалось выполнить предпросмотр Auto Curator.",
+      );
+      setNotice("");
+    } finally {
+      setLoadingAutoCuratorPreview(false);
     }
   }
 
@@ -3117,6 +3243,276 @@ export default function StudioPage() {
                   текущего набора, выбирает топ для публичной выдачи и отправляет остальные
                   хорошие варианты в запас. Отклонённые, скрытые и защищённые карточки не поднимаются автоматически.
                 </p>
+
+                <div
+                  style={{
+                    border: `1px solid ${LINE_SOFT}`,
+                    borderRadius: 16,
+                    padding: 12,
+                    background: SLATE_SOFT_2,
+                    marginBottom: 12,
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 900,
+                      color: SLATE_DARK,
+                      marginBottom: 7,
+                    }}
+                  >
+                    Auto Curator preview
+                  </div>
+
+                  <p
+                    style={{
+                      margin: "0 0 10px",
+                      color: MUTED,
+                      fontSize: 12,
+                      lineHeight: 1.55,
+                    }}
+                  >
+                    Безопасный предпросмотр: Claude ищет кандидатов из Озера, но пока ничего
+                    не записывает в карточки и не создаёт редакторские предложения.
+                  </p>
+
+                  <button
+                    type="button"
+                    disabled={loadingAutoCuratorPreview || loadingCards}
+                    onClick={previewAutoCurator}
+                    style={getApplyButtonStyle(loadingAutoCuratorPreview || loadingCards)}
+                  >
+                    {loadingAutoCuratorPreview ? "Смотрю Озеро..." : "Предпросмотр Auto Curator"}
+                  </button>
+
+                  {autoCuratorPreviewError ? (
+                    <MessageBox
+                      kind="error"
+                      text={autoCuratorPreviewError}
+                      style={{ marginTop: 10 }}
+                    />
+                  ) : null}
+
+                  {autoCuratorPreview ? (
+                    <div
+                      style={{
+                        marginTop: 12,
+                        padding: 12,
+                        borderRadius: 14,
+                        background: CARD,
+                        border: `1px solid ${LINE}`,
+                      }}
+                    >
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginBottom: 9 }}>
+                        <Badge
+                          text={`Модель: ${
+                            autoCuratorPreview.generator_model ??
+                            autoCuratorPreview.model ??
+                            "—"
+                          }`}
+                          strong
+                        />
+                        <Badge
+                          text={`Провайдер: ${
+                            autoCuratorPreview.generator_provider ??
+                            autoCuratorPreview.provider ??
+                            "—"
+                          }`}
+                        />
+                        <Badge text={`Источников: ${autoCuratorPreview.source_count ?? 0}`} />
+                        <Badge text={`Заметок: ${autoCuratorPreview.note_count ?? 0}`} />
+                        <Badge
+                          text={`Кандидатов: ${autoCuratorPreview.candidates?.length ?? 0}`}
+                          strong
+                        />
+                      </div>
+
+                      {autoCuratorPreview.summary ? (
+                        <p
+                          style={{
+                            margin: "0 0 10px",
+                            color: MUTED,
+                            fontSize: 13,
+                            lineHeight: 1.55,
+                          }}
+                        >
+                          {autoCuratorPreview.summary}
+                        </p>
+                      ) : null}
+
+                      {autoCuratorPreview.candidates &&
+                      autoCuratorPreview.candidates.length > 0 ? (
+                        <div style={{ display: "grid", gap: 9 }}>
+                          {autoCuratorPreview.candidates.map((candidate, index) => (
+                            <div
+                              key={`${candidate.candidate.title}-${index}`}
+                              style={{
+                                border: `1px solid ${LINE_SOFT}`,
+                                borderRadius: 12,
+                                background: SLATE_SOFT_2,
+                                padding: 10,
+                              }}
+                            >
+                              <div
+                                style={{
+                                  display: "flex",
+                                  justifyContent: "space-between",
+                                  gap: 10,
+                                  alignItems: "flex-start",
+                                  marginBottom: 6,
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    fontSize: 13,
+                                    fontWeight: 900,
+                                    color: INK,
+                                    lineHeight: 1.35,
+                                  }}
+                                >
+                                  {candidate.candidate.title}
+                                </div>
+
+                                {candidate.score_total !== null ? (
+                                  <span
+                                    style={{
+                                      minWidth: 38,
+                                      height: 34,
+                                      borderRadius: 999,
+                                      background: `linear-gradient(180deg, ${SLATE} 0%, ${SLATE_DARK} 100%)`,
+                                      color: "#fff",
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      justifyContent: "center",
+                                      fontSize: 13,
+                                      fontWeight: 900,
+                                      flexShrink: 0,
+                                    }}
+                                  >
+                                    {candidate.score_total}
+                                  </span>
+                                ) : null}
+                              </div>
+
+                              <div
+                                style={{
+                                  display: "flex",
+                                  flexWrap: "wrap",
+                                  gap: 6,
+                                  marginBottom: 7,
+                                }}
+                              >
+                                <Badge text={readableRecommendedAction(candidate.recommended_action)} strong />
+                                <Badge text={readableAngleRelationship(candidate.angle_relationship) ?? "угол: —"} />
+                                <Badge text={readableRiskLevel(candidate.risk_level)} />
+                                {candidate.suggestion_type ? (
+                                  <Badge text={readableSuggestionType(candidate.suggestion_type)} />
+                                ) : null}
+                                {candidate.matched_card_title ? (
+                                  <Badge text={`похоже на: ${candidate.matched_card_title}`} />
+                                ) : null}
+                              </div>
+
+                              {candidate.candidate.anchor ? (
+                                <p
+                                  style={{
+                                    margin: "0 0 7px",
+                                    color: WARM_ACCENT,
+                                    fontSize: 12,
+                                    lineHeight: 1.45,
+                                    fontStyle: "italic",
+                                  }}
+                                >
+                                  “{candidate.candidate.anchor}”
+                                </p>
+                              ) : null}
+
+                              <p
+                                style={{
+                                  margin: "0 0 7px",
+                                  color: TEXT,
+                                  fontSize: 12,
+                                  lineHeight: 1.5,
+                                }}
+                              >
+                                {candidate.candidate.teaser}
+                              </p>
+
+                              {candidate.candidate.why_it_matters ? (
+                                <p
+                                  style={{
+                                    margin: "0 0 7px",
+                                    color: MUTED,
+                                    fontSize: 12,
+                                    lineHeight: 1.45,
+                                  }}
+                                >
+                                  <strong style={{ color: SLATE_DARK }}>Почему важно: </strong>
+                                  {candidate.candidate.why_it_matters}
+                                </p>
+                              ) : null}
+
+                              <p
+                                style={{
+                                  margin: 0,
+                                  color: MUTED,
+                                  fontSize: 12,
+                                  lineHeight: 1.45,
+                                }}
+                              >
+                                <strong style={{ color: SLATE_DARK }}>Решение: </strong>
+                                {candidate.reason}
+                              </p>
+
+                              {candidate.risk ? (
+                                <p
+                                  style={{
+                                    margin: "7px 0 0",
+                                    color: WARNING_TEXT,
+                                    fontSize: 12,
+                                    lineHeight: 1.45,
+                                  }}
+                                >
+                                  <strong>Риск: </strong>
+                                  {candidate.risk}
+                                </p>
+                              ) : null}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <EmptyBox text="Auto Curator не нашёл новых сильных кандидатов в текущем Озере." />
+                      )}
+
+                      {autoCuratorPreview.raw_preview ? (
+                        <details style={{ marginTop: 10 }}>
+                          <summary
+                            style={{
+                              cursor: "pointer",
+                              color: SLATE_DARK,
+                              fontSize: 12,
+                              fontWeight: 900,
+                            }}
+                          >
+                            Показать raw preview
+                          </summary>
+                          <pre
+                            style={{
+                              margin: "8px 0 0",
+                              whiteSpace: "pre-wrap",
+                              wordBreak: "break-word",
+                              color: MUTED,
+                              fontSize: 11,
+                              lineHeight: 1.45,
+                            }}
+                          >
+                            {autoCuratorPreview.raw_preview}
+                          </pre>
+                        </details>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
 
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                   <button
