@@ -52,6 +52,13 @@ type AutoCuratorModelOutput = {
   candidates?: unknown[];
 };
 
+type ModelCallResult = {
+  rawText: string;
+  rawJson: unknown;
+  provider: string;
+  model: string;
+};
+
 function isAdminRequest(req: Request): boolean {
   const expected = process.env.ADMIN_SECRET;
 
@@ -123,11 +130,12 @@ function compactLakeRow(row: unknown, index: number): Record<string, unknown> | 
       readAnyString(row, [
         "source_kind",
         "source_type",
+        "note_kind",
         "note_type",
         "article_type",
         "lens_id",
       ]) ?? "unknown",
-    title: readAnyString(row, ["title", "kicker"]),
+    title: readAnyString(row, ["source_title", "title", "kicker"]),
     summary: readAnyString(row, ["summary", "source_summary"]),
     text: stringifyCompact(
       row.content_json ??
@@ -160,7 +168,7 @@ function compactAngleCard(row: unknown): Record<string, unknown> | null {
   };
 }
 
-function extractResponseText(value: unknown): string {
+function extractOpenAIResponseText(value: unknown): string {
   if (!isRecord(value)) return "";
 
   const direct = getString(value.output_text);
@@ -178,6 +186,21 @@ function extractResponseText(value: unknown): string {
       const text = getString(part.text);
       if (text) chunks.push(text);
     }
+  }
+
+  return chunks.join("\n").trim();
+}
+
+function extractAnthropicResponseText(value: unknown): string {
+  if (!isRecord(value)) return "";
+
+  const content = Array.isArray(value.content) ? value.content : [];
+  const chunks: string[] = [];
+
+  for (const part of content) {
+    if (!isRecord(part)) continue;
+    const text = getString(part.text);
+    if (text) chunks.push(text);
   }
 
   return chunks.join("\n").trim();
@@ -361,6 +384,10 @@ CRITICAL PRODUCT GOAL:
 A good Scriptura card should make a serious Bible reader think:
 "Wow — I have read this verse before, but I never noticed THAT."
 
+MODEL ROLE:
+In this route, Claude is the discovery generator. Your strength here is finding strong, vivid candidate cards from Research Lake material.
+You must still be careful with facts and avoid overclaiming, but your primary task is discovery-quality candidate generation.
+
 Use the same strategic quality standard across all decisions:
 - discovery / aha effect
 - concrete textual anchor
@@ -437,10 +464,64 @@ Maximum candidates: ${args.maxCandidates}
 `.trim();
 }
 
+async function callClaude(args: {
+  prompt: string;
+  model: string;
+}): Promise<ModelCallResult> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+
+  if (!apiKey) {
+    throw new Error("ANTHROPIC_API_KEY is not configured");
+  }
+
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: args.model,
+      max_tokens: 5000,
+      temperature: 0.35,
+      system:
+        "You are Claude serving as the discovery generator for Scriptura AI Auto Curator. Return only valid JSON. Do not include markdown fences.",
+      messages: [
+        {
+          role: "user",
+          content: args.prompt,
+        },
+      ],
+    }),
+  });
+
+  const json = (await response.json()) as unknown;
+
+  if (!response.ok) {
+    const message =
+      isRecord(json) && isRecord(json.error)
+        ? getString(json.error.message)
+        : null;
+
+    throw new Error(message ?? `Claude request failed with status ${response.status}`);
+  }
+
+  const rawText = extractAnthropicResponseText(json);
+  const rawJson = extractJsonObject(rawText);
+
+  return {
+    rawText,
+    rawJson,
+    provider: "claude",
+    model: args.model,
+  };
+}
+
 async function callOpenAI(args: {
   prompt: string;
   model: string;
-}): Promise<{ rawText: string; rawJson: unknown }> {
+}): Promise<ModelCallResult> {
   const apiKey = process.env.OPENAI_API_KEY;
 
   if (!apiKey) {
@@ -475,10 +556,27 @@ async function callOpenAI(args: {
     throw new Error(message ?? `OpenAI request failed with status ${response.status}`);
   }
 
-  const rawText = extractResponseText(json);
+  const rawText = extractOpenAIResponseText(json);
   const rawJson = extractJsonObject(rawText);
 
-  return { rawText, rawJson };
+  return {
+    rawText,
+    rawJson,
+    provider: "openai",
+    model: args.model,
+  };
+}
+
+async function callModel(args: {
+  provider: string;
+  model: string;
+  prompt: string;
+}): Promise<ModelCallResult> {
+  if (args.provider === "openai") {
+    return callOpenAI({ prompt: args.prompt, model: args.model });
+  }
+
+  return callClaude({ prompt: args.prompt, model: args.model });
 }
 
 export async function POST(req: Request) {
@@ -506,7 +604,12 @@ export async function POST(req: Request) {
   const reference = getString(body.reference);
   const canonicalRef = getString(body.canonical_ref);
   const lang = getString(body.lang) ?? "ru";
-  const model = getString(body.model) ?? "gpt-5.5";
+  const provider = getString(body.provider) ?? "claude";
+  const model =
+    getString(body.model) ??
+    (provider === "openai"
+      ? process.env.OPENAI_EVALUATOR_MODEL ?? "gpt-5.5"
+      : process.env.ANTHROPIC_GENERATOR_MODEL ?? "claude-sonnet-4-6");
   const maxCandidates = clampInt(body.maxCandidates ?? 5, 1, 8);
 
   if (!reference && !canonicalRef) {
@@ -587,6 +690,8 @@ export async function POST(req: Request) {
         reference: effectiveReference,
         canonical_ref: canonicalRef,
         lang,
+        provider,
+        model,
         source_count: 0,
         note_count: 0,
         existing_card_count: existingCards.length,
@@ -605,7 +710,7 @@ export async function POST(req: Request) {
       maxCandidates,
     });
 
-    const ai = await callOpenAI({ prompt, model });
+    const ai = await callModel({ provider, prompt, model });
     const normalized = normalizeModelOutput(ai.rawJson);
 
     return NextResponse.json({
@@ -614,7 +719,10 @@ export async function POST(req: Request) {
       reference: effectiveReference,
       canonical_ref: canonicalRef,
       lang,
-      model,
+      provider: ai.provider,
+      model: ai.model,
+      generator_provider: ai.provider,
+      generator_model: ai.model,
       source_count: sourceRows.length,
       note_count: noteRows.length,
       existing_card_count: existingCards.length,
@@ -628,6 +736,8 @@ export async function POST(req: Request) {
       reference,
       canonicalRef,
       lang,
+      provider,
+      model,
       message: error instanceof Error ? error.message : String(error),
     });
 
