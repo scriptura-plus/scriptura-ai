@@ -503,7 +503,7 @@ export function AngleCards({
 
           .angle-card-progress {
             gap: 4px;
-            opacity: 0.46;
+            opacity: 0.60;
           }
 
           .angle-card-progress-current {
