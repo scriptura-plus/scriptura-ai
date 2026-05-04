@@ -230,17 +230,13 @@ export async function GET(req: Request) {
     noteCountQuery = noteCountQuery.eq("reference", reference);
   }
 
-  const [
-    sourcesResult,
-    notesResult,
-    sourceCountResult,
-    noteCountResult,
-  ] = await Promise.all([
-    sourcesQuery,
-    notesQuery,
-    sourceCountQuery,
-    noteCountQuery,
-  ]);
+  const [sourcesResult, notesResult, sourceCountResult, noteCountResult] =
+    await Promise.all([
+      sourcesQuery,
+      notesQuery,
+      sourceCountQuery,
+      noteCountQuery,
+    ]);
 
   if (sourcesResult.error) {
     console.error("[STUDIO_RESEARCH_MEMORY] sources read error", {
@@ -306,8 +302,8 @@ export async function GET(req: Request) {
     });
   }
 
-  const sources = (sourcesResult.data ?? []) as ResearchSourceRow[];
-  const notes = (notesResult.data ?? []) as ResearchNoteRow[];
+  const sources = (sourcesResult.data ?? []) as unknown as ResearchSourceRow[];
+  const notes = (notesResult.data ?? []) as unknown as ResearchNoteRow[];
 
   return NextResponse.json({
     ok: true,
