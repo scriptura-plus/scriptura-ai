@@ -384,6 +384,14 @@ CRITICAL PRODUCT GOAL:
 A good Scriptura card should make a serious Bible reader think:
 "Wow — I have read this verse before, but I never noticed THAT."
 
+OUTPUT LANGUAGE:
+The requested language code is: ${args.lang}
+- If lang is "ru", write summary, candidate cards, reasons, risk notes, and source_basis in Russian.
+- If lang is "en", write summary, candidate cards, reasons, risk notes, and source_basis in English.
+- If lang is "es", write summary, candidate cards, reasons, risk notes, and source_basis in Spanish.
+- Keep Bible original-language terms such as Greek/Hebrew words as-is when needed.
+- Do not switch to English for the analytical explanation when lang is ru or es.
+
 MODEL ROLE:
 In this route, Claude is the discovery generator. Your strength here is finding strong, vivid candidate cards from Research Lake material.
 You must still be careful with facts and avoid overclaiming, but your primary task is discovery-quality candidate generation.
@@ -486,7 +494,7 @@ async function callClaude(args: {
       max_tokens: 5000,
       temperature: 0.35,
       system:
-        "You are Claude serving as the discovery generator for Scriptura AI Auto Curator. Return only valid JSON. Do not include markdown fences.",
+        "You are Claude serving as the discovery generator for Scriptura AI Auto Curator. Return only valid JSON. Do not include markdown fences. Obey the requested output language in the user prompt for all human-readable fields.",
       messages: [
         {
           role: "user",
