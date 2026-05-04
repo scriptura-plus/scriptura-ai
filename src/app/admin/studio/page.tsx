@@ -1335,16 +1335,18 @@ export default function StudioPage() {
       return;
     }
 
-    const reviewCandidates = autoCuratorPreview.candidates.filter(
-      (candidate) => candidate.recommended_action === "editorial_suggestion",
-    );
-
-    if (reviewCandidates.length === 0) {
-      setAutoCuratorPreviewError(
-        "В этом preview нет кандидатов для редакторской очереди.",
-      );
-      return;
-    }
+    const queueCandidates = autoCuratorPreview.candidates.map((candidate) => ({
+      ...candidate,
+      recommended_action: "editorial_suggestion" as const,
+      suggestion_type:
+        candidate.recommended_action === "auto_add"
+          ? "promote_candidate"
+          : candidate.suggestion_type ?? "needs_review",
+      reason:
+        candidate.recommended_action === "auto_add"
+          ? `Модератор вручную отправил auto-add кандидата в очередь решений. Исходное решение Auto Curator: auto_add. ${candidate.reason}`
+          : candidate.reason,
+    }));
 
     setApplyingAutoCuratorPreview(true);
     setApplyAutoCuratorPreviewError("");
@@ -1370,7 +1372,7 @@ export default function StudioPage() {
           model: autoCuratorPreview.model,
           generator_provider: autoCuratorPreview.generator_provider,
           generator_model: autoCuratorPreview.generator_model,
-          candidates: autoCuratorPreview.candidates,
+          candidates: queueCandidates,
         }),
       });
 
@@ -3598,9 +3600,8 @@ export default function StudioPage() {
                         <EmptyBox text="Auto Curator не нашёл новых сильных кандидатов в текущем Озере." />
                       )}
 
-                      {autoCuratorPreview.candidates?.some(
-                        (candidate) => candidate.recommended_action === "editorial_suggestion",
-                      ) ? (
+                      {autoCuratorPreview.candidates &&
+                      autoCuratorPreview.candidates.length > 0 ? (
                         <div
                           style={{
                             marginTop: 12,
@@ -3629,8 +3630,9 @@ export default function StudioPage() {
                               lineHeight: 1.45,
                             }}
                           >
-                            Сейчас применяются только кандидаты “в редакторские”.
-                            Auto-add и auto-reject пока не записываются.
+                            Безопасный режим: любые кандидаты из preview, включая auto-add,
+                            отправляются только в редакторскую очередь. Публичные карточки
+                            автоматически не меняются.
                           </p>
                         </div>
                       ) : null}
