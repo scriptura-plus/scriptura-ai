@@ -21,6 +21,164 @@ export type ResearchArticle = {
   updated_at: string;
 };
 
+type SupabaseAdminClient = NonNullable<ReturnType<typeof createAdminClient>>;
+
+function getSourceKind(articleType: string): string {
+  if (articleType === "text_findings") return "research_article";
+  if (articleType === "historical_scene") return "research_article";
+  if (articleType === "scripture_links") return "research_article";
+  if (articleType === "context") return "research_article";
+  if (articleType === "word") return "research_article";
+  if (articleType === "translations") return "research_article";
+
+  return "research_article";
+}
+
+async function syncResearchArticleToLake(
+  client: SupabaseAdminClient,
+  article: ResearchArticle,
+): Promise<void> {
+  try {
+    const now = new Date().toISOString();
+
+    const lakePayload = {
+      reference: article.reference,
+      canonical_ref: article.canonical_ref,
+      book_key: article.book,
+      book: article.book,
+      chapter: article.chapter,
+      verse: article.verse,
+      lang: article.lang,
+
+      source_kind: getSourceKind(article.article_type),
+      source_type: article.article_type,
+      source_provider: article.provider,
+      source_model: article.model,
+      source_title: article.title,
+
+      legacy_table: "research_articles",
+      legacy_id: article.id,
+
+      title: article.title,
+      raw_text: article.raw_text,
+      raw_json: article.raw_json,
+      content_json: article.raw_json,
+
+      prompt_version: null,
+      status: article.status,
+      extraction_status: article.extraction_status,
+      extraction_error: article.extraction_error,
+      extracted_at:
+        article.extraction_status === "extracted" ? now : null,
+
+      updated_at: now,
+    };
+
+    const { data: existing, error: existingError } = await client
+      .from("research_sources")
+      .select("id")
+      .eq("legacy_table", "research_articles")
+      .eq("legacy_id", article.id)
+      .maybeSingle();
+
+    if (existingError) {
+      console.error("[RESEARCH_LAKE] source lookup error", {
+        articleId: article.id,
+        reference: article.reference,
+        message: existingError.message,
+        details: existingError.details,
+        hint: existingError.hint,
+        code: existingError.code,
+      });
+      return;
+    }
+
+    if (existing?.id) {
+      const { error: updateError } = await client
+        .from("research_sources")
+        .update(lakePayload)
+        .eq("id", existing.id);
+
+      if (updateError) {
+        console.error("[RESEARCH_LAKE] source update error", {
+          articleId: article.id,
+          sourceId: existing.id,
+          reference: article.reference,
+          message: updateError.message,
+          details: updateError.details,
+          hint: updateError.hint,
+          code: updateError.code,
+        });
+      }
+
+      return;
+    }
+
+    const { error: insertError } = await client
+      .from("research_sources")
+      .insert({
+        ...lakePayload,
+        created_at: article.created_at ?? now,
+      });
+
+    if (insertError) {
+      console.error("[RESEARCH_LAKE] source insert error", {
+        articleId: article.id,
+        reference: article.reference,
+        message: insertError.message,
+        details: insertError.details,
+        hint: insertError.hint,
+        code: insertError.code,
+      });
+    }
+  } catch (error) {
+    console.error("[RESEARCH_LAKE] source sync unexpected error", {
+      articleId: article.id,
+      reference: article.reference,
+      error,
+    });
+  }
+}
+
+async function syncResearchArticleStatusToLake(args: {
+  client: SupabaseAdminClient;
+  articleId: string;
+  status: "pending" | "processing" | "extracted" | "failed";
+  error?: string | null;
+}): Promise<void> {
+  try {
+    const now = new Date().toISOString();
+
+    const { error } = await args.client
+      .from("research_sources")
+      .update({
+        extraction_status: args.status,
+        extraction_error: args.error ?? null,
+        extracted_at: args.status === "extracted" ? now : null,
+        updated_at: now,
+      })
+      .eq("legacy_table", "research_articles")
+      .eq("legacy_id", args.articleId);
+
+    if (error) {
+      console.error("[RESEARCH_LAKE] source status update error", {
+        articleId: args.articleId,
+        status: args.status,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code,
+      });
+    }
+  } catch (error) {
+    console.error("[RESEARCH_LAKE] source status unexpected error", {
+      articleId: args.articleId,
+      status: args.status,
+      error,
+    });
+  }
+}
+
 export async function getResearchArticle(args: {
   reference: string;
   lang: string;
@@ -152,7 +310,11 @@ export async function saveResearchArticle(args: {
     id: data.id,
   });
 
-  return data as ResearchArticle;
+  const article = data as ResearchArticle;
+
+  await syncResearchArticleToLake(client, article);
+
+  return article;
 }
 
 export async function updateResearchArticleExtractionStatus(args: {
@@ -191,6 +353,13 @@ export async function updateResearchArticleExtractionStatus(args: {
   console.log("[RESEARCH_ARTICLES] status updated", {
     articleId: args.articleId,
     status: args.status,
+  });
+
+  await syncResearchArticleStatusToLake({
+    client,
+    articleId: args.articleId,
+    status: args.status,
+    error: args.error ?? null,
   });
 
   return true;
