@@ -85,6 +85,64 @@ type CardsResponse = {
   cards?: StudioCard[];
 };
 
+type ResearchMemorySource = {
+  id: string;
+  reference: string;
+  canonical_ref: string | null;
+  lang: string;
+  source_kind: string;
+  source_type: string | null;
+  source_provider: string | null;
+  source_model: string | null;
+  title: string | null;
+  status: string;
+  extraction_status: string;
+  extraction_error: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type ResearchMemoryNote = {
+  id: string;
+  reference: string;
+  canonical_ref: string | null;
+  lang: string;
+  note_kind: string;
+  lens_id: string | null;
+  source_kind: string | null;
+  title: string | null;
+  kicker: string | null;
+  summary: string | null;
+  body_preview: string | null;
+  anchor: string | null;
+  status: string;
+  score: number | null;
+  confidence: string | null;
+  candidate_status: string;
+  created_at: string;
+  updated_at: string;
+};
+
+type ResearchMemoryResponse = {
+  ok?: boolean;
+  error?: string;
+  reference?: string | null;
+  canonical_ref?: string | null;
+  lang?: Lang;
+  summary?: {
+    sources_count: number;
+    notes_count: number;
+    source_kinds: Record<string, number>;
+    source_types: Record<string, number>;
+    extraction_statuses: Record<string, number>;
+    note_kinds: Record<string, number>;
+    note_statuses: Record<string, number>;
+    candidate_statuses: Record<string, number>;
+  };
+  latest_sources?: ResearchMemorySource[];
+  latest_notes?: ResearchMemoryNote[];
+};
+
 type ReEvaluation = {
   score_total?: number;
   placement?: string;
@@ -678,6 +736,9 @@ export default function StudioPage() {
   const [rewrites, setRewrites] = useState<Record<string, RewriteState>>({});
   const [updatingEditorial, setUpdatingEditorial] = useState<Record<string, boolean>>({});
   const [rebalance, setRebalance] = useState<RebalanceState>(() => createEmptyRebalanceState());
+  const [researchMemory, setResearchMemory] = useState<ResearchMemoryResponse | null>(null);
+  const [loadingResearchMemory, setLoadingResearchMemory] = useState(false);
+  const [researchMemoryError, setResearchMemoryError] = useState("");
 
   const selectedVerse = useMemo(() => {
     return verses.find((verse) => verse.reference === selectedReference) ?? null;
@@ -790,6 +851,8 @@ export default function StudioPage() {
     setRewrites({});
     setUpdatingEditorial({});
     setRebalance(createEmptyRebalanceState());
+    setResearchMemory(null);
+    setResearchMemoryError("");
     setNotice(`Открываю ${displayReference(verse)}...`);
 
     try {
@@ -817,16 +880,63 @@ export default function StudioPage() {
       const loadedCards = sortStudioCards(data.cards ?? []);
       setCards(loadedCards);
       setCardsSummary(summarizeCards(loadedCards));
+      void loadResearchMemory(verse, secret);
       setNotice(`Карточки загружены: ${loadedCards.length}.`);
     } catch (error) {
       setCards([]);
       setCardsSummary(null);
+      setResearchMemory(null);
+      setResearchMemoryError("");
       setCardsError(
         error instanceof Error ? error.message : "Не удалось загрузить карточки.",
       );
       setNotice("");
     } finally {
       setLoadingCards(false);
+    }
+  }
+
+  async function loadResearchMemory(verse: VerseSummary, secretOverride?: string) {
+    const secret = secretOverride ?? adminSecret;
+
+    if (!secret.trim()) {
+      setResearchMemoryError("Вставь Admin Secret.");
+      return;
+    }
+
+    setLoadingResearchMemory(true);
+    setResearchMemoryError("");
+
+    try {
+      const params = new URLSearchParams({
+        reference: verse.reference,
+        lang,
+        limit: "8",
+      });
+
+      if (verse.canonical_ref) {
+        params.set("canonical_ref", verse.canonical_ref);
+      }
+
+      const response = await fetch(`/api/admin/studio/research-memory?${params}`, {
+        method: "GET",
+        headers: { "x-admin-secret": secret },
+      });
+
+      const data = (await response.json()) as ResearchMemoryResponse;
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || "Не удалось загрузить память стиха.");
+      }
+
+      setResearchMemory(data);
+    } catch (error) {
+      setResearchMemory(null);
+      setResearchMemoryError(
+        error instanceof Error ? error.message : "Не удалось загрузить память стиха.",
+      );
+    } finally {
+      setLoadingResearchMemory(false);
     }
   }
 
@@ -2199,6 +2309,258 @@ export default function StudioPage() {
                   />
                 ) : null}
               </div>
+            ) : null}
+
+            {selectedVerse ? (
+              <section
+                className="studio-card-enter"
+                style={{
+                  border: `1px solid ${LINE_SOFT}`,
+                  borderRadius: 18,
+                  padding: 14,
+                  background: `linear-gradient(180deg, ${SLATE_SOFT_2} 0%, ${CARD_ALT} 100%)`,
+                  marginBottom: 14,
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 900,
+                    letterSpacing: "0.16em",
+                    textTransform: "uppercase",
+                    color: WARM_ACCENT,
+                    marginBottom: 8,
+                  }}
+                >
+                  Память стиха
+                </div>
+
+                <h3
+                  style={{
+                    margin: "0 0 8px",
+                    fontSize: 18,
+                    lineHeight: 1.18,
+                    letterSpacing: "-0.02em",
+                    fontFamily:
+                      'ui-serif, Georgia, "Iowan Old Style", "Times New Roman", serif',
+                    color: INK,
+                  }}
+                >
+                  Озеро Scriptura
+                </h3>
+
+                <p
+                  style={{
+                    margin: "0 0 12px",
+                    color: MUTED,
+                    fontSize: 13,
+                    lineHeight: 1.6,
+                  }}
+                >
+                  Здесь видно, какие материалы и наблюдения уже накоплены по этому стиху:
+                  статьи, линзы, находки, заметки и будущий deep research.
+                </p>
+
+                {loadingResearchMemory ? (
+                  <div style={{ display: "grid", gap: 8 }}>
+                    <Skeleton width="72%" />
+                    <Skeleton width="88%" />
+                  </div>
+                ) : null}
+
+                {researchMemoryError ? (
+                  <MessageBox kind="error" text={researchMemoryError} />
+                ) : null}
+
+                {!loadingResearchMemory && !researchMemoryError && researchMemory?.summary ? (
+                  <div style={{ display: "grid", gap: 12 }}>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
+                      <Badge
+                        text={`Источников: ${researchMemory.summary.sources_count}`}
+                        strong
+                      />
+                      <Badge
+                        text={`Заметок: ${researchMemory.summary.notes_count}`}
+                        strong
+                      />
+                    </div>
+
+                    {Object.keys(researchMemory.summary.source_kinds).length > 0 ? (
+                      <div>
+                        <div
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 900,
+                            letterSpacing: "0.14em",
+                            textTransform: "uppercase",
+                            color: WARM_ACCENT,
+                            marginBottom: 7,
+                          }}
+                        >
+                          Типы источников
+                        </div>
+
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                          {Object.entries(researchMemory.summary.source_kinds).map(
+                            ([kind, count]) => (
+                              <MiniSourceChip key={kind} text={`${kind}: ${count}`} />
+                            ),
+                          )}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {Object.keys(researchMemory.summary.note_kinds).length > 0 ? (
+                      <div>
+                        <div
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 900,
+                            letterSpacing: "0.14em",
+                            textTransform: "uppercase",
+                            color: WARM_ACCENT,
+                            marginBottom: 7,
+                          }}
+                        >
+                          Типы заметок
+                        </div>
+
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                          {Object.entries(researchMemory.summary.note_kinds).map(
+                            ([kind, count]) => (
+                              <MiniSourceChip key={kind} text={`${kind}: ${count}`} />
+                            ),
+                          )}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {researchMemory.latest_sources && researchMemory.latest_sources.length > 0 ? (
+                      <details>
+                        <summary
+                          style={{
+                            cursor: "pointer",
+                            color: SLATE_DARK,
+                            fontSize: 13,
+                            fontWeight: 900,
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 8,
+                          }}
+                        >
+                          <span style={{ fontSize: 12 }}>▼</span>
+                          Последние источники
+                        </summary>
+
+                        <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
+                          {researchMemory.latest_sources.slice(0, 5).map((source) => (
+                            <div
+                              key={source.id}
+                              style={{
+                                border: `1px solid ${LINE_SOFT}`,
+                                borderRadius: 12,
+                                background: CARD,
+                                padding: 10,
+                              }}
+                            >
+                              <div
+                                style={{
+                                  fontSize: 13,
+                                  fontWeight: 900,
+                                  color: INK,
+                                  lineHeight: 1.35,
+                                  marginBottom: 5,
+                                }}
+                              >
+                                {source.title || source.source_type || source.source_kind}
+                              </div>
+
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                                <Badge text={source.source_kind} />
+                                {source.source_type ? <Badge text={source.source_type} /> : null}
+                                <Badge text={`extraction: ${source.extraction_status}`} />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </details>
+                    ) : null}
+
+                    {researchMemory.latest_notes && researchMemory.latest_notes.length > 0 ? (
+                      <details>
+                        <summary
+                          style={{
+                            cursor: "pointer",
+                            color: SLATE_DARK,
+                            fontSize: 13,
+                            fontWeight: 900,
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 8,
+                          }}
+                        >
+                          <span style={{ fontSize: 12 }}>▼</span>
+                          Последние заметки
+                        </summary>
+
+                        <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
+                          {researchMemory.latest_notes.slice(0, 5).map((note) => (
+                            <div
+                              key={note.id}
+                              style={{
+                                border: `1px solid ${LINE_SOFT}`,
+                                borderRadius: 12,
+                                background: CARD,
+                                padding: 10,
+                              }}
+                            >
+                              <div
+                                style={{
+                                  fontSize: 13,
+                                  fontWeight: 900,
+                                  color: INK,
+                                  lineHeight: 1.35,
+                                  marginBottom: 5,
+                                }}
+                              >
+                                {note.title || note.kicker || note.note_kind}
+                              </div>
+
+                              {note.body_preview ? (
+                                <p
+                                  style={{
+                                    margin: "0 0 7px",
+                                    color: MUTED,
+                                    fontSize: 12,
+                                    lineHeight: 1.45,
+                                  }}
+                                >
+                                  {note.body_preview}
+                                </p>
+                              ) : null}
+
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                                <Badge text={note.note_kind} />
+                                {note.lens_id ? <Badge text={note.lens_id} /> : null}
+                                {note.score !== null ? <Badge text={`score: ${note.score}`} /> : null}
+                                <Badge text={note.candidate_status} />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </details>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {!loadingResearchMemory &&
+                !researchMemoryError &&
+                researchMemory?.summary &&
+                researchMemory.summary.sources_count === 0 &&
+                researchMemory.summary.notes_count === 0 ? (
+                  <EmptyBox text="В Озере пока нет материалов по этому стиху." />
+                ) : null}
+              </section>
             ) : null}
 
             {loadingCards ? (
