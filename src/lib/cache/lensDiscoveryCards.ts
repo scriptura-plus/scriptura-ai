@@ -15,6 +15,28 @@ export type LensDiscoveryOutput = {
   summary?: string;
 };
 
+type SupabaseAdminClient = NonNullable<ReturnType<typeof createAdminClient>>;
+
+type SavedLensDiscoveryRow = {
+  id: string;
+  reference: string;
+  lens_id: string;
+  lang: string;
+  protocol_version: string | null;
+  provider: string | null;
+  model: string | null;
+  status: string | null;
+  score: number | null;
+  title: string | null;
+  kicker: string | null;
+  content_json: unknown | null;
+  summary: string | null;
+  source_kind: string | null;
+  source_id: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -64,6 +86,162 @@ function normalizeOutputCard(value: unknown): LensDiscoveryOutputCard | null {
     body,
     ...(quotes.length > 0 ? { quotes } : {}),
   };
+}
+
+function getResearchNoteKind(lensId: string): string {
+  if (lensId === "translations") return "translation_note";
+  if (lensId === "word") return "lexical_note";
+  if (lensId === "context") return "context_note";
+  if (lensId === "angles") return "candidate_angle";
+  return "candidate_angle";
+}
+
+function getAnchorFromCard(card: LensDiscoveryOutputCard): string | null {
+  const firstQuote = card.quotes?.find((quote) => quote.text.trim());
+  return firstQuote?.text.trim() ?? null;
+}
+
+function getBodyFromCard(card: LensDiscoveryOutputCard): string {
+  return card.body.join("\n\n").trim();
+}
+
+async function syncLensDiscoveryRowToResearchNote(
+  supabase: SupabaseAdminClient,
+  row: SavedLensDiscoveryRow,
+): Promise<void> {
+  try {
+    const card = normalizeOutputCard(row.content_json);
+
+    if (!card) {
+      console.error("[research_notes] skipped invalid lens discovery content", {
+        legacyId: row.id,
+        reference: row.reference,
+        lensId: row.lens_id,
+      });
+      return;
+    }
+
+    const now = new Date().toISOString();
+
+    const notePayload = {
+      reference: row.reference,
+      canonical_ref: row.reference,
+      book_key: null,
+      book: null,
+      chapter: null,
+      verse: null,
+      lang: row.lang,
+
+      source_id: null,
+      legacy_table: "lens_discovery_cards",
+      legacy_id: row.id,
+
+      note_kind: getResearchNoteKind(row.lens_id),
+      lens_id: row.lens_id,
+      source_kind: row.source_kind ?? "ai_lens_generation",
+      protocol_version: row.protocol_version,
+
+      title: card.title,
+      kicker: card.kicker || row.kicker,
+      summary: row.summary,
+      body: getBodyFromCard(card),
+      anchor: getAnchorFromCard(card),
+      content_json: row.content_json,
+
+      status: row.status ?? "active",
+      score: row.score,
+      confidence: null,
+      evidence_level: null,
+      hypothesis_level: null,
+
+      candidate_status: "not_processed",
+      angle_card_id: null,
+      rejected_reason: null,
+
+      provider: row.provider,
+      model: row.model,
+      editor_provider: null,
+      editor_model: null,
+      prompt_version: row.protocol_version,
+
+      updated_at: now,
+    };
+
+    const { data: existing, error: existingError } = await supabase
+      .from("research_notes")
+      .select("id")
+      .eq("legacy_table", "lens_discovery_cards")
+      .eq("legacy_id", row.id)
+      .maybeSingle();
+
+    if (existingError) {
+      console.error("[research_notes] lookup error", {
+        legacyId: row.id,
+        reference: row.reference,
+        lensId: row.lens_id,
+        message: existingError.message,
+        details: existingError.details,
+        hint: existingError.hint,
+        code: existingError.code,
+      });
+      return;
+    }
+
+    if (existing?.id) {
+      const { error: updateError } = await supabase
+        .from("research_notes")
+        .update(notePayload)
+        .eq("id", existing.id);
+
+      if (updateError) {
+        console.error("[research_notes] update error", {
+          legacyId: row.id,
+          noteId: existing.id,
+          reference: row.reference,
+          lensId: row.lens_id,
+          message: updateError.message,
+          details: updateError.details,
+          hint: updateError.hint,
+          code: updateError.code,
+        });
+      }
+
+      return;
+    }
+
+    const { error: insertError } = await supabase.from("research_notes").insert({
+      ...notePayload,
+      created_at: row.created_at ?? now,
+    });
+
+    if (insertError) {
+      console.error("[research_notes] insert error", {
+        legacyId: row.id,
+        reference: row.reference,
+        lensId: row.lens_id,
+        message: insertError.message,
+        details: insertError.details,
+        hint: insertError.hint,
+        code: insertError.code,
+      });
+    }
+  } catch (error) {
+    console.error("[research_notes] unexpected sync error", {
+      legacyId: row.id,
+      reference: row.reference,
+      lensId: row.lens_id,
+      error,
+    });
+  }
+}
+
+async function syncLensDiscoveryRowsToResearchNotes(
+  supabase: SupabaseAdminClient,
+  rows: SavedLensDiscoveryRow[],
+): Promise<void> {
+  for (const row of rows) {
+    await syncLensDiscoveryRowToResearchNote(supabase, row);
+  }
 }
 
 export function normalizeLensDiscoveryOutput(
@@ -182,9 +360,22 @@ export async function saveLensDiscoveryCards(args: {
     };
   });
 
-  const { error } = await supabase.from("lens_discovery_cards").insert(rows);
+  const { data, error } = await supabase
+    .from("lens_discovery_cards")
+    .insert(rows)
+    .select(
+      "id,reference,lens_id,lang,protocol_version,provider,model,status,score,title,kicker,content_json,summary,source_kind,source_id,created_at,updated_at",
+    );
 
   if (error) {
     console.error("[lens_discovery_cards] save error", error);
+    return;
+  }
+
+  if (data && data.length > 0) {
+    await syncLensDiscoveryRowsToResearchNotes(
+      supabase,
+      data as SavedLensDiscoveryRow[],
+    );
   }
 }
