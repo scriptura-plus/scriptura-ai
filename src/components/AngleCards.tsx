@@ -116,9 +116,14 @@ function getNextLabel(lang: Lang): string {
 }
 
 function getSwipeHint(lang: Lang): string {
-  if (lang === "ru") return "Свайпайте влево или вправо";
-  if (lang === "es") return "Desliza a izquierda o derecha";
-  return "Swipe left or right";
+  if (lang === "ru") return "Свайп";
+  if (lang === "es") return "Swipe";
+  return "Swipe";
+}
+
+function formatCardNumber(value: number): string {
+  if (value < 10) return String(value).padStart(2, "0");
+  return String(value);
 }
 
 function stripCodeFence(text: string): string {
@@ -379,22 +384,17 @@ export function AngleCards({
         .angle-carousel-header {
           display: flex;
           align-items: center;
-          justify-content: space-between;
-          gap: 12px;
+          justify-content: flex-end;
+          min-height: 16px;
           padding: 0 4px;
         }
 
-        .angle-carousel-count {
-          color: rgba(90, 74, 55, 0.78);
-          font-size: 14px;
-          font-weight: 750;
-          letter-spacing: 0.03em;
-        }
-
         .angle-carousel-hint {
-          color: rgba(90, 74, 55, 0.52);
-          font-size: 12px;
-          font-weight: 650;
+          color: rgba(90, 74, 55, 0.42);
+          font-size: 11px;
+          font-weight: 700;
+          letter-spacing: 0.04em;
+          text-transform: uppercase;
         }
 
         .angle-carousel-stage {
@@ -403,6 +403,46 @@ export function AngleCards({
 
         .angle-carousel-stage.is-expanded {
           touch-action: auto;
+        }
+
+        .angle-card-progress {
+          display: inline-flex;
+          align-items: baseline;
+          gap: 6px;
+          min-width: auto;
+          height: auto;
+          padding: 7px 11px;
+          border-radius: 999px;
+          background:
+            linear-gradient(180deg, rgba(247, 251, 255, 0.96) 0%, rgba(231, 239, 247, 0.96) 100%);
+          border: 1px solid rgba(111, 123, 136, 0.18);
+          color: rgba(93, 113, 132, 0.92);
+          box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 0.88),
+            0 6px 14px rgba(91, 102, 114, 0.08);
+          font-variant-numeric: tabular-nums;
+          letter-spacing: 0.02em;
+        }
+
+        .angle-card-progress-current {
+          font-size: 15px;
+          line-height: 1;
+          font-weight: 900;
+          color: rgba(93, 113, 132, 0.98);
+        }
+
+        .angle-card-progress-separator {
+          font-size: 13px;
+          line-height: 1;
+          font-weight: 800;
+          color: rgba(93, 113, 132, 0.38);
+        }
+
+        .angle-card-progress-total {
+          font-size: 13px;
+          line-height: 1;
+          font-weight: 850;
+          color: rgba(93, 113, 132, 0.62);
         }
 
         .angle-carousel-nav {
@@ -455,6 +495,14 @@ export function AngleCards({
         }
 
         @media (max-width: 520px) {
+          .angle-cards-carousel {
+            gap: 12px;
+          }
+
+          .angle-carousel-header {
+            min-height: 10px;
+          }
+
           .angle-carousel-nav {
             gap: 9px;
           }
@@ -467,14 +515,24 @@ export function AngleCards({
           .angle-carousel-hint {
             display: none;
           }
+
+          .angle-card-progress {
+            padding: 7px 10px;
+            gap: 5px;
+          }
+
+          .angle-card-progress-current {
+            font-size: 14px;
+          }
+
+          .angle-card-progress-separator,
+          .angle-card-progress-total {
+            font-size: 12px;
+          }
         }
       `}</style>
 
       <div className="angle-carousel-header">
-        <div className="angle-carousel-count">
-          {safeIndex + 1} / {cards.length}
-        </div>
-
         <div className="angle-carousel-hint">{getSwipeHint(lang)}</div>
       </div>
 
@@ -486,6 +544,7 @@ export function AngleCards({
         <AngleCardItem
           key={`${currentCard.title}-${safeIndex}`}
           index={safeIndex}
+          totalCount={cards.length}
           card={currentCard}
           reference={reference}
           verseText={verseText}
@@ -525,6 +584,7 @@ export function AngleCards({
 
 function AngleCardItem({
   index,
+  totalCount,
   card,
   reference,
   verseText,
@@ -534,6 +594,7 @@ function AngleCardItem({
   onExpandedChange,
 }: {
   index: number;
+  totalCount: number;
   card: AngleCard;
   reference: string;
   verseText: string;
@@ -551,7 +612,8 @@ function AngleCardItem({
   const [error, setError] = useState("");
   const [shareState, setShareState] = useState<"idle" | "copied">("idle");
 
-  const cardNumber = String(index + 1).padStart(2, "0");
+  const cardNumber = formatCardNumber(index + 1);
+  const totalNumber = String(totalCount);
 
   async function handleExpand() {
     if (expanded) {
@@ -620,7 +682,11 @@ function AngleCardItem({
   return (
     <article className={`angle-card angle-card-premium${expanded ? " is-expanded" : ""}`}>
       <div className="angle-card-topline">
-        <div className="angle-card-index">{cardNumber}</div>
+        <div className="angle-card-index angle-card-progress" aria-label={`${index + 1} of ${totalCount}`}>
+          <span className="angle-card-progress-current">{cardNumber}</span>
+          <span className="angle-card-progress-separator">—</span>
+          <span className="angle-card-progress-total">{totalNumber}</span>
+        </div>
 
         <button
           type="button"
