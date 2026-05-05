@@ -1,4 +1,4 @@
-""use client";
+"use client";
 
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { formatReference } from "@/lib/bible/formatReference";
