@@ -256,15 +256,6 @@ function getBookKeyVariants(bookKey: string): string[] {
   if (bookKey.startsWith("el libro de ")) {
     add(bookKey.replace(/^el libro de\s+/, ""));
   }
-
-  if (bookKey.startsWith("livre de ")) {
-    add(bookKey.replace(/^livre de\s+/, ""));
-  }
-
-  if (bookKey.startsWith("le livre de ")) {
-    add(bookKey.replace(/^le livre de\s+/, ""));
-  }
-
   if (bookKey.startsWith("evangelio de ")) {
     add(bookKey.replace(/^evangelio de\s+/, ""));
   }
@@ -275,6 +266,14 @@ function getBookKeyVariants(bookKey: string): string[] {
 
   if (bookKey.startsWith("evangelio según ")) {
     add(bookKey.replace(/^evangelio según\s+/, ""));
+  }
+
+  if (bookKey.startsWith("gospel of ")) {
+    add(bookKey.replace(/^gospel of\s+/, ""));
+  }
+
+  if (bookKey.startsWith("gospel according to ")) {
+    add(bookKey.replace(/^gospel according to\s+/, ""));
   }
 
   if (bookKey.startsWith("евангелие от ")) {
