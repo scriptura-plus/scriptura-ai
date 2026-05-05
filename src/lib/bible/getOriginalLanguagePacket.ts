@@ -1,3 +1,7 @@
+import "server-only";
+
+import fs from "node:fs";
+import path from "node:path";
 import { normalizeReference } from "@/lib/bible/normalizeReference";
 import { resolveLocalPsalmToStepReference } from "@/lib/bible/psalmReferenceMap";
 
@@ -291,7 +295,7 @@ function resolveStepReference(reference: string): {
 }
 
 function getDataFilePath(meta: BookMeta): string {
-  return [
+  return path.join(
     process.cwd(),
     "src",
     "lib",
@@ -300,7 +304,7 @@ function getDataFilePath(meta: BookMeta): string {
     "original-language",
     meta.testament,
     `${meta.fileCode}.json`,
-  ].join("/");
+  );
 }
 
 function readBookData(meta: BookMeta): BookData | null {
@@ -310,18 +314,9 @@ function readBookData(meta: BookMeta): BookData | null {
     return bookDataCache.get(cacheKey) ?? null;
   }
 
-  if (typeof window !== "undefined") {
-    console.warn("[ORIGINAL_LANGUAGE] local packet lookup is server-only");
-    bookDataCache.set(cacheKey, null);
-    return null;
-  }
-
   const filePath = getDataFilePath(meta);
 
   try {
-    const nodeRequire = eval("require") as typeof require;
-    const fs = nodeRequire("node:fs") as typeof import("node:fs");
-
     const raw = fs.readFileSync(filePath, "utf8");
     const parsed = JSON.parse(raw) as BookData;
 
