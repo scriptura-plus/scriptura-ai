@@ -174,7 +174,7 @@ const CANONICAL_TO_STEP_BOOK: Record<string, string> = {
   "2-chronicles": "2Ch", "2 chronicles": "2Ch", "second chronicles": "2Ch", "2ch": "2Ch", "2 летопись": "2Ch", "2-я летопись": "2Ch", "вторая летопись": "2Ch", "2 хроник": "2Ch", "2 cronicas": "2Ch", "2 crónicas": "2Ch",
   ezra: "Ezr", ezr: "Ezr", "ездра": "Ezr", "книга ездры": "Ezr", esdras: "Ezr",
   nehemiah: "Neh", neh: "Neh", "неемия": "Neh", "книга неемии": "Neh", "неемии": "Neh", nehemias: "Neh", nehemías: "Neh",
-  esther: "Est", est: "Est", "эсфирь": "Est", "книга эсфирь": "Est", "эсфири": "Est", ester: "Est",
+  esther: "Est", est: "Est", "эсфирь": "Est", "книга эсфирь": "Est", "эсфири": "Est", "есфирь": "Est", "книга есфирь": "Est", "есфири": "Est", ester: "Est",
 
   job: "Job", "иов": "Job", "иова": "Job", "книга иова": "Job",
   proverbs: "Pro", proverb: "Pro", pro: "Pro", "притчи": "Pro", "притчи соломона": "Pro", proverbios: "Pro",
