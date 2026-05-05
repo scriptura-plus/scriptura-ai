@@ -526,7 +526,22 @@ export function buildLensPrompt(args: {
         `If the packet does not contain a form, Strong’s number, morphology, or lemma, do not invent it.\n\n` +
 
         `If original-language data, morphology, Strong’s numbers, footnotes, or cross-references are available, use them carefully.\n\n` +
+`If original-language data, morphology, Strong’s numbers, footnotes, or cross-references are available, use them carefully.\n\n` +
 
+`SOURCE DATA STYLE RULE:\n` +
+`The supplied original-language packet is for internal verification only.\n` +
+`Do not expose raw technical labels to the reader.\n` +
+`Do not write “gloss”, “packet”, “dataset”, “morphology code”, “Strong”, or “STEPBible” in the reader-facing card body.\n` +
+`Use the verified data silently, then translate it into natural reader language.\n` +
+`Mention the Hebrew or Greek form only when it directly helps the discovery.\n` +
+`If morphology matters, explain it in ordinary language, not as a raw code.\n` +
+`BAD: “STEPBible gloss says ‘to fall on’.”\n` +
+`GOOD: “The Hebrew verb is sharper than ‘do not urge me’: it can carry the sense of pressing, bearing down, or falling upon someone.”\n` +
+`BAD: “morphology: HVqi3ms.”\n` +
+`GOOD: “The verb form presents the action as a direct command, not a soft suggestion.”\n\n` +
+
+`If they are not available:\n` +
+`- do not mention Strong’s numbers;\n` +
         `If they are not available:\n` +
         `- do not mention Strong’s numbers;\n` +
         `- do not invent morphology;\n` +
