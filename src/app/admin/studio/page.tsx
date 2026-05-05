@@ -3838,8 +3838,9 @@ export default function StudioPage() {
                   ) : null}
 
                   {runAutoCuratorResult ? (
-                    <div
-                      style={{
+                    <>
+                      <div
+                        style={{
                         marginTop: 12,
                         padding: 12,
                         borderRadius: 14,
@@ -4239,6 +4240,7 @@ export default function StudioPage() {
                       )}
                     </div>
                   ) : null}
+                    </>
                   ) : null}
                 </div>
               </section>
