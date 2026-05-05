@@ -204,13 +204,13 @@ const CANONICAL_TO_STEP_BOOK: Record<string, string> = {
   lamentations: "Lam", lam: "Lam", "плач": "Lam", "плач иеремии": "Lam", "книга плач иеремии": "Lam", lamentaciones: "Lam",
   ezekiel: "Ezk", ezek: "Ezk", eze: "Ezk", ezk: "Ezk", "иезекииль": "Ezk", "иезекииля": "Ezk", "иезекиил": "Ezk", "иезекиила": "Ezk", "книга иезекииля": "Ezk", ezequiel: "Ezk",
   daniel: "Dan", dan: "Dan", "даниил": "Dan", "даниила": "Dan", "книга даниила": "Dan",
-  hosea: "Hos", hos: "Hos", "осия": "Hos", "осии": "Hos", "книга осии": "Hos", oseas: "Hos",
+  hosea: "Hos", hos: "Hos", "осия": "Hos", "осии": "Hos", "книга осии": "Hos", oseas: "Hos", "óseas": "Hos",
   joel: "Jol", joe: "Jol", jol: "Jol", "иоиль": "Jol", "иоиля": "Jol", "книга иоиля": "Jol",
   amos: "Amo", amo: "Amo", "амос": "Amo", "амоса": "Amo", "книга амоса": "Amo", "amós": "Amo",
   obadiah: "Oba", oba: "Oba", "авдий": "Oba", "авдия": "Oba", "книга авдия": "Oba", abdias: "Oba", "abdías": "Oba",
   jonah: "Jon", jon: "Jon", "иона": "Jon", "ионы": "Jon", "книга ионы": "Jon", jonas: "Jon", "jonás": "Jon",
   micah: "Mic", mic: "Mic", "михей": "Mic", "михея": "Mic", "книга михея": "Mic", miqueas: "Mic",
-  nahum: "Nam", nah: "Nam", nam: "Nam", "наум": "Nam", "наума": "Nam", "книга наума": "Nam", "nahúm": "Nam",
+  nahum: "Nam", nah: "Nam", nam: "Nam", "наум": "Nam", "наума": "Nam", "книга наума": "Nam", "nahúm": "Nam", "naúm": "Nam",
   habakkuk: "Hab", hab: "Hab", "аввакум": "Hab", "аввакума": "Hab", "книга аввакума": "Hab", habacuc: "Hab",
   zephaniah: "Zep", zep: "Zep", zeph: "Zep", "софония": "Zep", "софонии": "Zep", "книга софонии": "Zep", sofonias: "Zep", "sofonías": "Zep",
   haggai: "Hag", hag: "Hag", "аггей": "Hag", "аггея": "Hag", "книга аггея": "Hag", hageo: "Hag",
@@ -247,6 +247,34 @@ function getBookKeyVariants(bookKey: string): string[] {
 
   if (bookKey.startsWith("книга ")) {
     add(bookKey.replace(/^книга\s+/, ""));
+  }
+
+  if (bookKey.startsWith("libro de ")) {
+    add(bookKey.replace(/^libro de\s+/, ""));
+  }
+
+  if (bookKey.startsWith("el libro de ")) {
+    add(bookKey.replace(/^el libro de\s+/, ""));
+  }
+
+  if (bookKey.startsWith("livre de ")) {
+    add(bookKey.replace(/^livre de\s+/, ""));
+  }
+
+  if (bookKey.startsWith("le livre de ")) {
+    add(bookKey.replace(/^le livre de\s+/, ""));
+  }
+
+  if (bookKey.startsWith("evangelio de ")) {
+    add(bookKey.replace(/^evangelio de\s+/, ""));
+  }
+
+  if (bookKey.startsWith("evangelio segun ")) {
+    add(bookKey.replace(/^evangelio segun\s+/, ""));
+  }
+
+  if (bookKey.startsWith("evangelio según ")) {
+    add(bookKey.replace(/^evangelio según\s+/, ""));
   }
 
   if (bookKey.startsWith("евангелие от ")) {
