@@ -163,16 +163,16 @@ const CANONICAL_TO_STEP_BOOK: Record<string, string> = {
   numbers: "Num", num: "Num", "числа": "Num", "чис": "Num", numeros: "Num", números: "Num",
   deuteronomy: "Deu", deu: "Deu", "второзаконие": "Deu", "втор": "Deu", deuteronomio: "Deu",
 
-  joshua: "Jos", jos: "Jos", "иисус навин": "Jos", "книга иисуса навина": "Jos", "иошуа": "Jos", josue: "Jos", josué: "Jos",
+  joshua: "Jos", jos: "Jos", "иисус навин": "Jos", "иисуса навина": "Jos", "книга иисуса навина": "Jos", "иошуа": "Jos", josue: "Jos", josué: "Jos",
   judges: "Jdg", jdg: "Jdg", "судей": "Jdg", "книга судей": "Jdg", jueces: "Jdg",
-  ruth: "Rut", rut: "Rut", "руфь": "Rut", "книга руфь": "Rut",
+  ruth: "Rut", rut: "Rut", "руфь": "Rut", "руфи": "Rut", "книга руфь": "Rut", "книга руфи": "Rut",
   "1-samuel": "1Sa", "1 samuel": "1Sa", "first samuel": "1Sa", "1sa": "1Sa", "1 самуила": "1Sa", "1-я самуила": "1Sa", "первая самуила": "1Sa", "1 царств": "1Sa", "1-я царств": "1Sa", "первая царств": "1Sa",
   "2-samuel": "2Sa", "2 samuel": "2Sa", "second samuel": "2Sa", "2sa": "2Sa", "2 самуила": "2Sa", "2-я самуила": "2Sa", "вторая самуила": "2Sa", "2 царств": "2Sa", "2-я царств": "2Sa", "вторая царств": "2Sa",
   "1-kings": "1Ki", "1 kings": "1Ki", "first kings": "1Ki", "1ki": "1Ki", "1 царей": "1Ki", "1-я царей": "1Ki", "первая царей": "1Ki", "3 царств": "1Ki", "3-я царств": "1Ki", "третья царств": "1Ki", "1 reyes": "1Ki",
   "2-kings": "2Ki", "2 kings": "2Ki", "second kings": "2Ki", "2ki": "2Ki", "2 царей": "2Ki", "2-я царей": "2Ki", "вторая царей": "2Ki", "4 царств": "2Ki", "4-я царств": "2Ki", "четвертая царств": "2Ki", "четвёртая царств": "2Ki", "2 reyes": "2Ki",
   "1-chronicles": "1Ch", "1 chronicles": "1Ch", "first chronicles": "1Ch", "1ch": "1Ch", "1 летопись": "1Ch", "1-я летопись": "1Ch", "первая летопись": "1Ch", "1 хроник": "1Ch", "1 cronicas": "1Ch", "1 crónicas": "1Ch",
   "2-chronicles": "2Ch", "2 chronicles": "2Ch", "second chronicles": "2Ch", "2ch": "2Ch", "2 летопись": "2Ch", "2-я летопись": "2Ch", "вторая летопись": "2Ch", "2 хроник": "2Ch", "2 cronicas": "2Ch", "2 crónicas": "2Ch",
-  ezra: "Ezr", ezr: "Ezr", "ездра": "Ezr", "книга ездры": "Ezr", esdras: "Ezr",
+  ezra: "Ezr", ezr: "Ezr", "ездра": "Ezr", "ездры": "Ezr", "книга ездры": "Ezr", esdras: "Ezr",
   nehemiah: "Neh", neh: "Neh", "неемия": "Neh", "книга неемии": "Neh", "неемии": "Neh", nehemias: "Neh", nehemías: "Neh",
   esther: "Est", est: "Est", "эсфирь": "Est", "книга эсфирь": "Est", "эсфири": "Est", "есфирь": "Est", "книга есфирь": "Est", "есфири": "Est", ester: "Est",
 
@@ -187,7 +187,55 @@ const CANONICAL_TO_STEP_BOOK: Record<string, string> = {
 const bookDataCache = new Map<string, BookData | null>();
 
 function normalizeBookKey(book: string): string {
-  return book.trim().toLowerCase().replace(/\.$/, "").replace(/^the\s+/, "").replace(/\s+/g, " ");
+  return book
+    .trim()
+    .toLowerCase()
+    .replace(/ё/g, "е")
+    .replace(/[\u2010\u2011\u2012\u2013\u2014\u2212]/g, "-")
+    .replace(/[.:;,]/g, "")
+    .replace(/\s+/g, " ")
+    .replace(/^the\s+/, "");
+}
+
+function getBookKeyVariants(bookKey: string): string[] {
+  const variants = new Set<string>();
+
+  const add = (value: string) => {
+    const normalized = normalizeBookKey(value);
+    if (normalized) variants.add(normalized);
+  };
+
+  add(bookKey);
+  add(bookKey.replace(/-/g, " "));
+  add(bookKey.replace(/\s+/g, "-"));
+
+  if (bookKey.startsWith("книга ")) {
+    add(bookKey.replace(/^книга\s+/, ""));
+  }
+
+  if (bookKey.startsWith("евангелие от ")) {
+    add(bookKey.replace(/^евангелие от\s+/, ""));
+    add(bookKey.replace(/^евангелие\s+/, ""));
+  }
+
+  if (bookKey.startsWith("от ")) {
+    add(bookKey.replace(/^от\s+/, ""));
+  }
+
+  // Russian ordinal forms may arrive as "1-я", "1 я", or just "1".
+  add(bookKey.replace(/^(\d)\s*[- ]?я\s+/, "$1 "));
+  add(bookKey.replace(/^(\d)\s*[- ]?е\s+/, "$1 "));
+
+  return Array.from(variants);
+}
+
+function lookupStepBook(bookKey: string): string | null {
+  for (const variant of getBookKeyVariants(bookKey)) {
+    const stepBook = CANONICAL_TO_STEP_BOOK[variant];
+    if (stepBook) return stepBook;
+  }
+
+  return null;
 }
 
 function parseReferenceFallback(reference: string): {
@@ -259,7 +307,7 @@ function resolveStepReference(reference: string): {
   const parsed = resolveParsedReference(reference);
   if (!parsed) return null;
 
-  const stepBook = CANONICAL_TO_STEP_BOOK[parsed.book];
+  const stepBook = lookupStepBook(parsed.book);
   if (!stepBook) return null;
 
   if (!Number.isFinite(parsed.chapter) || !Number.isFinite(parsed.verse)) return null;
