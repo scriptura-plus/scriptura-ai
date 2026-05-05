@@ -1,7 +1,7 @@
 "use client";
 
 import { dictionary, type Lang } from "@/lib/i18n/dictionary";
-import { LENS_ORDER, type LensId } from "@/lib/prompts/buildLensPrompt";
+import { LENS_ORDER, type LensId } from "@/lib/lenses/lensTypes";
 
 function getPublicLensLabel(lang: Lang, id: LensId, fallback: string): string {
   if (id !== "angles") return fallback;
