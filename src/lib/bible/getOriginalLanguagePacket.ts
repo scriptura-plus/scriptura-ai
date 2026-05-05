@@ -1,44 +1,9 @@
+import "server-only";
+
+import fs from "node:fs";
+import path from "node:path";
 import { normalizeReference } from "@/lib/bible/normalizeReference";
 import { resolveLocalPsalmToStepReference } from "@/lib/bible/psalmReferenceMap";
-
-import matData from "@/lib/bible/data/original-language/nt/mat.json";
-import mrkData from "@/lib/bible/data/original-language/nt/mrk.json";
-import lukData from "@/lib/bible/data/original-language/nt/luk.json";
-import jhnData from "@/lib/bible/data/original-language/nt/jhn.json";
-import actData from "@/lib/bible/data/original-language/nt/act.json";
-import romData from "@/lib/bible/data/original-language/nt/rom.json";
-import oneCoData from "@/lib/bible/data/original-language/nt/1co.json";
-import twoCoData from "@/lib/bible/data/original-language/nt/2co.json";
-import galData from "@/lib/bible/data/original-language/nt/gal.json";
-import ephData from "@/lib/bible/data/original-language/nt/eph.json";
-import phpData from "@/lib/bible/data/original-language/nt/php.json";
-import colData from "@/lib/bible/data/original-language/nt/col.json";
-import oneThData from "@/lib/bible/data/original-language/nt/1th.json";
-import twoThData from "@/lib/bible/data/original-language/nt/2th.json";
-import oneTiData from "@/lib/bible/data/original-language/nt/1ti.json";
-import twoTiData from "@/lib/bible/data/original-language/nt/2ti.json";
-import titData from "@/lib/bible/data/original-language/nt/tit.json";
-import phmData from "@/lib/bible/data/original-language/nt/phm.json";
-import hebData from "@/lib/bible/data/original-language/nt/heb.json";
-import jasData from "@/lib/bible/data/original-language/nt/jas.json";
-import onePeData from "@/lib/bible/data/original-language/nt/1pe.json";
-import twoPeData from "@/lib/bible/data/original-language/nt/2pe.json";
-import oneJnData from "@/lib/bible/data/original-language/nt/1jn.json";
-import twoJnData from "@/lib/bible/data/original-language/nt/2jn.json";
-import threeJnData from "@/lib/bible/data/original-language/nt/3jn.json";
-import judData from "@/lib/bible/data/original-language/nt/jud.json";
-import revData from "@/lib/bible/data/original-language/nt/rev.json";
-
-import genData from "@/lib/bible/data/original-language/ot/gen.json";
-import exoData from "@/lib/bible/data/original-language/ot/exo.json";
-import levData from "@/lib/bible/data/original-language/ot/lev.json";
-import numData from "@/lib/bible/data/original-language/ot/num.json";
-import deuData from "@/lib/bible/data/original-language/ot/deu.json";
-import psaData from "@/lib/bible/data/original-language/ot/psa.json";
-import jobData from "@/lib/bible/data/original-language/ot/job.json";
-import proData from "@/lib/bible/data/original-language/ot/pro.json";
-import eccData from "@/lib/bible/data/original-language/ot/ecc.json";
-import sngData from "@/lib/bible/data/original-language/ot/sng.json";
 
 export type OriginalLanguageWord = {
   position: number;
@@ -66,319 +31,163 @@ export type OriginalLanguagePacket = {
 
 type BookData = Record<string, OriginalLanguageWord[]>;
 
-const NT_BOOK_DATA: Record<string, BookData> = {
-  mat: matData as BookData,
-  mrk: mrkData as BookData,
-  luk: lukData as BookData,
-  jhn: jhnData as BookData,
-  act: actData as BookData,
-  rom: romData as BookData,
-  "1co": oneCoData as BookData,
-  "2co": twoCoData as BookData,
-  gal: galData as BookData,
-  eph: ephData as BookData,
-  php: phpData as BookData,
-  col: colData as BookData,
-  "1th": oneThData as BookData,
-  "2th": twoThData as BookData,
-  "1ti": oneTiData as BookData,
-  "2ti": twoTiData as BookData,
-  tit: titData as BookData,
-  phm: phmData as BookData,
-  heb: hebData as BookData,
-  jas: jasData as BookData,
-  "1pe": onePeData as BookData,
-  "2pe": twoPeData as BookData,
-  "1jn": oneJnData as BookData,
-  "2jn": twoJnData as BookData,
-  "3jn": threeJnData as BookData,
-  jud: judData as BookData,
-  rev: revData as BookData,
+type BookMeta = {
+  stepBook: string;
+  fileCode: string;
+  testament: "nt" | "ot";
+  language: "greek" | "hebrew";
+  source: "STEPBible TAGNT" | "STEPBible TOTHT";
 };
 
-const OT_BOOK_DATA: Record<string, BookData> = {
-  gen: genData as BookData,
-  exo: exoData as BookData,
-  lev: levData as BookData,
-  num: numData as BookData,
-  deu: deuData as BookData,
-  psa: psaData as BookData,
-  job: jobData as BookData,
-  pro: proData as BookData,
-  ecc: eccData as BookData,
-  sng: sngData as BookData,
+const BOOK_META_BY_STEP_BOOK: Record<string, BookMeta> = {
+  Mat: { stepBook: "Mat", fileCode: "mat", testament: "nt", language: "greek", source: "STEPBible TAGNT" },
+  Mrk: { stepBook: "Mrk", fileCode: "mrk", testament: "nt", language: "greek", source: "STEPBible TAGNT" },
+  Luk: { stepBook: "Luk", fileCode: "luk", testament: "nt", language: "greek", source: "STEPBible TAGNT" },
+  Jhn: { stepBook: "Jhn", fileCode: "jhn", testament: "nt", language: "greek", source: "STEPBible TAGNT" },
+  Act: { stepBook: "Act", fileCode: "act", testament: "nt", language: "greek", source: "STEPBible TAGNT" },
+  Rom: { stepBook: "Rom", fileCode: "rom", testament: "nt", language: "greek", source: "STEPBible TAGNT" },
+  "1Co": { stepBook: "1Co", fileCode: "1co", testament: "nt", language: "greek", source: "STEPBible TAGNT" },
+  "2Co": { stepBook: "2Co", fileCode: "2co", testament: "nt", language: "greek", source: "STEPBible TAGNT" },
+  Gal: { stepBook: "Gal", fileCode: "gal", testament: "nt", language: "greek", source: "STEPBible TAGNT" },
+  Eph: { stepBook: "Eph", fileCode: "eph", testament: "nt", language: "greek", source: "STEPBible TAGNT" },
+  Php: { stepBook: "Php", fileCode: "php", testament: "nt", language: "greek", source: "STEPBible TAGNT" },
+  Col: { stepBook: "Col", fileCode: "col", testament: "nt", language: "greek", source: "STEPBible TAGNT" },
+  "1Th": { stepBook: "1Th", fileCode: "1th", testament: "nt", language: "greek", source: "STEPBible TAGNT" },
+  "2Th": { stepBook: "2Th", fileCode: "2th", testament: "nt", language: "greek", source: "STEPBible TAGNT" },
+  "1Ti": { stepBook: "1Ti", fileCode: "1ti", testament: "nt", language: "greek", source: "STEPBible TAGNT" },
+  "2Ti": { stepBook: "2Ti", fileCode: "2ti", testament: "nt", language: "greek", source: "STEPBible TAGNT" },
+  Tit: { stepBook: "Tit", fileCode: "tit", testament: "nt", language: "greek", source: "STEPBible TAGNT" },
+  Phm: { stepBook: "Phm", fileCode: "phm", testament: "nt", language: "greek", source: "STEPBible TAGNT" },
+  Heb: { stepBook: "Heb", fileCode: "heb", testament: "nt", language: "greek", source: "STEPBible TAGNT" },
+  Jas: { stepBook: "Jas", fileCode: "jas", testament: "nt", language: "greek", source: "STEPBible TAGNT" },
+  "1Pe": { stepBook: "1Pe", fileCode: "1pe", testament: "nt", language: "greek", source: "STEPBible TAGNT" },
+  "2Pe": { stepBook: "2Pe", fileCode: "2pe", testament: "nt", language: "greek", source: "STEPBible TAGNT" },
+  "1Jn": { stepBook: "1Jn", fileCode: "1jn", testament: "nt", language: "greek", source: "STEPBible TAGNT" },
+  "2Jn": { stepBook: "2Jn", fileCode: "2jn", testament: "nt", language: "greek", source: "STEPBible TAGNT" },
+  "3Jn": { stepBook: "3Jn", fileCode: "3jn", testament: "nt", language: "greek", source: "STEPBible TAGNT" },
+  Jud: { stepBook: "Jud", fileCode: "jud", testament: "nt", language: "greek", source: "STEPBible TAGNT" },
+  Rev: { stepBook: "Rev", fileCode: "rev", testament: "nt", language: "greek", source: "STEPBible TAGNT" },
+
+  Gen: { stepBook: "Gen", fileCode: "gen", testament: "ot", language: "hebrew", source: "STEPBible TOTHT" },
+  Exo: { stepBook: "Exo", fileCode: "exo", testament: "ot", language: "hebrew", source: "STEPBible TOTHT" },
+  Lev: { stepBook: "Lev", fileCode: "lev", testament: "ot", language: "hebrew", source: "STEPBible TOTHT" },
+  Num: { stepBook: "Num", fileCode: "num", testament: "ot", language: "hebrew", source: "STEPBible TOTHT" },
+  Deu: { stepBook: "Deu", fileCode: "deu", testament: "ot", language: "hebrew", source: "STEPBible TOTHT" },
+  Psa: { stepBook: "Psa", fileCode: "psa", testament: "ot", language: "hebrew", source: "STEPBible TOTHT" },
+  Job: { stepBook: "Job", fileCode: "job", testament: "ot", language: "hebrew", source: "STEPBible TOTHT" },
+  Pro: { stepBook: "Pro", fileCode: "pro", testament: "ot", language: "hebrew", source: "STEPBible TOTHT" },
+  Ecc: { stepBook: "Ecc", fileCode: "ecc", testament: "ot", language: "hebrew", source: "STEPBible TOTHT" },
+  Sng: { stepBook: "Sng", fileCode: "sng", testament: "ot", language: "hebrew", source: "STEPBible TOTHT" },
+  Jos: { stepBook: "Jos", fileCode: "jos", testament: "ot", language: "hebrew", source: "STEPBible TOTHT" },
+  Jdg: { stepBook: "Jdg", fileCode: "jdg", testament: "ot", language: "hebrew", source: "STEPBible TOTHT" },
+  Rut: { stepBook: "Rut", fileCode: "rut", testament: "ot", language: "hebrew", source: "STEPBible TOTHT" },
+  "1Sa": { stepBook: "1Sa", fileCode: "1sa", testament: "ot", language: "hebrew", source: "STEPBible TOTHT" },
+  "2Sa": { stepBook: "2Sa", fileCode: "2sa", testament: "ot", language: "hebrew", source: "STEPBible TOTHT" },
+  "1Ki": { stepBook: "1Ki", fileCode: "1ki", testament: "ot", language: "hebrew", source: "STEPBible TOTHT" },
+  "2Ki": { stepBook: "2Ki", fileCode: "2ki", testament: "ot", language: "hebrew", source: "STEPBible TOTHT" },
+  "1Ch": { stepBook: "1Ch", fileCode: "1ch", testament: "ot", language: "hebrew", source: "STEPBible TOTHT" },
+  "2Ch": { stepBook: "2Ch", fileCode: "2ch", testament: "ot", language: "hebrew", source: "STEPBible TOTHT" },
+  Ezr: { stepBook: "Ezr", fileCode: "ezr", testament: "ot", language: "hebrew", source: "STEPBible TOTHT" },
+  Neh: { stepBook: "Neh", fileCode: "neh", testament: "ot", language: "hebrew", source: "STEPBible TOTHT" },
+  Est: { stepBook: "Est", fileCode: "est", testament: "ot", language: "hebrew", source: "STEPBible TOTHT" },
 };
 
 const CANONICAL_TO_STEP_BOOK: Record<string, string> = {
-  // NT — English
-  matthew: "Mat",
-  mat: "Mat",
-  mt: "Mat",
-  mark: "Mrk",
-  mrk: "Mrk",
-  mk: "Mrk",
-  luke: "Luk",
-  luk: "Luk",
-  lk: "Luk",
-  john: "Jhn",
-  jhn: "Jhn",
-  acts: "Act",
-  act: "Act",
-  romans: "Rom",
-  rom: "Rom",
-  "1-corinthians": "1Co",
-  "1 corinthians": "1Co",
-  "first corinthians": "1Co",
-  "1co": "1Co",
-  "2-corinthians": "2Co",
-  "2 corinthians": "2Co",
-  "second corinthians": "2Co",
-  "2co": "2Co",
-  galatians: "Gal",
-  gal: "Gal",
-  ephesians: "Eph",
-  eph: "Eph",
-  philippians: "Php",
-  php: "Php",
-  colossians: "Col",
-  col: "Col",
-  "1-thessalonians": "1Th",
-  "1 thessalonians": "1Th",
-  "first thessalonians": "1Th",
-  "1th": "1Th",
-  "2-thessalonians": "2Th",
-  "2 thessalonians": "2Th",
-  "second thessalonians": "2Th",
-  "2th": "2Th",
-  "1-timothy": "1Ti",
-  "1 timothy": "1Ti",
-  "first timothy": "1Ti",
-  "1ti": "1Ti",
-  "2-timothy": "2Ti",
-  "2 timothy": "2Ti",
-  "second timothy": "2Ti",
-  "2ti": "2Ti",
-  titus: "Tit",
-  tit: "Tit",
-  philemon: "Phm",
-  phm: "Phm",
-  hebrews: "Heb",
-  heb: "Heb",
-  james: "Jas",
-  jas: "Jas",
-  "1-peter": "1Pe",
-  "1 peter": "1Pe",
-  "first peter": "1Pe",
-  "1pe": "1Pe",
-  "2-peter": "2Pe",
-  "2 peter": "2Pe",
-  "second peter": "2Pe",
-  "2pe": "2Pe",
-  "1-john": "1Jn",
-  "1 john": "1Jn",
-  "first john": "1Jn",
-  "1jn": "1Jn",
-  "2-john": "2Jn",
-  "2 john": "2Jn",
-  "second john": "2Jn",
-  "2jn": "2Jn",
-  "3-john": "3Jn",
-  "3 john": "3Jn",
-  "third john": "3Jn",
-  "3jn": "3Jn",
-  jude: "Jud",
-  jud: "Jud",
-  revelation: "Rev",
-  rev: "Rev",
+  matthew: "Mat", mat: "Mat", mt: "Mat",
+  mark: "Mrk", mrk: "Mrk", mk: "Mrk",
+  luke: "Luk", luk: "Luk", lk: "Luk",
+  john: "Jhn", jhn: "Jhn",
+  acts: "Act", act: "Act",
+  romans: "Rom", rom: "Rom",
+  "1-corinthians": "1Co", "1 corinthians": "1Co", "first corinthians": "1Co", "1co": "1Co",
+  "2-corinthians": "2Co", "2 corinthians": "2Co", "second corinthians": "2Co", "2co": "2Co",
+  galatians: "Gal", gal: "Gal",
+  ephesians: "Eph", eph: "Eph",
+  philippians: "Php", php: "Php",
+  colossians: "Col", col: "Col",
+  "1-thessalonians": "1Th", "1 thessalonians": "1Th", "first thessalonians": "1Th", "1th": "1Th",
+  "2-thessalonians": "2Th", "2 thessalonians": "2Th", "second thessalonians": "2Th", "2th": "2Th",
+  "1-timothy": "1Ti", "1 timothy": "1Ti", "first timothy": "1Ti", "1ti": "1Ti",
+  "2-timothy": "2Ti", "2 timothy": "2Ti", "second timothy": "2Ti", "2ti": "2Ti",
+  titus: "Tit", tit: "Tit",
+  philemon: "Phm", phm: "Phm",
+  hebrews: "Heb", heb: "Heb",
+  james: "Jas", jas: "Jas",
+  "1-peter": "1Pe", "1 peter": "1Pe", "first peter": "1Pe", "1pe": "1Pe",
+  "2-peter": "2Pe", "2 peter": "2Pe", "second peter": "2Pe", "2pe": "2Pe",
+  "1-john": "1Jn", "1 john": "1Jn", "first john": "1Jn", "1jn": "1Jn",
+  "2-john": "2Jn", "2 john": "2Jn", "second john": "2Jn", "2jn": "2Jn",
+  "3-john": "3Jn", "3 john": "3Jn", "third john": "3Jn", "3jn": "3Jn",
+  jude: "Jud", jud: "Jud",
+  revelation: "Rev", rev: "Rev",
 
-  // NT — Russian common names
-  "матфея": "Mat",
-  "от матфея": "Mat",
-  "евангелие от матфея": "Mat",
-  "марка": "Mrk",
-  "от марка": "Mrk",
-  "евангелие от марка": "Mrk",
-  "луки": "Luk",
-  "от луки": "Luk",
-  "евангелие от луки": "Luk",
-  "иоанна": "Jhn",
-  "от иоанна": "Jhn",
-  "евангелие от иоанна": "Jhn",
-  "деяния": "Act",
-  "деяния апостолов": "Act",
-  "римлянам": "Rom",
-  "к римлянам": "Rom",
-  "1 коринфянам": "1Co",
-  "1-е коринфянам": "1Co",
-  "первая коринфянам": "1Co",
-  "2 коринфянам": "2Co",
-  "2-е коринфянам": "2Co",
-  "вторая коринфянам": "2Co",
-  "галатам": "Gal",
-  "к галатам": "Gal",
-  "эфесянам": "Eph",
-  "к эфесянам": "Eph",
-  "филиппийцам": "Php",
-  "к филиппийцам": "Php",
-  "колоссянам": "Col",
-  "к колоссянам": "Col",
-  "1 фессалоникийцам": "1Th",
-  "1-е фессалоникийцам": "1Th",
-  "1 солунянам": "1Th",
-  "2 фессалоникийцам": "2Th",
-  "2-е фессалоникийцам": "2Th",
-  "2 солунянам": "2Th",
-  "1 тимофею": "1Ti",
-  "1-е тимофею": "1Ti",
-  "2 тимофею": "2Ti",
-  "2-е тимофею": "2Ti",
-  "титу": "Tit",
-  "филимону": "Phm",
-  "евреям": "Heb",
-  "к евреям": "Heb",
+  "матфея": "Mat", "от матфея": "Mat", "евангелие от матфея": "Mat",
+  "марка": "Mrk", "от марка": "Mrk", "евангелие от марка": "Mrk",
+  "луки": "Luk", "от луки": "Luk", "евангелие от луки": "Luk",
+  "иоанна": "Jhn", "от иоанна": "Jhn", "евангелие от иоанна": "Jhn",
+  "деяния": "Act", "деяния апостолов": "Act",
+  "римлянам": "Rom", "к римлянам": "Rom",
+  "1 коринфянам": "1Co", "1-е коринфянам": "1Co", "первая коринфянам": "1Co",
+  "2 коринфянам": "2Co", "2-е коринфянам": "2Co", "вторая коринфянам": "2Co",
+  "галатам": "Gal", "к галатам": "Gal",
+  "эфесянам": "Eph", "к эфесянам": "Eph",
+  "филиппийцам": "Php", "к филиппийцам": "Php",
+  "колоссянам": "Col", "к колоссянам": "Col",
+  "1 фессалоникийцам": "1Th", "1-е фессалоникийцам": "1Th", "1 солунянам": "1Th",
+  "2 фессалоникийцам": "2Th", "2-е фессалоникийцам": "2Th", "2 солунянам": "2Th",
+  "1 тимофею": "1Ti", "1-е тимофею": "1Ti",
+  "2 тимофею": "2Ti", "2-е тимофею": "2Ti",
+  "титу": "Tit", "филимону": "Phm",
+  "евреям": "Heb", "к евреям": "Heb",
   "иакова": "Jas",
-  "1 петра": "1Pe",
-  "1-е петра": "1Pe",
-  "2 петра": "2Pe",
-  "2-е петра": "2Pe",
-  "1 иоанна": "1Jn",
-  "1-е иоанна": "1Jn",
-  "2 иоанна": "2Jn",
-  "2-е иоанна": "2Jn",
-  "3 иоанна": "3Jn",
-  "3-е иоанна": "3Jn",
+  "1 петра": "1Pe", "1-е петра": "1Pe",
+  "2 петра": "2Pe", "2-е петра": "2Pe",
+  "1 иоанна": "1Jn", "1-е иоанна": "1Jn",
+  "2 иоанна": "2Jn", "2-е иоанна": "2Jn",
+  "3 иоанна": "3Jn", "3-е иоанна": "3Jn",
   "иуды": "Jud",
-  "откровение": "Rev",
-  "откровение иоанна": "Rev",
+  "откровение": "Rev", "откровение иоанна": "Rev",
 
-  // NT — Spanish common names
-  mateo: "Mat",
-  marcos: "Mrk",
-  lucas: "Luk",
-  juan: "Jhn",
-  hechos: "Act",
-  romanos: "Rom",
-  "1 corintios": "1Co",
-  "2 corintios": "2Co",
-  galatas: "Gal",
-  gálatas: "Gal",
-  efesios: "Eph",
-  filipenses: "Php",
-  colosenses: "Col",
-  "1 tesalonicenses": "1Th",
-  "2 tesalonicenses": "2Th",
-  "1 timoteo": "1Ti",
-  "2 timoteo": "2Ti",
-  tito: "Tit",
-  filemon: "Phm",
-  filemón: "Phm",
-  hebreos: "Heb",
-  santiago: "Jas",
-  "1 pedro": "1Pe",
-  "2 pedro": "2Pe",
-  "1 juan": "1Jn",
-  "2 juan": "2Jn",
-  "3 juan": "3Jn",
-  judas: "Jud",
-  apocalipsis: "Rev",
+  mateo: "Mat", marcos: "Mrk", lucas: "Luk", juan: "Jhn", hechos: "Act",
+  romanos: "Rom", "1 corintios": "1Co", "2 corintios": "2Co",
+  galatas: "Gal", gálatas: "Gal", efesios: "Eph", filipenses: "Php", colosenses: "Col",
+  "1 tesalonicenses": "1Th", "2 tesalonicenses": "2Th",
+  "1 timoteo": "1Ti", "2 timoteo": "2Ti", tito: "Tit",
+  filemon: "Phm", filemón: "Phm", hebreos: "Heb", santiago: "Jas",
+  "1 pedro": "1Pe", "2 pedro": "2Pe", "1 juan": "1Jn", "2 juan": "2Jn", "3 juan": "3Jn",
+  judas: "Jud", apocalipsis: "Rev",
 
-  // OT — Pentateuch pilot
-  genesis: "Gen",
-  gen: "Gen",
-  "book of genesis": "Gen",
-  "бытие": "Gen",
-  "быт": "Gen",
-  génesis: "Gen",
+  genesis: "Gen", gen: "Gen", "бытие": "Gen", "быт": "Gen", génesis: "Gen",
+  exodus: "Exo", exo: "Exo", "исход": "Exo", "исх": "Exo", exodo: "Exo", éxodo: "Exo",
+  leviticus: "Lev", lev: "Lev", "левит": "Lev", "лев": "Lev", levitico: "Lev", levítico: "Lev",
+  numbers: "Num", num: "Num", "числа": "Num", "чис": "Num", numeros: "Num", números: "Num",
+  deuteronomy: "Deu", deu: "Deu", "второзаконие": "Deu", "втор": "Deu", deuteronomio: "Deu",
 
-  exodus: "Exo",
-  exo: "Exo",
-  ex: "Exo",
-  "book of exodus": "Exo",
-  "исход": "Exo",
-  "исх": "Exo",
-  éxodo: "Exo",
-  exodo: "Exo",
+  joshua: "Jos", jos: "Jos", "иисус навин": "Jos", "книга иисуса навина": "Jos", "иошуа": "Jos", josue: "Jos", josué: "Jos",
+  judges: "Jdg", jdg: "Jdg", "судей": "Jdg", "книга судей": "Jdg", jueces: "Jdg",
+  ruth: "Rut", rut: "Rut", "руфь": "Rut", "книга руфь": "Rut",
+  "1-samuel": "1Sa", "1 samuel": "1Sa", "first samuel": "1Sa", "1sa": "1Sa", "1 самуила": "1Sa", "1-я самуила": "1Sa", "первая самуила": "1Sa", "1 царств": "1Sa", "1-я царств": "1Sa", "первая царств": "1Sa",
+  "2-samuel": "2Sa", "2 samuel": "2Sa", "second samuel": "2Sa", "2sa": "2Sa", "2 самуила": "2Sa", "2-я самуила": "2Sa", "вторая самуила": "2Sa", "2 царств": "2Sa", "2-я царств": "2Sa", "вторая царств": "2Sa",
+  "1-kings": "1Ki", "1 kings": "1Ki", "first kings": "1Ki", "1ki": "1Ki", "1 царей": "1Ki", "1-я царей": "1Ki", "первая царей": "1Ki", "3 царств": "1Ki", "3-я царств": "1Ki", "третья царств": "1Ki", "1 reyes": "1Ki",
+  "2-kings": "2Ki", "2 kings": "2Ki", "second kings": "2Ki", "2ki": "2Ki", "2 царей": "2Ki", "2-я царей": "2Ki", "вторая царей": "2Ki", "4 царств": "2Ki", "4-я царств": "2Ki", "четвертая царств": "2Ki", "четвёртая царств": "2Ki", "2 reyes": "2Ki",
+  "1-chronicles": "1Ch", "1 chronicles": "1Ch", "first chronicles": "1Ch", "1ch": "1Ch", "1 летопись": "1Ch", "1-я летопись": "1Ch", "первая летопись": "1Ch", "1 хроник": "1Ch", "1 cronicas": "1Ch", "1 crónicas": "1Ch",
+  "2-chronicles": "2Ch", "2 chronicles": "2Ch", "second chronicles": "2Ch", "2ch": "2Ch", "2 летопись": "2Ch", "2-я летопись": "2Ch", "вторая летопись": "2Ch", "2 хроник": "2Ch", "2 cronicas": "2Ch", "2 crónicas": "2Ch",
+  ezra: "Ezr", ezr: "Ezr", "ездра": "Ezr", "книга ездры": "Ezr", esdras: "Ezr",
+  nehemiah: "Neh", neh: "Neh", "неемия": "Neh", "книга неемии": "Neh", "неемии": "Neh", nehemias: "Neh", nehemías: "Neh",
+  esther: "Est", est: "Est", "эсфирь": "Est", "книга эсфирь": "Est", "эсфири": "Est", ester: "Est",
 
-  leviticus: "Lev",
-  lev: "Lev",
-  "book of leviticus": "Lev",
-  "левит": "Lev",
-  "лев": "Lev",
-  levítico: "Lev",
-  levitico: "Lev",
+  job: "Job", "иов": "Job", "иова": "Job", "книга иова": "Job",
+  proverbs: "Pro", proverb: "Pro", pro: "Pro", "притчи": "Pro", "притчи соломона": "Pro", proverbios: "Pro",
+  ecclesiastes: "Ecc", ecc: "Ecc", "экклезиаст": "Ecc", "екклесиаст": "Ecc", "экклезиаста": "Ecc", "екклесиаста": "Ecc", eclesiastes: "Ecc", eclesiastés: "Ecc",
+  "song-of-songs": "Sng", "song of songs": "Sng", "song-of-solomon": "Sng", "song of solomon": "Sng", sng: "Sng", sos: "Sng", "песнь песней": "Sng", "песнь песней соломона": "Sng", "cantar de los cantares": "Sng", cantares: "Sng",
 
-  numbers: "Num",
-  num: "Num",
-  "book of numbers": "Num",
-  "числа": "Num",
-  "чис": "Num",
-  números: "Num",
-  numeros: "Num",
-
-  deuteronomy: "Deu",
-  deut: "Deu",
-  deu: "Deu",
-  dt: "Deu",
-  "book of deuteronomy": "Deu",
-  "второзаконие": "Deu",
-  "втор": "Deu",
-  deuteronomio: "Deu",
-
-  // OT wisdom books — English
-  job: "Job",
-  proverbs: "Pro",
-  proverb: "Pro",
-  pro: "Pro",
-  ecclesiastes: "Ecc",
-  ecc: "Ecc",
-  "song-of-songs": "Sng",
-  "song of songs": "Sng",
-  "song-of-solomon": "Sng",
-  "song of solomon": "Sng",
-  sng: "Sng",
-  sos: "Sng",
-
-  // OT wisdom books — Russian
-  "иов": "Job",
-  "иова": "Job",
-  "книга иова": "Job",
-  "притчи": "Pro",
-  "притчи соломона": "Pro",
-  "экклезиаст": "Ecc",
-  "екклесиаст": "Ecc",
-  "экклезиаста": "Ecc",
-  "екклесиаста": "Ecc",
-  "песнь песней": "Sng",
-  "песнь песней соломона": "Sng",
-
-  // OT wisdom books — Spanish
-  proverbios: "Pro",
-  eclesiastes: "Ecc",
-  eclesiastés: "Ecc",
-  "cantar de los cantares": "Sng",
-  cantares: "Sng",
-
-  // OT pilot — Psalms only
-  psalm: "Psa",
-  psalms: "Psa",
-  psa: "Psa",
-  ps: "Psa",
-  "book of psalms": "Psa",
-  "псалом": "Psa",
-  "псалмы": "Psa",
-  "псалтирь": "Psa",
-  "пс": "Psa",
-  salmo: "Psa",
-  salmos: "Psa",
+  psalm: "Psa", psalms: "Psa", psa: "Psa", ps: "Psa", "book of psalms": "Psa", "псалом": "Psa", "псалмы": "Psa", "псалтирь": "Psa", "пс": "Psa", salmo: "Psa", salmos: "Psa",
 };
 
+const bookDataCache = new Map<string, BookData | null>();
+
 function normalizeBookKey(book: string): string {
-  return book
-    .trim()
-    .toLowerCase()
-    .replace(/\.$/, "")
-    .replace(/^the\s+/, "")
-    .replace(/\s+/g, " ");
+  return book.trim().toLowerCase().replace(/\.$/, "").replace(/^the\s+/, "").replace(/\s+/g, " ");
 }
 
 function parseReferenceFallback(reference: string): {
@@ -448,16 +257,12 @@ function resolveStepReference(reference: string): {
   numberingNote?: string | null;
 } | null {
   const parsed = resolveParsedReference(reference);
-
   if (!parsed) return null;
 
   const stepBook = CANONICAL_TO_STEP_BOOK[parsed.book];
-
   if (!stepBook) return null;
 
-  if (!Number.isFinite(parsed.chapter) || !Number.isFinite(parsed.verse)) {
-    return null;
-  }
+  if (!Number.isFinite(parsed.chapter) || !Number.isFinite(parsed.verse)) return null;
 
   if (stepBook === "Psa") {
     const resolvedPsalm = resolveLocalPsalmToStepReference({
@@ -489,54 +294,64 @@ function resolveStepReference(reference: string): {
   };
 }
 
-function getBookData(stepBook: string): {
-  data: BookData | null;
-  testament: "nt" | "ot";
-  language: "greek" | "hebrew";
-  source: "STEPBible TAGNT" | "STEPBible TOTHT";
-} | null {
-  const bookCode = stepBook.toLowerCase();
-
-  if (NT_BOOK_DATA[bookCode]) {
-    return {
-      data: NT_BOOK_DATA[bookCode],
-      testament: "nt",
-      language: "greek",
-      source: "STEPBible TAGNT",
-    };
-  }
-
-  if (OT_BOOK_DATA[bookCode]) {
-    return {
-      data: OT_BOOK_DATA[bookCode],
-      testament: "ot",
-      language: "hebrew",
-      source: "STEPBible TOTHT",
-    };
-  }
-
-  return null;
+function getDataFilePath(meta: BookMeta): string {
+  return path.join(
+    process.cwd(),
+    "src",
+    "lib",
+    "bible",
+    "data",
+    "original-language",
+    meta.testament,
+    `${meta.fileCode}.json`,
+  );
 }
 
-export function getOriginalLanguagePacket(
-  reference: string,
-): OriginalLanguagePacket | null {
-  const resolved = resolveStepReference(reference);
+function readBookData(meta: BookMeta): BookData | null {
+  const cacheKey = `${meta.testament}:${meta.fileCode}`;
 
+  if (bookDataCache.has(cacheKey)) {
+    return bookDataCache.get(cacheKey) ?? null;
+  }
+
+  const filePath = getDataFilePath(meta);
+
+  try {
+    const raw = fs.readFileSync(filePath, "utf8");
+    const parsed = JSON.parse(raw) as BookData;
+    bookDataCache.set(cacheKey, parsed);
+    return parsed;
+  } catch (error) {
+    console.warn("[ORIGINAL_LANGUAGE] Failed to read local packet", {
+      filePath,
+      stepBook: meta.stepBook,
+      fileCode: meta.fileCode,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    bookDataCache.set(cacheKey, null);
+    return null;
+  }
+}
+
+export function getOriginalLanguagePacket(reference: string): OriginalLanguagePacket | null {
+  const resolved = resolveStepReference(reference);
   if (!resolved) return null;
 
-  const bookData = getBookData(resolved.stepBook);
-  if (!bookData?.data) return null;
+  const meta = BOOK_META_BY_STEP_BOOK[resolved.stepBook];
+  if (!meta) return null;
 
-  const words = bookData.data[resolved.stepReference];
+  const data = readBookData(meta);
+  if (!data) return null;
+
+  const words = data[resolved.stepReference];
   if (!words || words.length === 0) return null;
 
   return {
     reference,
     stepReference: resolved.stepReference,
-    testament: bookData.testament,
-    language: bookData.language,
-    source: bookData.source,
+    testament: meta.testament,
+    language: meta.language,
+    source: meta.source,
     license: "CC BY 4.0",
     words,
     numberingNote: resolved.numberingNote ?? null,
@@ -569,9 +384,7 @@ function getSourceNote(packet: OriginalLanguagePacket): string {
   return "Use this Greek packet as the only source for Strong's numbers, Greek forms, morphology, lemma, and glosses. Do not add morphology or lexical claims that are not supported by this packet.";
 }
 
-export function formatOriginalLanguagePacketForPrompt(
-  packet: OriginalLanguagePacket | null,
-): string {
+export function formatOriginalLanguagePacketForPrompt(packet: OriginalLanguagePacket | null): string {
   if (!packet) {
     return "VERIFIED ORIGINAL-LANGUAGE DATA: not available for this verse in the local STEPBible packet. Do not invent Greek/Hebrew morphology, Strong's numbers, transliterations, or parsing.";
   }
