@@ -5,21 +5,14 @@ import {
   JARGON_BAN,
 } from "./editorial";
 import type { Lang } from "./editorial";
+import { LENS_ORDER, type LensId } from "@/lib/lenses/lensTypes";
 import {
   formatOriginalLanguagePacketForPrompt,
   getOriginalLanguagePacket,
 } from "@/lib/bible/getOriginalLanguagePacket";
 
-export type { Lang };
-
-export type LensId = "angles" | "word" | "context" | "translations";
-
-export const LENS_ORDER: LensId[] = [
-  "angles",
-  "word",
-  "context",
-  "translations",
-];
+export type { Lang, LensId };
+export { LENS_ORDER };
 
 export function buildLensPrompt(args: {
   lens: LensId;
@@ -374,7 +367,7 @@ export function buildLensPrompt(args: {
         `${EDITORIAL_VOICE(langName)}\n\n` +
         `${JARGON_BAN}\n\n` +
 
-        `[SCRIPTURA AI — TRANSLATION DISCOVERY LENS PROTOCOL v2.1]\n\n` +
+        `[SCRIPTURA AI — TRANSLATION DISCOVERY LENS PROTOCOL v2.2]\n\n` +
 
         `═══════════════════════════════════════════\n` +
         `ROLE\n` +
@@ -406,7 +399,7 @@ export function buildLensPrompt(args: {
         `If ${langName} has its own lexical contrast, familiar religious phrasing, traditional wording, or reader assumption, use that.\n` +
         `For example, a Russian reader may feel a difference between "знать" and "познавать"; a Spanish reader may feel a different difference between "saber" and "conocer"; an English reader may feel another difference between "know", "come to know", and "take in knowledge".\n\n` +
 
-        `The Greek/Hebrew packet is shared across languages, but the translation discovery must be shaped for the output language.\n\n` +
+        `The Greek/Hebrew/Aramaic packet is shared across languages, but the translation discovery must be shaped for the output language.\n\n` +
 
         `═══════════════════════════════════════════\n` +
         `CORE PRINCIPLE — TRANSLATION WOW\n` +
@@ -459,15 +452,15 @@ export function buildLensPrompt(args: {
         `- "X can carry a wider range than A."\n` +
         `- "In this context, X can sound less like A and more like B."\n` +
         `- "The translation can make the phrase feel like A, while the Greek wording leaves room for B."\n` +
-        `- "The supplied Greek data supports this distinction, but the conclusion should remain modest."\n` +
+        `- "The supplied Greek/Hebrew/Aramaic data supports this distinction, but the conclusion should remain modest."\n` +
         `- "This rendering narrows the reader’s perception rather than simply getting the word wrong."\n\n` +
 
         `Strong claims are allowed only when the supplied data directly supports them.\n` +
-        `If the packet gives a lemma, gloss, Strong’s number, or morphology, you may cite it. But do not build a large semantic claim that goes beyond the packet.\n\n` +
+        `If the packet gives a lemma, gloss, Strong’s number, or morphology, you may use it internally. But do not build a large semantic claim that goes beyond the packet.\n\n` +
 
         `Do not use modern word-etymology examples unless they directly clarify the verse and are historically safe.\n` +
         `Avoid decorative examples like "architect", "archive", or modern derivative words unless they are necessary for understanding the verse.\n` +
-        `Prefer the supplied Greek/Hebrew data and the immediate wording of the verse over external etymological illustrations.\n\n` +
+        `Prefer the supplied Greek/Hebrew/Aramaic data and the immediate wording of the verse over external etymological illustrations.\n\n` +
 
         `═══════════════════════════════════════════\n` +
         `DISCOVERY HUNT — INTERNAL ONLY\n` +
@@ -516,40 +509,40 @@ export function buildLensPrompt(args: {
 
         `Use only verified or supplied data. Never invent.\n\n` +
 
-        `The supplied STEPBible packet, when present, is the only source for:\n` +
-        `- Greek forms;\n` +
+        `The supplied original-language packet, when present, is the only source for:\n` +
+        `- Greek, Hebrew, or Aramaic forms;\n` +
         `- Strong’s numbers;\n` +
         `- morphology;\n` +
         `- lemma;\n` +
         `- basic glosses.\n\n` +
 
-        `If the packet does not contain a form, Strong’s number, morphology, or lemma, do not invent it.\n\n` +
+        `If the packet does not contain a form, Strong’s number, morphology, lemma, or gloss, do not invent it.\n\n` +
 
-        `If original-language data, morphology, Strong’s numbers, footnotes, or cross-references are available, use them carefully.\n\n` +
-`If original-language data, morphology, Strong’s numbers, footnotes, or cross-references are available, use them carefully.\n\n` +
+        `SOURCE DATA STYLE RULE — CRITICAL:\n` +
+        `The supplied original-language packet is for internal verification only.\n` +
+        `Do not expose raw technical labels to the reader.\n` +
+        `Do not write “gloss”, “packet”, “dataset”, “morphology code”, “Strong”, “STEPBible”, “lemma”, “lexicon”, or “source packet” in the reader-facing card body.\n` +
+        `Do not write “глосс”, “глосса”, “пакет”, “датасет”, “морфология”, “морфологический код”, “Стронг”, “Strong”, “STEPBible”, “лемма”, “лексикон” in Russian reader-facing prose.\n` +
+        `Do not use “GLOSS”, “ГЛОССА”, “LEMMA”, “ЛЕММА”, “MORPHOLOGY”, “МОРФОЛОГИЯ”, “STRONG”, “СТРОНГ”, “SOURCE”, “ИСТОЧНИК”, “ORIGINAL”, or “ОРИГИНАЛ” as visible quote labels.\n` +
+        `Use the verified data silently, then translate it into natural reader language.\n` +
+        `Mention the Hebrew, Aramaic, or Greek form only when it directly helps the discovery. When you show an original-language form, introduce it as the word or expression in the text, not as a database field.\n` +
+        `If morphology matters, explain the effect in ordinary language, not as a raw code.\n` +
+        `BAD: “STEPBible gloss says ‘to fall on’.”\n` +
+        `GOOD: “The Hebrew verb is sharper than ‘do not urge me’: it can suggest pressing, bearing down, or coming upon someone.”\n` +
+        `BAD: “morphology: HVqi3ms.”\n` +
+        `GOOD: “The form presents the action as a direct command, not a soft suggestion.”\n` +
+        `BAD label: “ГЛОССА”.\n` +
+        `GOOD label: “БЛИЖЕ К СМЫСЛУ”, “ЕВРЕЙСКИЙ ОБОРОТ”, “АРАМЕЙСКИЙ ОБОРОТ”, “ГРЕЧЕСКИЙ ОБОРОТ”, “ЗНАКОМОЕ”, “БУКВАЛЬНО”.\n\n` +
 
-`SOURCE DATA STYLE RULE:\n` +
-`The supplied original-language packet is for internal verification only.\n` +
-`Do not expose raw technical labels to the reader.\n` +
-`Do not write “gloss”, “packet”, “dataset”, “morphology code”, “Strong”, or “STEPBible” in the reader-facing card body.\n` +
-`Use the verified data silently, then translate it into natural reader language.\n` +
-`Mention the Hebrew or Greek form only when it directly helps the discovery.\n` +
-`If morphology matters, explain it in ordinary language, not as a raw code.\n` +
-`BAD: “STEPBible gloss says ‘to fall on’.”\n` +
-`GOOD: “The Hebrew verb is sharper than ‘do not urge me’: it can carry the sense of pressing, bearing down, or falling upon someone.”\n` +
-`BAD: “morphology: HVqi3ms.”\n` +
-`GOOD: “The verb form presents the action as a direct command, not a soft suggestion.”\n\n` +
-
-`If they are not available:\n` +
-`- do not mention Strong’s numbers;\n` +
-        `If they are not available:\n` +
+        `If verified original-language data is not available:\n` +
         `- do not mention Strong’s numbers;\n` +
         `- do not invent morphology;\n` +
-        `- do not say “the Hebrew literally means” or “the Greek tense means” unless verified;\n` +
+        `- do not invent transliterations;\n` +
+        `- do not say “the Hebrew literally means”, “the Aramaic literally means”, or “the Greek tense means” unless verified;\n` +
         `- base the answer on visible translation comparison and phrase claims cautiously.\n\n` +
 
         `Preferred source order when available:\n` +
-        `1. Supplied STEPBible original-language packet\n` +
+        `1. Supplied original-language packet\n` +
         `2. Original-language text and parsing\n` +
         `3. NWT Reference Bible 1984 notes, footnotes, marginal readings, cross-references\n` +
         `4. NWT 2013\n` +
@@ -617,7 +610,8 @@ export function buildLensPrompt(args: {
 
         `- State the single sharpest discovery first, but avoid overstatement.\n` +
         `- Then explain the translation difference and the evidence.\n` +
-        `- If original-language data is verified, include it briefly.\n` +
+        `- If original-language data is verified, use it briefly and naturally.\n` +
+        `- Do not expose source metadata or technical labels.\n` +
         `- This is the heart of the answer.\n` +
         `Length: 100–170 words.\n\n` +
 
@@ -670,7 +664,8 @@ export function buildLensPrompt(args: {
         `- multiple equal-weight observations;\n` +
         `- unsupported Greek/Hebrew claims;\n` +
         `- overconfident claims about what a word “really means”;\n` +
-        `- decorative etymology not needed for the verse.\n\n` +
+        `- decorative etymology not needed for the verse;\n` +
+        `- reader-facing source metadata such as “gloss”, “Strong”, “morphology”, “packet”, “STEPBible”, “lemma”, or their Russian equivalents.\n\n` +
 
         `═══════════════════════════════════════════\n` +
         `PRE-OUTPUT CHECKLIST\n` +
@@ -689,6 +684,8 @@ export function buildLensPrompt(args: {
         `□ Did I avoid “X is not A, it is B” unless absolutely supported?\n` +
         `□ Did I avoid decorative modern etymology?\n` +
         `□ Did I write for a ${langName} reader?\n` +
+        `□ Did I avoid exposing technical labels such as gloss, Strong, morphology, lemma, packet, or STEPBible?\n` +
+        `□ Did I use only reader-friendly quote labels?\n` +
         `□ Did I cut everything that does not serve the central discovery?\n` +
         `□ Is the answer under 600 words?\n\n` +
 
@@ -709,9 +706,7 @@ export function buildLensPrompt(args: {
         `        "paragraph 2 in ${langName} if needed"\n` +
         `      ],\n` +
         `      "quotes": [\n` +
-        `        {"label": "FAMILIAR", "text": "short key phrase"},\n` +
-        `        {"label": "LITERAL", "text": "short key phrase if useful"},\n` +
-        `        {"label": "NWT", "text": "short key phrase if useful"}\n` +
+        `        {"label": "reader-friendly label, never a technical source label", "text": "short key phrase"}\n` +
         `      ]\n` +
         `    }\n` +
         `  ],\n` +
@@ -719,7 +714,7 @@ export function buildLensPrompt(args: {
         `}\n\n` +
 
         `Create 3 to 5 cards.\n` +
-        `The cards must follow the v2.1 funnel:\n` +
+        `The cards must follow the v2.2 funnel:\n` +
         `1. familiar wording / reader assumption;\n` +
         `2. the translation discovery;\n` +
         `3. how the reading changes;\n` +
@@ -727,7 +722,12 @@ export function buildLensPrompt(args: {
         `5. optional: why the reader may never have noticed.\n\n` +
 
         `The "quotes" array is optional for each card. Include it only when short phrase comparisons strengthen the card.\n` +
-        `If used, keep each quote short. Do not fabricate exact published translation text. If you are not certain of an exact version wording, use labels like "FAMILIAR", "LITERAL", or "ALTERNATE" and quote only the supplied verse phrase or a cautious rendering.\n\n` +
+        `Quote labels must be reader-facing labels, never technical source labels.\n` +
+        `Do not use labels such as “GLOSS”, “STRONG”, “MORPHOLOGY”, “LEMMA”, “ORIGINAL”, “SOURCE”, “ГЛОССА”, “СТРОНГ”, “МОРФОЛОГИЯ”, “ЛЕММА”, “ОРИГИНАЛ”, or “ИСТОЧНИК”.\n` +
+        `Good labels in Russian: “ЗНАКОМОЕ”, “БУКВАЛЬНО”, “БЛИЖЕ К СМЫСЛУ”, “ЕВРЕЙСКИЙ ОБОРОТ”, “АРАМЕЙСКИЙ ОБОРОТ”, “ГРЕЧЕСКИЙ ОБОРОТ”.\n` +
+        `Good labels in English: “FAMILIAR”, “LITERAL”, “CLOSER TO THE SENSE”, “HEBREW EXPRESSION”, “ARAMAIC EXPRESSION”, “GREEK EXPRESSION”.\n` +
+        `Good labels in Spanish: “FAMILIAR”, “LITERAL”, “MÁS CERCA DEL SENTIDO”, “EXPRESIÓN HEBREA”, “EXPRESIÓN ARAMEA”, “EXPRESIÓN GRIEGA”.\n` +
+        `If used, keep each quote short. Do not fabricate exact published translation text. If you are not certain of an exact version wording, quote only the supplied verse phrase or a cautious rendering.\n\n` +
 
         `Do not use the old format with "versions", "divergences", or "verdict".\n` +
         `Return JSON only.`
