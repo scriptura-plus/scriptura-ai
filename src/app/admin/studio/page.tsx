@@ -1,4 +1,4 @@
-"use client";
+""use client";
 
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { formatReference } from "@/lib/bible/formatReference";
@@ -4053,6 +4053,9 @@ export default function StudioPage() {
                         </details>
                       ) : null}
                     </div>
+                    </>
+                  ) : null}
+
                   {autoModeratorReportError ? (
                     <MessageBox
                       kind="error"
@@ -4240,8 +4243,7 @@ export default function StudioPage() {
                       )}
                     </div>
                   ) : null}
-                    </>
-                  ) : null}
+
                 </div>
               </section>
             ) : null}
