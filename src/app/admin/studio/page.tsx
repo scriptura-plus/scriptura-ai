@@ -3263,26 +3263,13 @@ export default function StudioPage() {
                 >
                   <button
                     type="button"
-                    disabled={creatingTestSuggestion || loadingEditorialSuggestions}
-                    onClick={createTestEditorialSuggestion}
-                    style={getRepairButtonStyle(
-                      creatingTestSuggestion || loadingEditorialSuggestions,
-                    )}
-                  >
-                    {creatingTestSuggestion ? "Создаю..." : "Создать тестовое предложение"}
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={creatingTestSuggestion || loadingEditorialSuggestions}
+                    disabled={loadingEditorialSuggestions}
                     onClick={() =>
                       selectedVerse
                         ? void loadEditorialSuggestions(selectedVerse)
                         : undefined
                     }
-                    style={getSmallButtonStyle(
-                      creatingTestSuggestion || loadingEditorialSuggestions,
-                    )}
+                    style={getSmallButtonStyle(loadingEditorialSuggestions)}
                   >
                     {loadingEditorialSuggestions ? "Обновляю..." : "Обновить очередь"}
                   </button>
@@ -3508,7 +3495,7 @@ export default function StudioPage() {
                     marginBottom: 8,
                   }}
                 >
-                  Автоматическая эволюция набора
+                  Автоматическая обработка
                 </div>
 
                 <h3
@@ -3522,7 +3509,7 @@ export default function StudioPage() {
                     color: INK,
                   }}
                 >
-                  Пересобрать набор карточек
+                  Автокуратор
                 </h3>
 
                 <p
@@ -3533,9 +3520,11 @@ export default function StudioPage() {
                     lineHeight: 1.6,
                   }}
                 >
-                  Система заново оценивает активные и запасные карточки этого стиха на фоне
-                  текущего набора, выбирает топ для публичной выдачи и отправляет остальные
-                  хорошие варианты в запас. Отклонённые, скрытые и защищённые карточки не поднимаются автоматически.
+                  Автокуратор читает Озеро Scriptura, ищет новые сильные углы,
+                  проверяет их через evaluator и принимает безопасное решение:
+                  добавить новый самостоятельный угол, отправить спорный вариант в
+                  очередь решений или отклонить слабый кандидат. Активные карточки
+                  не заменяются без модератора.
                 </p>
 
                 <div
@@ -3544,7 +3533,6 @@ export default function StudioPage() {
                     borderRadius: 18,
                     padding: 14,
                     background: `linear-gradient(180deg, ${SLATE_SOFT} 0%, ${SLATE_SOFT_2} 100%)`,
-                    marginBottom: 12,
                   }}
                 >
                   <div
@@ -3555,7 +3543,7 @@ export default function StudioPage() {
                       marginBottom: 7,
                     }}
                   >
-                    Автокуратор
+                    Контур: Озеро → Claude → GPT-5.5 → решение
                   </div>
 
                   <p
@@ -3566,7 +3554,10 @@ export default function StudioPage() {
                       lineHeight: 1.55,
                     }}
                   >
-                    Автоматический контур: Claude 4.6 ищет новые сильные углы в Озере, GPT-5.5 проверяет риск и сравнивает с существующими карточками. Безопасные новые углы добавляются, спорные уходят в очередь решений, слабые отклоняются. Активные карточки не заменяются без модератора.
+                    Claude 4.6 генерирует кандидатов из накопленных материалов,
+                    GPT-5.5 проверяет качество, риск и близость к существующим
+                    карточкам. Auto-add разрешён только для новых самостоятельных
+                    безопасных углов; всё спорное идёт в редакторскую очередь.
                   </p>
 
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
@@ -3802,124 +3793,6 @@ export default function StudioPage() {
                     </div>
                   ) : null}
                 </div>
-
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                  <button
-                    type="button"
-                    disabled={rebalance.previewLoading || rebalance.applyLoading || loadingCards}
-                    onClick={previewRebalanceVerseCards}
-                    style={getSmallButtonStyle(
-                      rebalance.previewLoading || rebalance.applyLoading || loadingCards,
-                    )}
-                  >
-                    {rebalance.previewLoading ? "Смотрю..." : "Предпросмотр пересборки"}
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={rebalance.previewLoading || rebalance.applyLoading || loadingCards}
-                    onClick={applyRebalanceVerseCards}
-                    style={getApplyButtonStyle(
-                      rebalance.previewLoading || rebalance.applyLoading || loadingCards,
-                    )}
-                  >
-                    {rebalance.applyLoading ? "Применяю..." : "Применить пересборку"}
-                  </button>
-                </div>
-
-                {rebalance.error ? (
-                  <MessageBox kind="error" text={rebalance.error} style={{ marginTop: 10 }} />
-                ) : null}
-
-                {rebalance.result ? (
-                  <div
-                    style={{
-                      marginTop: 12,
-                      padding: 12,
-                      borderRadius: 14,
-                      background: SLATE_SOFT,
-                      border: `1px solid rgba(111, 123, 136, 0.16)`,
-                    }}
-                  >
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginBottom: 9 }}>
-                      <Badge
-                        text={`Режим: ${rebalance.result.applied ? "применено" : "предпросмотр"}`}
-                        strong
-                      />
-                      <Badge text={`Всего: ${rebalance.result.total_cards_seen ?? 0}`} />
-                      <Badge text={`Участвовало: ${rebalance.result.eligible_cards_count ?? 0}`} />
-                      <Badge text={`Защищено: ${rebalance.result.locked_cards_count ?? 0}`} />
-                      <Badge text={`Изменений: ${rebalance.result.changed_count ?? 0}`} strong />
-                    </div>
-
-                    {rebalance.applied ? (
-                      <MessageBox
-                        kind="success"
-                        text="Пересборка применена. Карточки перезагружены из Supabase."
-                        style={{ marginBottom: 10 }}
-                      />
-                    ) : null}
-
-                    {rebalance.result.decisions && rebalance.result.decisions.length > 0 ? (
-                      <div style={{ display: "grid", gap: 8 }}>
-                        {rebalance.result.decisions.slice(0, 12).map((decision) => {
-                          const changed =
-                            decision.old_status !== decision.new_status ||
-                            decision.old_rank !== decision.new_rank ||
-                            decision.old_score !== decision.new_score;
-
-                          return (
-                            <div
-                              key={decision.card_id}
-                              style={{
-                                border: `1px solid ${changed ? "rgba(111, 123, 136, 0.24)" : LINE_SOFT}`,
-                                borderRadius: 12,
-                                background: changed ? CARD : CARD_ALT,
-                                padding: 10,
-                              }}
-                            >
-                              <div
-                                style={{
-                                  fontSize: 13,
-                                  fontWeight: 900,
-                                  color: INK,
-                                  lineHeight: 1.35,
-                                  marginBottom: 6,
-                                }}
-                              >
-                                {decision.title}
-                              </div>
-
-                              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 6 }}>
-                                <Badge text={`${decision.old_status} → ${decision.new_status}`} strong={changed} />
-                                <Badge text={`rank: ${decision.old_rank ?? "—"} → ${decision.new_rank ?? "—"}`} />
-                                <Badge text={`score: ${decision.old_score ?? "—"} → ${decision.new_score ?? "—"}`} />
-                                {decision.is_locked ? <Badge text="защищена" /> : null}
-                              </div>
-
-                              <p
-                                style={{
-                                  margin: 0,
-                                  color: MUTED,
-                                  fontSize: 12,
-                                  lineHeight: 1.45,
-                                }}
-                              >
-                                {decision.reason}
-                              </p>
-                            </div>
-                          );
-                        })}
-
-                        {rebalance.result.decisions.length > 12 ? (
-                          <div style={{ color: MUTED, fontSize: 12, lineHeight: 1.45 }}>
-                            Показаны первые 12 решений из {rebalance.result.decisions.length}.
-                          </div>
-                        ) : null}
-                      </div>
-                    ) : null}
-                  </div>
-                ) : null}
               </section>
             ) : null}
 
@@ -4871,8 +4744,8 @@ export default function StudioPage() {
             lineHeight: 1.5,
           }}
         >
-          MVP Studio: переоценка, применение оценки, ремонт перевода, доработка
-          карточки, ручной редакторский приоритет и ручной материал RU/EN/ES.
+          MVP Studio: Озеро, Автокуратор, очередь решений, переоценка,
+          доработка карточек, ручной редакторский приоритет и ручной материал RU/EN/ES.
         </p>
       </div>
     </main>
