@@ -1367,7 +1367,7 @@ export default function StudioPage() {
 
     if (apply) {
       const confirmed = window.confirm(
-        "Применить Auto Curator Engine v1? Безопасные distinct-angle кандидаты могут быть добавлены в angle_cards, спорные уйдут в редакторскую очередь, слабые будут отклонены в отчёте.",
+        "Применить Автокуратор? Безопасные distinct-angle кандидаты могут быть добавлены в angle_cards, спорные уйдут в редакторскую очередь, слабые будут отклонены в отчёте.",
       );
 
       if (!confirmed) return;
@@ -1380,10 +1380,10 @@ export default function StudioPage() {
 
     if (apply) {
       setApplyingRunAutoCurator(true);
-      setNotice("Auto Curator применяет решения...");
+      setNotice("Автокуратор применяет решения...");
     } else {
       setRunningAutoCuratorPreview(true);
-      setNotice("Auto Curator Engine v1 строит preview...");
+      setNotice("Автокуратор строит preview...");
     }
 
     try {
@@ -1426,8 +1426,8 @@ export default function StudioPage() {
 
       setNotice(
         apply
-          ? `Auto Curator применён: действий — ${data.applied_count ?? 0}.`
-          : `Auto Curator preview готов: решений — ${data.decisions?.length ?? 0}.`,
+          ? `Автокуратор запущен: действий — ${data.applied_count ?? 0}.`
+          : `Автокуратор проверил Озеро: решений — ${data.decisions?.length ?? 0}.`,
       );
     } catch (error) {
       setRunAutoCuratorError(
@@ -3555,7 +3555,7 @@ export default function StudioPage() {
                       marginBottom: 7,
                     }}
                   >
-                    Auto Curator Engine v1
+                    Автокуратор
                   </div>
 
                   <p
@@ -3566,9 +3566,7 @@ export default function StudioPage() {
                       lineHeight: 1.55,
                     }}
                   >
-                    Цельный контур: Claude 4.6 генерирует кандидатов из Озера,
-                    GPT-5.5 оценивает и сравнивает, decision engine решает:
-                    auto-add / очередь / reject.
+                    Автоматический контур: Claude 4.6 ищет новые сильные углы в Озере, GPT-5.5 проверяет риск и сравнивает с существующими карточками. Безопасные новые углы добавляются, спорные уходят в очередь решений, слабые отклоняются. Активные карточки не заменяются без модератора.
                   </p>
 
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
@@ -3580,7 +3578,7 @@ export default function StudioPage() {
                         runningAutoCuratorPreview || applyingRunAutoCurator || loadingCards,
                       )}
                     >
-                      {runningAutoCuratorPreview ? "Смотрю..." : "Preview Engine"}
+                      {runningAutoCuratorPreview ? "Смотрю..." : "Проверить Озеро"}
                     </button>
 
                     <button
@@ -3591,7 +3589,7 @@ export default function StudioPage() {
                         runningAutoCuratorPreview || applyingRunAutoCurator || loadingCards,
                       )}
                     >
-                      {applyingRunAutoCurator ? "Применяю..." : "Применить Engine"}
+                      {applyingRunAutoCurator ? "Применяю..." : "Запустить автокуратора"}
                     </button>
                   </div>
 
@@ -3772,7 +3770,7 @@ export default function StudioPage() {
                           ))}
                         </div>
                       ) : (
-                        <EmptyBox text="Auto Curator Engine не нашёл решений для этого стиха." />
+                        <EmptyBox text="Автокуратор не нашёл новых решений для этого стиха." />
                       )}
 
                       {runAutoCuratorResult.raw_generation ? (
@@ -3798,333 +3796,6 @@ export default function StudioPage() {
                             }}
                           >
                             {runAutoCuratorResult.raw_generation}
-                          </pre>
-                        </details>
-                      ) : null}
-                    </div>
-                  ) : null}
-                </div>
-
-                <div
-                  style={{
-                    border: `1px solid ${LINE_SOFT}`,
-                    borderRadius: 16,
-                    padding: 12,
-                    background: SLATE_SOFT_2,
-                    marginBottom: 12,
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: 13,
-                      fontWeight: 900,
-                      color: SLATE_DARK,
-                      marginBottom: 7,
-                    }}
-                  >
-                    Auto Curator preview
-                  </div>
-
-                  <p
-                    style={{
-                      margin: "0 0 10px",
-                      color: MUTED,
-                      fontSize: 12,
-                      lineHeight: 1.55,
-                    }}
-                  >
-                    Безопасный предпросмотр: Claude ищет кандидатов из Озера, но пока ничего
-                    не записывает в карточки и не создаёт редакторские предложения.
-                  </p>
-
-                  <button
-                    type="button"
-                    disabled={loadingAutoCuratorPreview || loadingCards}
-                    onClick={previewAutoCurator}
-                    style={getApplyButtonStyle(loadingAutoCuratorPreview || loadingCards)}
-                  >
-                    {loadingAutoCuratorPreview ? "Смотрю Озеро..." : "Предпросмотр Auto Curator"}
-                  </button>
-
-                  {autoCuratorPreviewError ? (
-                    <MessageBox
-                      kind="error"
-                      text={autoCuratorPreviewError}
-                      style={{ marginTop: 10 }}
-                    />
-                  ) : null}
-
-                  {autoCuratorPreview ? (
-                    <div
-                      style={{
-                        marginTop: 12,
-                        padding: 12,
-                        borderRadius: 14,
-                        background: CARD,
-                        border: `1px solid ${LINE}`,
-                      }}
-                    >
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginBottom: 9 }}>
-                        <Badge
-                          text={`Модель: ${
-                            autoCuratorPreview.generator_model ??
-                            autoCuratorPreview.model ??
-                            "—"
-                          }`}
-                          strong
-                        />
-                        <Badge
-                          text={`Провайдер: ${
-                            autoCuratorPreview.generator_provider ??
-                            autoCuratorPreview.provider ??
-                            "—"
-                          }`}
-                        />
-                        <Badge text={`Источников: ${autoCuratorPreview.source_count ?? 0}`} />
-                        <Badge text={`Заметок: ${autoCuratorPreview.note_count ?? 0}`} />
-                        <Badge
-                          text={`Кандидатов: ${autoCuratorPreview.candidates?.length ?? 0}`}
-                          strong
-                        />
-                      </div>
-
-                      {autoCuratorPreview.summary ? (
-                        <p
-                          style={{
-                            margin: "0 0 10px",
-                            color: MUTED,
-                            fontSize: 13,
-                            lineHeight: 1.55,
-                          }}
-                        >
-                          {autoCuratorPreview.summary}
-                        </p>
-                      ) : null}
-
-                      {autoCuratorPreview.candidates &&
-                      autoCuratorPreview.candidates.length > 0 ? (
-                        <div style={{ display: "grid", gap: 9 }}>
-                          {autoCuratorPreview.candidates.map((candidate, index) => (
-                            <div
-                              key={`${candidate.candidate.title}-${index}`}
-                              style={{
-                                border: `1px solid ${LINE_SOFT}`,
-                                borderRadius: 12,
-                                background: SLATE_SOFT_2,
-                                padding: 10,
-                              }}
-                            >
-                              <div
-                                style={{
-                                  display: "flex",
-                                  justifyContent: "space-between",
-                                  gap: 10,
-                                  alignItems: "flex-start",
-                                  marginBottom: 6,
-                                }}
-                              >
-                                <div
-                                  style={{
-                                    fontSize: 13,
-                                    fontWeight: 900,
-                                    color: INK,
-                                    lineHeight: 1.35,
-                                  }}
-                                >
-                                  {candidate.candidate.title}
-                                </div>
-
-                                {candidate.score_total !== null ? (
-                                  <span
-                                    style={{
-                                      minWidth: 38,
-                                      height: 34,
-                                      borderRadius: 999,
-                                      background: `linear-gradient(180deg, ${SLATE} 0%, ${SLATE_DARK} 100%)`,
-                                      color: "#fff",
-                                      display: "inline-flex",
-                                      alignItems: "center",
-                                      justifyContent: "center",
-                                      fontSize: 13,
-                                      fontWeight: 900,
-                                      flexShrink: 0,
-                                    }}
-                                  >
-                                    {candidate.score_total}
-                                  </span>
-                                ) : null}
-                              </div>
-
-                              <div
-                                style={{
-                                  display: "flex",
-                                  flexWrap: "wrap",
-                                  gap: 6,
-                                  marginBottom: 7,
-                                }}
-                              >
-                                <Badge text={readableRecommendedAction(candidate.recommended_action)} strong />
-                                <Badge text={readableAngleRelationship(candidate.angle_relationship) ?? "угол: —"} />
-                                <Badge text={readableRiskLevel(candidate.risk_level)} />
-                                {candidate.suggestion_type ? (
-                                  <Badge text={readableSuggestionType(candidate.suggestion_type)} />
-                                ) : null}
-                                {candidate.matched_card_title ? (
-                                  <Badge text={`похоже на: ${candidate.matched_card_title}`} />
-                                ) : null}
-                              </div>
-
-                              {candidate.candidate.anchor ? (
-                                <p
-                                  style={{
-                                    margin: "0 0 7px",
-                                    color: WARM_ACCENT,
-                                    fontSize: 12,
-                                    lineHeight: 1.45,
-                                    fontStyle: "italic",
-                                  }}
-                                >
-                                  “{candidate.candidate.anchor}”
-                                </p>
-                              ) : null}
-
-                              <p
-                                style={{
-                                  margin: "0 0 7px",
-                                  color: TEXT,
-                                  fontSize: 12,
-                                  lineHeight: 1.5,
-                                }}
-                              >
-                                {candidate.candidate.teaser}
-                              </p>
-
-                              {candidate.candidate.why_it_matters ? (
-                                <p
-                                  style={{
-                                    margin: "0 0 7px",
-                                    color: MUTED,
-                                    fontSize: 12,
-                                    lineHeight: 1.45,
-                                  }}
-                                >
-                                  <strong style={{ color: SLATE_DARK }}>Почему важно: </strong>
-                                  {candidate.candidate.why_it_matters}
-                                </p>
-                              ) : null}
-
-                              <p
-                                style={{
-                                  margin: 0,
-                                  color: MUTED,
-                                  fontSize: 12,
-                                  lineHeight: 1.45,
-                                }}
-                              >
-                                <strong style={{ color: SLATE_DARK }}>Решение: </strong>
-                                {candidate.reason}
-                              </p>
-
-                              {candidate.risk ? (
-                                <p
-                                  style={{
-                                    margin: "7px 0 0",
-                                    color: WARNING_TEXT,
-                                    fontSize: 12,
-                                    lineHeight: 1.45,
-                                  }}
-                                >
-                                  <strong>Риск: </strong>
-                                  {candidate.risk}
-                                </p>
-                              ) : null}
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <EmptyBox text="Auto Curator не нашёл новых сильных кандидатов в текущем Озере." />
-                      )}
-
-                      {autoCuratorPreview.candidates &&
-                      autoCuratorPreview.candidates.length > 0 ? (
-                        <div
-                          style={{
-                            marginTop: 12,
-                            paddingTop: 12,
-                            borderTop: `1px solid ${LINE_SOFT}`,
-                          }}
-                        >
-                          <button
-                            type="button"
-                            disabled={applyingAutoCuratorPreview || loadingAutoCuratorPreview}
-                            onClick={applyAutoCuratorPreviewToQueue}
-                            style={getApplyButtonStyle(
-                              applyingAutoCuratorPreview || loadingAutoCuratorPreview,
-                            )}
-                          >
-                            {applyingAutoCuratorPreview
-                              ? "Отправляю..."
-                              : "Отправить в очередь решений"}
-                          </button>
-
-                          <p
-                            style={{
-                              margin: "8px 0 0",
-                              color: MUTED,
-                              fontSize: 12,
-                              lineHeight: 1.45,
-                            }}
-                          >
-                            Безопасный режим: любые кандидаты из preview, включая auto-add,
-                            отправляются только в редакторскую очередь. Публичные карточки
-                            автоматически не меняются.
-                          </p>
-                        </div>
-                      ) : null}
-
-                      {applyAutoCuratorPreviewError ? (
-                        <MessageBox
-                          kind="error"
-                          text={applyAutoCuratorPreviewError}
-                          style={{ marginTop: 10 }}
-                        />
-                      ) : null}
-
-                      {applyAutoCuratorPreviewResult ? (
-                        <MessageBox
-                          kind="success"
-                          text={`Очередь решений обновлена. Добавлено: ${
-                            applyAutoCuratorPreviewResult.inserted_count ?? 0
-                          }, пропущено: ${
-                            applyAutoCuratorPreviewResult.skipped_count ?? 0
-                          }.`}
-                          style={{ marginTop: 10 }}
-                        />
-                      ) : null}
-
-                      {autoCuratorPreview.raw_preview ? (
-                        <details style={{ marginTop: 10 }}>
-                          <summary
-                            style={{
-                              cursor: "pointer",
-                              color: SLATE_DARK,
-                              fontSize: 12,
-                              fontWeight: 900,
-                            }}
-                          >
-                            Показать raw preview
-                          </summary>
-                          <pre
-                            style={{
-                              margin: "8px 0 0",
-                              whiteSpace: "pre-wrap",
-                              wordBreak: "break-word",
-                              color: MUTED,
-                              fontSize: 11,
-                              lineHeight: 1.45,
-                            }}
-                          >
-                            {autoCuratorPreview.raw_preview}
                           </pre>
                         </details>
                       ) : null}
