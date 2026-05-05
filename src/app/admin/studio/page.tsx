@@ -307,7 +307,21 @@ type RunAutoCuratorDecision = {
   risk: string | null;
   reason: string;
   source_basis: string | null;
-  recommended_action: "auto_add" | "auto_reject" | "editorial_suggestion";
+  recommended_action:
+    | "auto_add_active"
+    | "auto_add_reserve"
+    | "auto_add"
+    | "auto_reject"
+    | "editorial_suggestion";
+  applied_action?:
+    | "inserted_active"
+    | "inserted_reserve"
+    | "inserted_editorial_suggestion"
+    | "rejected_logged"
+    | "report_only"
+    | "skipped"
+    | "failed"
+    | null;
   suggestion_type:
     | "replacement"
     | "needs_review"
@@ -315,11 +329,14 @@ type RunAutoCuratorDecision = {
     | "style_review"
     | "promote_candidate"
     | "duplicate_uncertain"
+    | "risk_review"
+    | "overclaim_review"
     | null;
   decision_reason: string;
   applied: boolean;
   inserted_card_id: string | null;
   inserted_suggestion_id: string | null;
+  audit_decision_id?: string | null;
   error: string | null;
 };
 
@@ -339,7 +356,10 @@ type RunAutoCuratorResponse = {
   existing_card_count?: number;
   generated_count?: number;
   evaluated_count?: number;
+  run_id?: string | null;
   auto_add_count?: number;
+  auto_add_active_count?: number;
+  auto_add_reserve_count?: number;
   editorial_suggestion_count?: number;
   auto_reject_count?: number;
   applied_count?: number;
@@ -925,6 +945,8 @@ function readableSuggestionType(type: string): string {
   if (type === "style_review") return "Проверка стиля";
   if (type === "promote_candidate") return "Продвинуть кандидата";
   if (type === "duplicate_uncertain") return "Возможный дубль";
+  if (type === "risk_review") return "Проверка риска";
+  if (type === "overclaim_review") return "Проверка overclaim";
   return type;
 }
 
@@ -953,6 +975,8 @@ function readableRiskLevel(level: AutoCuratorPreviewCandidate["risk_level"]): st
 }
 
 function readableRunAction(action: RunAutoCuratorDecision["recommended_action"]): string {
+  if (action === "auto_add_active") return "в активные";
+  if (action === "auto_add_reserve") return "в запас";
   if (action === "auto_add") return "auto-add";
   if (action === "editorial_suggestion") return "в очередь";
   if (action === "auto_reject") return "reject";
@@ -960,10 +984,28 @@ function readableRunAction(action: RunAutoCuratorDecision["recommended_action"])
 }
 
 function readableRunActionLong(action: RunAutoCuratorDecision["recommended_action"]): string {
+  if (action === "auto_add_active") return "Автоматически добавить в активные";
+  if (action === "auto_add_reserve") return "Автоматически добавить в запас";
   if (action === "auto_add") return "Автоматически добавить";
   if (action === "editorial_suggestion") return "Создать редакторское предложение";
   if (action === "auto_reject") return "Автоматически отклонить";
   return action;
+}
+
+function getRunDecisionScoreBackground(action: RunAutoCuratorDecision["recommended_action"]): string {
+  if (action === "auto_add_active") {
+    return `linear-gradient(180deg, ${SUCCESS_TEXT} 0%, #3f5730 100%)`;
+  }
+
+  if (action === "auto_add_reserve") {
+    return `linear-gradient(180deg, ${WARM_ACCENT} 0%, #7f674c 100%)`;
+  }
+
+  if (action === "editorial_suggestion") {
+    return `linear-gradient(180deg, ${SLATE} 0%, ${SLATE_DARK} 100%)`;
+  }
+
+  return `linear-gradient(180deg, ${MUTED_2} 0%, ${MUTED} 100%)`;
 }
 
 function getPayloadString(payload: unknown, key: string): string | null {
@@ -1426,7 +1468,7 @@ export default function StudioPage() {
 
       setNotice(
         apply
-          ? `Автокуратор запущен: действий — ${data.applied_count ?? 0}.`
+          ? `Автокуратор применён: применено — ${data.applied_count ?? 0}, решений в аудите — ${data.decisions?.length ?? 0}.`
           : `Автокуратор проверил Озеро: решений — ${data.decisions?.length ?? 0}.`,
       );
     } catch (error) {
@@ -3522,9 +3564,10 @@ export default function StudioPage() {
                 >
                   Автокуратор читает Озеро Scriptura, ищет новые сильные углы,
                   проверяет их через evaluator и принимает безопасное решение:
-                  добавить новый самостоятельный угол, отправить спорный вариант в
-                  очередь решений или отклонить слабый кандидат. Активные карточки
-                  не заменяются без модератора.
+                  добавить новый самостоятельный угол в активные, сохранить хороший
+                  не первослойный вариант в запас, отправить спорный случай в очередь
+                  решений или отклонить слабый кандидат. Активные карточки не
+                  заменяются без модератора, а решения пишутся в audit log.
                 </p>
 
                 <div
@@ -3556,8 +3599,9 @@ export default function StudioPage() {
                   >
                     Claude 4.6 генерирует кандидатов из накопленных материалов,
                     GPT-5.5 проверяет качество, риск и близость к существующим
-                    карточкам. Auto-add разрешён только для новых самостоятельных
-                    безопасных углов; всё спорное идёт в редакторскую очередь.
+                    карточкам. V2 раскладывает решения на active / reserve / queue / reject:
+                    сильное и безопасное идёт в активные, хорошее — в запас,
+                    спорное — в очередь, слабое и дубли — в reject log.
                   </p>
 
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
@@ -3604,11 +3648,22 @@ export default function StudioPage() {
                         <Badge text={`Evaluator: ${runAutoCuratorResult.evaluator_model ?? "—"}`} />
                         <Badge text={`Источников: ${runAutoCuratorResult.source_count ?? 0}`} />
                         <Badge text={`Заметок: ${runAutoCuratorResult.note_count ?? 0}`} />
-                        <Badge text={`auto-add: ${runAutoCuratorResult.auto_add_count ?? 0}`} strong />
-                        <Badge text={`очередь: ${runAutoCuratorResult.editorial_suggestion_count ?? 0}`} strong />
+                        {runAutoCuratorResult.run_id ? (
+                          <Badge text={`run: ${runAutoCuratorResult.run_id.slice(0, 8)}`} strong />
+                        ) : null}
+                        <Badge
+                          text={`active: ${
+                            runAutoCuratorResult.auto_add_active_count ??
+                            runAutoCuratorResult.auto_add_count ??
+                            0
+                          }`}
+                          strong
+                        />
+                        <Badge text={`reserve: ${runAutoCuratorResult.auto_add_reserve_count ?? 0}`} strong />
+                        <Badge text={`queue: ${runAutoCuratorResult.editorial_suggestion_count ?? 0}`} strong />
                         <Badge text={`reject: ${runAutoCuratorResult.auto_reject_count ?? 0}`} />
                         {runAutoCuratorResult.mode === "apply" ? (
-                          <Badge text={`применено: ${runAutoCuratorResult.applied_count ?? 0}`} strong />
+                          <Badge text={`applied/logged: ${runAutoCuratorResult.applied_count ?? 0}`} strong />
                         ) : null}
                       </div>
 
@@ -3662,12 +3717,9 @@ export default function StudioPage() {
                                     minWidth: 38,
                                     height: 34,
                                     borderRadius: 999,
-                                    background:
-                                      decision.recommended_action === "auto_add"
-                                        ? `linear-gradient(180deg, ${SUCCESS_TEXT} 0%, #3f5730 100%)`
-                                        : decision.recommended_action === "editorial_suggestion"
-                                          ? `linear-gradient(180deg, ${SLATE} 0%, ${SLATE_DARK} 100%)`
-                                          : `linear-gradient(180deg, ${MUTED_2} 0%, ${MUTED} 100%)`,
+                                    background: getRunDecisionScoreBackground(
+                                      decision.recommended_action,
+                                    ),
                                     color: "#fff",
                                     display: "inline-flex",
                                     alignItems: "center",
@@ -3688,9 +3740,13 @@ export default function StudioPage() {
                                 {decision.suggestion_type ? (
                                   <Badge text={readableSuggestionType(decision.suggestion_type)} />
                                 ) : null}
-                                {decision.applied ? <Badge text="applied" strong /> : null}
+                                {decision.applied ? <Badge text="applied/logged" strong /> : null}
+                                {decision.applied_action ? <Badge text={decision.applied_action} /> : null}
                                 {decision.inserted_card_id ? <Badge text="card saved" /> : null}
                                 {decision.inserted_suggestion_id ? <Badge text="suggestion saved" /> : null}
+                                {decision.audit_decision_id ? (
+                                  <Badge text={`audit: ${decision.audit_decision_id.slice(0, 8)}`} />
+                                ) : null}
                               </div>
 
                               {decision.candidate.anchor ? (
@@ -4744,8 +4800,8 @@ export default function StudioPage() {
             lineHeight: 1.5,
           }}
         >
-          MVP Studio: Озеро, Автокуратор, очередь решений, переоценка,
-          доработка карточек, ручной редакторский приоритет и ручной материал RU/EN/ES.
+          MVP Studio: Озеро, Автокуратор v2, audit log, очередь решений,
+          переоценка, доработка карточек, ручной редакторский приоритет и ручной материал RU/EN/ES.
         </p>
       </div>
     </main>
