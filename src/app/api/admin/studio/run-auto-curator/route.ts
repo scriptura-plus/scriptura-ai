@@ -49,6 +49,21 @@ type EvaluatedCandidate = {
   source_basis: string | null;
 };
 
+type DecisionAction =
+  | "auto_add_active"
+  | "auto_add_reserve"
+  | "auto_reject"
+  | "editorial_suggestion";
+
+type AppliedAction =
+  | "inserted_active"
+  | "inserted_reserve"
+  | "inserted_editorial_suggestion"
+  | "rejected_logged"
+  | "skipped"
+  | "failed"
+  | null;
+
 type Decision = {
   candidate: CandidateCard;
   score_total: number;
@@ -63,7 +78,8 @@ type Decision = {
   risk: string | null;
   reason: string;
   source_basis: string | null;
-  recommended_action: "auto_add" | "auto_reject" | "editorial_suggestion";
+  recommended_action: DecisionAction;
+  applied_action: AppliedAction;
   suggestion_type:
     | "replacement"
     | "needs_review"
@@ -71,11 +87,14 @@ type Decision = {
     | "style_review"
     | "promote_candidate"
     | "duplicate_uncertain"
+    | "risk_review"
+    | "overclaim_review"
     | null;
   decision_reason: string;
   applied: boolean;
   inserted_card_id: string | null;
   inserted_suggestion_id: string | null;
+  audit_decision_id: string | null;
   error: string | null;
 };
 
@@ -90,7 +109,7 @@ function isAdminRequest(req: Request): boolean {
   const expected = process.env.ADMIN_SECRET;
 
   if (!expected) {
-    console.error("[RUN_AUTO_CURATOR] ADMIN_SECRET is not configured");
+    console.error("[RUN_AUTO_CURATOR_V2] ADMIN_SECRET is not configured");
     return false;
   }
 
@@ -189,6 +208,7 @@ function compactAngleCard(row: unknown): Record<string, unknown> | null {
     status: getString(row.status),
     score_total: getNumber(row.score_total),
     moderator_boost: getNumber(row.moderator_boost),
+    moderator_note: getString(row.moderator_note),
     is_locked: row.is_locked === true,
     angle_summary: getString(row.angle_summary),
     coverage_type: getString(row.coverage_type),
@@ -458,7 +478,7 @@ reference: ${args.reference}
 canonical_ref: ${args.canonicalRef ?? "null"}
 lang: ${args.lang}
 
-Existing cards:
+Existing cards, including moderator_note and lock status:
 ${JSON.stringify(args.existingCards, null, 2)}
 
 Research Lake sources:
@@ -479,10 +499,10 @@ function buildEvaluationPrompt(args: {
   existingCards: Record<string, unknown>[];
 }): string {
   return `
-You are GPT-5.5, the evaluator and risk checker for Scriptura AI Auto Curator.
+You are GPT-5.5, the evaluator and auto-moderator for Scriptura AI Auto Curator v2.
 
 Your job is NOT to generate new cards.
-Your job is to evaluate Claude-generated candidates against the existing card set and classify each candidate.
+Your job is to evaluate Claude-generated candidates against the existing active/reserve card set and classify each candidate.
 
 Strategic product standard:
 A strong Scriptura card should make a serious Bible reader think:
@@ -500,10 +520,16 @@ Use the same evaluator standard across the whole product:
 - no obvious paraphrase
 - no inflated scores
 
+Very important human editorial context:
+- Existing cards may include moderator_note.
+- If a card is_locked or has moderator_note, treat it as human editorial context.
+- Do not recommend replacing a locked card unless the candidate is clearly superior and the risk is low.
+- If a moderator_note warns about overclaim, do not reward candidates that amplify that overclaim.
+
 Score guidance:
 - 90+ rare, exceptional discovery
-- 82–89 strong public candidate
-- 74–81 usable but may need review or reserve
+- 86–89 strong active-layer candidate
+- 74–85 useful reserve-layer candidate
 - below 74 should generally be rejected
 
 Same-angle policy:
@@ -668,7 +694,7 @@ async function callOpenAI(args: {
 }
 
 function decideCandidate(candidate: EvaluatedCandidate): {
-  recommended_action: Decision["recommended_action"];
+  recommended_action: DecisionAction;
   suggestion_type: Decision["suggestion_type"];
   decision_reason: string;
 } {
@@ -688,17 +714,57 @@ function decideCandidate(candidate: EvaluatedCandidate): {
     };
   }
 
+  if (candidate.risk_level === "high") {
+    return {
+      recommended_action: "auto_reject",
+      suggestion_type: null,
+      decision_reason:
+        "Отклонено автоматически: высокий риск overclaim, слабой опоры или фактической ошибки.",
+    };
+  }
+
   if (
-    candidate.score_total >= 82 &&
+    candidate.score_total >= 86 &&
     candidate.angle_relationship === "distinct_angle" &&
     candidate.risk_level === "low" &&
     !candidate.matched_card_id
   ) {
     return {
-      recommended_action: "auto_add",
+      recommended_action: "auto_add_active",
       suggestion_type: null,
       decision_reason:
-        "Автоматическое добавление разрешено: новый самостоятельный угол, низкий риск, score >= 82.",
+        "Автоматически в активные: новый самостоятельный угол, низкий риск, score >= 86.",
+    };
+  }
+
+  if (
+    candidate.score_total >= 74 &&
+    candidate.score_total <= 85 &&
+    candidate.risk_level === "low" &&
+    !candidate.matched_card_id &&
+    (candidate.angle_relationship === "distinct_angle" ||
+      candidate.angle_relationship === "sibling_angle")
+  ) {
+    return {
+      recommended_action: "auto_add_reserve",
+      suggestion_type: null,
+      decision_reason:
+        "Автоматически в запас: полезный безопасный угол, но не уровень активного первого слоя.",
+    };
+  }
+
+  if (
+    candidate.score_total >= 74 &&
+    candidate.score_total <= 85 &&
+    candidate.risk_level === "low" &&
+    candidate.angle_relationship === "sibling_angle" &&
+    candidate.relationship_confidence !== "high"
+  ) {
+    return {
+      recommended_action: "auto_add_reserve",
+      suggestion_type: null,
+      decision_reason:
+        "Автоматически в запас: близкий, но достаточно самостоятельный безопасный sibling angle.",
     };
   }
 
@@ -714,21 +780,30 @@ function decideCandidate(candidate: EvaluatedCandidate): {
     };
   }
 
-  if (
-    candidate.angle_relationship === "sibling_angle" ||
-    candidate.angle_relationship === "uncertain" ||
-    candidate.risk_level === "medium" ||
-    candidate.risk_level === "high" ||
-    candidate.matched_card_id
-  ) {
+  if (candidate.risk_level === "medium") {
     return {
       recommended_action: "editorial_suggestion",
-      suggestion_type:
-        candidate.angle_relationship === "uncertain"
-          ? "duplicate_uncertain"
-          : "needs_review",
+      suggestion_type: "risk_review",
       decision_reason:
-        "Требуется решение редактора: хороший кандидат, но есть связь с существующим углом, риск или неопределённость.",
+        "Требуется решение редактора: кандидат достаточно интересный, но имеет средний риск.",
+    };
+  }
+
+  if (candidate.angle_relationship === "uncertain") {
+    return {
+      recommended_action: "editorial_suggestion",
+      suggestion_type: "duplicate_uncertain",
+      decision_reason:
+        "Требуется решение редактора: evaluator не уверен, дубль это или самостоятельный угол.",
+    };
+  }
+
+  if (candidate.matched_card_id) {
+    return {
+      recommended_action: "editorial_suggestion",
+      suggestion_type: "needs_review",
+      decision_reason:
+        "Требуется решение редактора: кандидат связан с существующей карточкой.",
     };
   }
 
@@ -736,8 +811,171 @@ function decideCandidate(candidate: EvaluatedCandidate): {
     recommended_action: "editorial_suggestion",
     suggestion_type: "needs_review",
     decision_reason:
-      "Требуется решение редактора: кандидат прошёл минимальный порог, но не удовлетворил строгим условиям auto_add.",
+      "Требуется решение редактора: кандидат прошёл минимальный порог, но не удовлетворил условиям автоматического применения.",
   };
+}
+
+async function createCuratorRun(args: {
+  client: ReturnType<typeof createAdminClient>;
+  reference: string;
+  canonicalRef: string | null;
+  lang: string;
+  mode: "preview" | "apply";
+  sourceCount: number;
+  noteCount: number;
+  existingCardCount: number;
+  generatorModel: string;
+  evaluatorModel: string;
+}): Promise<string | null> {
+  if (!args.client) return null;
+
+  const { data, error } = await args.client
+    .from("curator_runs")
+    .insert({
+      reference: args.reference,
+      canonical_ref: args.canonicalRef ?? args.reference,
+      lang: args.lang,
+      source_mode: "lake",
+      run_type: "auto_curator",
+      mode: args.mode,
+      status: "started",
+      generator_provider: "claude",
+      generator_model: args.generatorModel,
+      evaluator_provider: "openai",
+      evaluator_model: args.evaluatorModel,
+      source_count: args.sourceCount,
+      note_count: args.noteCount,
+      existing_card_count: args.existingCardCount,
+      started_at: new Date().toISOString(),
+    })
+    .select("id")
+    .single();
+
+  if (error) {
+    console.error("[RUN_AUTO_CURATOR_V2] curator_runs insert failed", {
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+      code: error.code,
+    });
+    return null;
+  }
+
+  return isRecord(data) ? getString(data.id) : null;
+}
+
+async function updateCuratorRun(args: {
+  client: ReturnType<typeof createAdminClient>;
+  runId: string | null;
+  status: "completed" | "failed" | "partial";
+  generatedCount?: number;
+  evaluatedCount?: number;
+  autoAddActiveCount?: number;
+  autoAddReserveCount?: number;
+  editorialSuggestionCount?: number;
+  autoRejectCount?: number;
+  appliedCount?: number;
+  errorCount?: number;
+  summary?: string | null;
+  rawGeneration?: string | null;
+  rawEvaluation?: string | null;
+  error?: string | null;
+  metadata?: Record<string, unknown>;
+}) {
+  if (!args.client || !args.runId) return;
+
+  const { error } = await args.client
+    .from("curator_runs")
+    .update({
+      status: args.status,
+      generated_count: args.generatedCount ?? 0,
+      evaluated_count: args.evaluatedCount ?? 0,
+      auto_add_active_count: args.autoAddActiveCount ?? 0,
+      auto_add_reserve_count: args.autoAddReserveCount ?? 0,
+      editorial_suggestion_count: args.editorialSuggestionCount ?? 0,
+      auto_reject_count: args.autoRejectCount ?? 0,
+      applied_count: args.appliedCount ?? 0,
+      error_count: args.errorCount ?? 0,
+      summary: args.summary ?? null,
+      raw_generation: args.rawGeneration ? truncate(args.rawGeneration, 12000) : null,
+      raw_evaluation: args.rawEvaluation ? truncate(args.rawEvaluation, 12000) : null,
+      metadata: args.metadata ?? {},
+      error: args.error ?? null,
+      completed_at: new Date().toISOString(),
+    })
+    .eq("id", args.runId);
+
+  if (error) {
+    console.error("[RUN_AUTO_CURATOR_V2] curator_runs update failed", {
+      runId: args.runId,
+      message: error.message,
+    });
+  }
+}
+
+async function insertAuditDecision(args: {
+  client: ReturnType<typeof createAdminClient>;
+  runId: string | null;
+  reference: string;
+  canonicalRef: string | null;
+  lang: string;
+  decision: Decision;
+}): Promise<string | null> {
+  if (!args.client || !args.runId) return null;
+
+  const { data, error } = await args.client
+    .from("curator_decisions")
+    .insert({
+      run_id: args.runId,
+      reference: args.reference,
+      canonical_ref: args.canonicalRef ?? args.reference,
+      lang: args.lang,
+
+      candidate_payload: args.decision.candidate,
+      score_total: args.decision.score_total,
+      scores: args.decision.scores,
+      coverage_type: args.decision.coverage_type,
+      angle_summary: args.decision.angle_summary,
+
+      risk_level: args.decision.risk_level,
+      risk: args.decision.risk,
+
+      angle_relationship: args.decision.angle_relationship,
+      relationship_confidence: args.decision.relationship_confidence,
+      matched_card_id: args.decision.matched_card_id,
+      matched_card_title: args.decision.matched_card_title,
+
+      recommended_action: args.decision.recommended_action,
+      applied_action: args.decision.applied_action,
+      suggestion_type: args.decision.suggestion_type,
+
+      existing_card_id: args.decision.matched_card_id,
+      inserted_card_id: args.decision.inserted_card_id,
+      inserted_suggestion_id: args.decision.inserted_suggestion_id,
+
+      source_basis: args.decision.source_basis,
+      reason: args.decision.reason,
+      decision_reason: args.decision.decision_reason,
+      error: args.decision.error,
+      metadata: {
+        applied: args.decision.applied,
+      },
+    })
+    .select("id")
+    .single();
+
+  if (error) {
+    console.error("[RUN_AUTO_CURATOR_V2] curator_decisions insert failed", {
+      title: args.decision.candidate.title,
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+      code: error.code,
+    });
+    return null;
+  }
+
+  return isRecord(data) ? getString(data.id) : null;
 }
 
 async function insertAngleCard(args: {
@@ -753,6 +991,7 @@ async function insertAngleCard(args: {
   generator: ModelCallResult;
   evaluator: ModelCallResult;
   now: string;
+  status: "featured" | "reserve";
 }): Promise<{ id: string | null; error: string | null }> {
   if (!args.client) return { id: null, error: "Supabase admin client missing" };
 
@@ -786,27 +1025,33 @@ async function insertAngleCard(args: {
     battle: {
       winner: "candidate",
       required: false,
-      reason: "Auto Curator v1 allowed auto_add only for distinct low-risk high-score candidates.",
+      reason:
+        args.status === "featured"
+          ? "Auto Curator v2 allowed active auto-add only for distinct low-risk high-score candidates."
+          : "Auto Curator v2 placed this candidate in reserve as useful but not top-layer.",
     },
 
-    status: "featured",
-    rank: 999,
+    status: args.status,
+    rank: args.status === "featured" ? 999 : null,
     is_locked: false,
 
     source_type: "auto_curator",
     source_provider: args.generator.provider,
-    source_model: `auto_curator:${args.generator.model}`,
+    source_model: `auto_curator_v2:${args.generator.model}`,
     editor_provider: args.evaluator.provider,
     editor_model: args.evaluator.model,
     original_card: {
       candidate: args.candidate.candidate,
       source_basis: args.candidate.source_basis,
     },
-    prompt_version: "auto_curator_v1",
+    prompt_version: "auto_curator_v2",
 
     moderator_boost: 0,
     moderator_note: null,
-    moderator_decision: "auto_curator_auto_add_v1",
+    moderator_decision:
+      args.status === "featured"
+        ? "auto_curator_auto_add_active_v2"
+        : "auto_curator_auto_add_reserve_v2",
     moderator_reviewed_at: null,
 
     created_at: args.now,
@@ -820,8 +1065,9 @@ async function insertAngleCard(args: {
     .single();
 
   if (error) {
-    console.error("[RUN_AUTO_CURATOR] auto_add insert error", {
+    console.error("[RUN_AUTO_CURATOR_V2] angle_card insert error", {
       title: args.candidate.candidate.title,
+      status: args.status,
       message: error.message,
       details: error.details,
       hint: error.hint,
@@ -914,8 +1160,8 @@ async function insertEditorialSuggestion(args: {
 
     provider: args.generator.provider,
     model: args.generator.model,
-    evaluator_version: `auto_curator_eval:${args.evaluator.model}`,
-    decision_engine_version: "auto_curator_decision_v1",
+    evaluator_version: `auto_curator_v2_eval:${args.evaluator.model}`,
+    decision_engine_version: "auto_curator_decision_v2",
 
     reviewed_at: null,
     reviewed_by: null,
@@ -933,7 +1179,7 @@ async function insertEditorialSuggestion(args: {
     .single();
 
   if (error) {
-    console.error("[RUN_AUTO_CURATOR] editorial suggestion insert error", {
+    console.error("[RUN_AUTO_CURATOR_V2] editorial suggestion insert error", {
       title: args.candidate.candidate.title,
       message: error.message,
       details: error.details,
@@ -950,6 +1196,24 @@ async function insertEditorialSuggestion(args: {
   return {
     id: isRecord(data) ? getString(data.id) : null,
     error: null,
+  };
+}
+
+function makeEvaluatedCandidate(decision: Decision): EvaluatedCandidate {
+  return {
+    candidate: decision.candidate,
+    score_total: decision.score_total,
+    scores: decision.scores,
+    coverage_type: decision.coverage_type,
+    angle_summary: decision.angle_summary,
+    angle_relationship: decision.angle_relationship,
+    relationship_confidence: decision.relationship_confidence,
+    matched_card_id: decision.matched_card_id,
+    matched_card_title: decision.matched_card_title,
+    risk_level: decision.risk_level,
+    risk: decision.risk,
+    reason: decision.reason,
+    source_basis: decision.source_basis,
   };
 }
 
@@ -993,6 +1257,8 @@ export async function POST(req: Request) {
     process.env.ANTHROPIC_GENERATOR_MODEL ?? "claude-sonnet-4-6";
   const evaluatorModel =
     process.env.OPENAI_EVALUATOR_MODEL ?? "gpt-5.5";
+
+  let runId: string | null = null;
 
   try {
     let sourcesQuery = client
@@ -1056,10 +1322,33 @@ export async function POST(req: Request) {
       .map(compactAngleCard)
       .filter((row): row is Record<string, unknown> => row !== null);
 
+    runId = await createCuratorRun({
+      client,
+      reference: effectiveReference,
+      canonicalRef,
+      lang,
+      mode: apply ? "apply" : "preview",
+      sourceCount: sourceRows.length,
+      noteCount: noteRows.length,
+      existingCardCount: existingCards.length,
+      generatorModel,
+      evaluatorModel,
+    });
+
     if (sourceRows.length === 0 && noteRows.length === 0) {
+      await updateCuratorRun({
+        client,
+        runId,
+        status: "completed",
+        generatedCount: 0,
+        evaluatedCount: 0,
+        summary: "В Озере пока нет материалов для этого стиха.",
+      });
+
       return NextResponse.json({
         ok: true,
         mode: apply ? "apply" : "preview",
+        run_id: runId,
         reference: effectiveReference,
         canonical_ref: canonicalRef,
         lang,
@@ -1068,6 +1357,15 @@ export async function POST(req: Request) {
         source_count: 0,
         note_count: 0,
         existing_card_count: existingCards.length,
+        generated_count: 0,
+        evaluated_count: 0,
+        auto_add_active_count: 0,
+        auto_add_reserve_count: 0,
+        auto_add_count: 0,
+        editorial_suggestion_count: 0,
+        auto_reject_count: 0,
+        applied_count: 0,
+        error_count: 0,
         decisions: [],
         summary: "В Озере пока нет материалов для этого стиха.",
       });
@@ -1091,9 +1389,20 @@ export async function POST(req: Request) {
     const generatedCandidates = normalizeGeneratedCandidates(generator.rawJson);
 
     if (generatedCandidates.length === 0) {
+      await updateCuratorRun({
+        client,
+        runId,
+        status: "completed",
+        generatedCount: 0,
+        evaluatedCount: 0,
+        summary: "Claude не нашёл новых сильных кандидатов в Озере.",
+        rawGeneration: generator.rawText,
+      });
+
       return NextResponse.json({
         ok: true,
         mode: apply ? "apply" : "preview",
+        run_id: runId,
         reference: effectiveReference,
         canonical_ref: canonicalRef,
         lang,
@@ -1105,6 +1414,13 @@ export async function POST(req: Request) {
         existing_card_count: existingCards.length,
         generated_count: 0,
         evaluated_count: 0,
+        auto_add_active_count: 0,
+        auto_add_reserve_count: 0,
+        auto_add_count: 0,
+        editorial_suggestion_count: 0,
+        auto_reject_count: 0,
+        applied_count: 0,
+        error_count: 0,
         decisions: [],
         raw_generation: truncate(generator.rawText, 1400),
         summary: "Claude не нашёл новых сильных кандидатов в Озере.",
@@ -1146,34 +1462,22 @@ export async function POST(req: Request) {
         reason: candidate.reason,
         source_basis: candidate.source_basis,
         recommended_action: decision.recommended_action,
+        applied_action: apply ? "skipped" : null,
         suggestion_type: decision.suggestion_type,
         decision_reason: decision.decision_reason,
         applied: false,
         inserted_card_id: null,
         inserted_suggestion_id: null,
+        audit_decision_id: null,
         error: null,
       };
     });
 
     if (apply) {
       for (const decision of decisions) {
-        const evaluated: EvaluatedCandidate = {
-          candidate: decision.candidate,
-          score_total: decision.score_total,
-          scores: decision.scores,
-          coverage_type: decision.coverage_type,
-          angle_summary: decision.angle_summary,
-          angle_relationship: decision.angle_relationship,
-          relationship_confidence: decision.relationship_confidence,
-          matched_card_id: decision.matched_card_id,
-          matched_card_title: decision.matched_card_title,
-          risk_level: decision.risk_level,
-          risk: decision.risk,
-          reason: decision.reason,
-          source_basis: decision.source_basis,
-        };
+        const evaluated = makeEvaluatedCandidate(decision);
 
-        if (decision.recommended_action === "auto_add") {
+        if (decision.recommended_action === "auto_add_active") {
           const inserted = await insertAngleCard({
             client,
             reference: effectiveReference,
@@ -1187,10 +1491,35 @@ export async function POST(req: Request) {
             generator,
             evaluator,
             now,
+            status: "featured",
           });
 
           decision.applied = inserted.error === null;
           decision.inserted_card_id = inserted.id;
+          decision.applied_action = inserted.error === null ? "inserted_active" : "failed";
+          decision.error = inserted.error;
+        }
+
+        if (decision.recommended_action === "auto_add_reserve") {
+          const inserted = await insertAngleCard({
+            client,
+            reference: effectiveReference,
+            canonicalRef,
+            bookKey: getString(body.book_key),
+            book: getString(body.book),
+            chapter: getNumber(body.chapter),
+            verse: getNumber(body.verse),
+            lang,
+            candidate: evaluated,
+            generator,
+            evaluator,
+            now,
+            status: "reserve",
+          });
+
+          decision.applied = inserted.error === null;
+          decision.inserted_card_id = inserted.id;
+          decision.applied_action = inserted.error === null ? "inserted_reserve" : "failed";
           decision.error = inserted.error;
         }
 
@@ -1217,18 +1546,39 @@ export async function POST(req: Request) {
 
           decision.applied = inserted.error === null;
           decision.inserted_suggestion_id = inserted.id;
+          decision.applied_action =
+            inserted.error === null ? "inserted_editorial_suggestion" : "failed";
           decision.error = inserted.error;
         }
 
         if (decision.recommended_action === "auto_reject") {
           decision.applied = true;
+          decision.applied_action = "rejected_logged";
         }
+      }
+    } else {
+      for (const decision of decisions) {
+        decision.applied_action = null;
       }
     }
 
+    for (const decision of decisions) {
+      decision.audit_decision_id = await insertAuditDecision({
+        client,
+        runId,
+        reference: effectiveReference,
+        canonicalRef,
+        lang,
+        decision,
+      });
+    }
+
     const errorCount = decisions.filter((decision) => decision.error).length;
-    const autoAddCount = decisions.filter(
-      (decision) => decision.recommended_action === "auto_add",
+    const autoAddActiveCount = decisions.filter(
+      (decision) => decision.recommended_action === "auto_add_active",
+    ).length;
+    const autoAddReserveCount = decisions.filter(
+      (decision) => decision.recommended_action === "auto_add_reserve",
     ).length;
     const suggestionCount = decisions.filter(
       (decision) => decision.recommended_action === "editorial_suggestion",
@@ -1236,11 +1586,39 @@ export async function POST(req: Request) {
     const rejectCount = decisions.filter(
       (decision) => decision.recommended_action === "auto_reject",
     ).length;
+    const appliedCount = decisions.filter((decision) => decision.applied).length;
+
+    const summary =
+      decisions.length === 0
+        ? "Evaluator не вернул кандидатов."
+        : `Auto Curator v2: active ${autoAddActiveCount}, reserve ${autoAddReserveCount}, queue ${suggestionCount}, reject ${rejectCount}.`;
+
+    await updateCuratorRun({
+      client,
+      runId,
+      status: errorCount === 0 ? "completed" : "partial",
+      generatedCount: generatedCandidates.length,
+      evaluatedCount: evaluatedCandidates.length,
+      autoAddActiveCount,
+      autoAddReserveCount,
+      editorialSuggestionCount: suggestionCount,
+      autoRejectCount: rejectCount,
+      appliedCount,
+      errorCount,
+      summary,
+      rawGeneration: generator.rawText,
+      rawEvaluation: evaluator.rawText,
+      metadata: {
+        decision_engine_version: "auto_curator_decision_v2",
+        maxCandidates,
+      },
+    });
 
     return NextResponse.json(
       {
         ok: errorCount === 0,
         mode: apply ? "apply" : "preview",
+        run_id: runId,
         reference: effectiveReference,
         canonical_ref: canonicalRef,
         lang,
@@ -1253,31 +1631,43 @@ export async function POST(req: Request) {
         existing_card_count: existingCards.length,
         generated_count: generatedCandidates.length,
         evaluated_count: evaluatedCandidates.length,
-        auto_add_count: autoAddCount,
+        auto_add_active_count: autoAddActiveCount,
+        auto_add_reserve_count: autoAddReserveCount,
+        auto_add_count: autoAddActiveCount,
         editorial_suggestion_count: suggestionCount,
         auto_reject_count: rejectCount,
-        applied_count: decisions.filter((decision) => decision.applied).length,
+        applied_count: appliedCount,
         error_count: errorCount,
+        summary,
         decisions,
       },
       { status: errorCount === 0 ? 200 : 207 },
     );
   } catch (error) {
-    console.error("[RUN_AUTO_CURATOR] error", {
+    const message =
+      error instanceof Error ? error.message : "Run Auto Curator v2 failed";
+
+    await updateCuratorRun({
+      client,
+      runId,
+      status: "failed",
+      error: message,
+      summary: "Auto Curator v2 failed.",
+    });
+
+    console.error("[RUN_AUTO_CURATOR_V2] error", {
       reference,
       canonicalRef,
       lang,
       apply,
-      message: error instanceof Error ? error.message : String(error),
+      message,
     });
 
     return NextResponse.json(
       {
         ok: false,
-        error:
-          error instanceof Error
-            ? error.message
-            : "Run Auto Curator failed",
+        run_id: runId,
+        error: message,
       },
       { status: 500 },
     );
