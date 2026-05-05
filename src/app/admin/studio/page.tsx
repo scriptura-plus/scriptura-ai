@@ -369,6 +369,68 @@ type RunAutoCuratorResponse = {
   decisions?: RunAutoCuratorDecision[];
 };
 
+type AutoModeratorFinding = {
+  finding_type:
+    | "duplicate_cluster"
+    | "overclaim_risk"
+    | "weak_active"
+    | "strong_reserve"
+    | "diversity_issue"
+    | "locked_card_note"
+    | "healthy_set"
+    | "needs_human_review"
+    | "other";
+  title: string;
+  severity: "low" | "medium" | "high";
+  primary_card_id: string | null;
+  related_card_ids: string[];
+  recommended_action:
+    | "keep"
+    | "move_to_reserve"
+    | "promote_to_active"
+    | "hide"
+    | "lock"
+    | "add_note"
+    | "rewrite"
+    | "create_editorial_suggestion"
+    | "no_action";
+  reason: string;
+  suggested_note: string | null;
+  risk_level: "low" | "medium" | "high" | "unknown";
+  angle_relationship:
+    | "duplicate"
+    | "stronger_version"
+    | "sibling_angle"
+    | "distinct_angle"
+    | "uncertain";
+  score_total: number | null;
+  audit_decision_id?: string | null;
+};
+
+type AutoModeratorReportResponse = {
+  ok?: boolean;
+  error?: string;
+  mode?: "report";
+  run_id?: string | null;
+  reference?: string;
+  canonical_ref?: string | null;
+  lang?: Lang;
+  evaluator_provider?: string;
+  evaluator_model?: string;
+  existing_card_count?: number;
+  report?: {
+    health_score: number;
+    set_status: "healthy" | "mostly_healthy" | "needs_cleanup" | "risky";
+    summary: string;
+    active_count: number;
+    reserve_count: number;
+    hidden_count: number;
+    rejected_count: number;
+    findings: AutoModeratorFinding[];
+  };
+};
+
+
 type ReEvaluation = {
   score_total?: number;
   placement?: string;
@@ -1008,6 +1070,66 @@ function getRunDecisionScoreBackground(action: RunAutoCuratorDecision["recommend
   return `linear-gradient(180deg, ${MUTED_2} 0%, ${MUTED} 100%)`;
 }
 
+function readableReportStatus(
+  status: "healthy" | "mostly_healthy" | "needs_cleanup" | "risky",
+): string {
+  if (status === "healthy") return "здоровый набор";
+  if (status === "mostly_healthy") return "в целом здоровый";
+  if (status === "needs_cleanup") return "нужна чистка";
+  if (status === "risky") return "есть риски";
+  return "статус неизвестен";
+}
+
+function readableReportFindingType(type: AutoModeratorFinding["finding_type"]): string {
+  if (type === "duplicate_cluster") return "Дубли / близкие углы";
+  if (type === "overclaim_risk") return "Риск overclaim";
+  if (type === "weak_active") return "Слабая активная";
+  if (type === "strong_reserve") return "Сильная запасная";
+  if (type === "diversity_issue") return "Diversity набора";
+  if (type === "locked_card_note") return "Locked / заметка";
+  if (type === "healthy_set") return "Набор здоров";
+  if (type === "needs_human_review") return "Нужна проверка";
+  return "Другое";
+}
+
+function readableReportAction(action: AutoModeratorFinding["recommended_action"]): string {
+  if (action === "keep") return "оставить";
+  if (action === "move_to_reserve") return "перевести в запас";
+  if (action === "promote_to_active") return "поднять в активные";
+  if (action === "hide") return "скрыть";
+  if (action === "lock") return "защитить";
+  if (action === "add_note") return "добавить заметку";
+  if (action === "rewrite") return "доработать";
+  if (action === "create_editorial_suggestion") return "в очередь";
+  if (action === "no_action") return "без действия";
+  return action;
+}
+
+function readableFindingSeverity(severity: AutoModeratorFinding["severity"]): string {
+  if (severity === "high") return "важно";
+  if (severity === "medium") return "средне";
+  return "низко";
+}
+
+function getReportHealthBackground(
+  status: "healthy" | "mostly_healthy" | "needs_cleanup" | "risky",
+): string {
+  if (status === "healthy") {
+    return `linear-gradient(180deg, ${SUCCESS_TEXT} 0%, #3f5730 100%)`;
+  }
+
+  if (status === "mostly_healthy") {
+    return `linear-gradient(180deg, ${SLATE} 0%, ${SLATE_DARK} 100%)`;
+  }
+
+  if (status === "needs_cleanup") {
+    return `linear-gradient(180deg, ${WARM_ACCENT} 0%, #7f674c 100%)`;
+  }
+
+  return `linear-gradient(180deg, ${ERROR_TEXT} 0%, #6f3328 100%)`;
+}
+
+
 function getPayloadString(payload: unknown, key: string): string | null {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
   const value = (payload as Record<string, unknown>)[key];
@@ -1078,6 +1200,10 @@ export default function StudioPage() {
   const [runningAutoCuratorPreview, setRunningAutoCuratorPreview] = useState(false);
   const [applyingRunAutoCurator, setApplyingRunAutoCurator] = useState(false);
   const [runAutoCuratorError, setRunAutoCuratorError] = useState("");
+  const [autoModeratorReport, setAutoModeratorReport] =
+    useState<AutoModeratorReportResponse | null>(null);
+  const [runningAutoModeratorReport, setRunningAutoModeratorReport] = useState(false);
+  const [autoModeratorReportError, setAutoModeratorReportError] = useState("");
 
   const selectedVerse = useMemo(() => {
     return verses.find((verse) => verse.reference === selectedReference) ?? null;
@@ -1200,6 +1326,8 @@ export default function StudioPage() {
     setApplyAutoCuratorPreviewError("");
     setRunAutoCuratorResult(null);
     setRunAutoCuratorError("");
+    setAutoModeratorReport(null);
+    setAutoModeratorReportError("");
     setNotice(`Открываю ${displayReference(verse)}...`);
 
     try {
@@ -1243,6 +1371,8 @@ export default function StudioPage() {
       setApplyAutoCuratorPreviewError("");
       setRunAutoCuratorResult(null);
       setRunAutoCuratorError("");
+      setAutoModeratorReport(null);
+      setAutoModeratorReportError("");
       setCardsError(
         error instanceof Error ? error.message : "Не удалось загрузить карточки.",
       );
@@ -1481,6 +1611,62 @@ export default function StudioPage() {
     } finally {
       setRunningAutoCuratorPreview(false);
       setApplyingRunAutoCurator(false);
+    }
+  }
+
+  async function runAutoModeratorReport() {
+    if (!selectedVerse) {
+      setCardsError("Сначала выбери стих.");
+      return;
+    }
+
+    if (!adminSecret.trim()) {
+      setCardsError("Вставь Admin Secret.");
+      return;
+    }
+
+    setAutoModeratorReport(null);
+    setAutoModeratorReportError("");
+    setRunningAutoModeratorReport(true);
+    setNotice("GPT-5.5 проверяет здоровье набора...");
+
+    try {
+      const response = await fetch("/api/admin/studio/auto-moderator-report", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-secret": adminSecret,
+        },
+        body: JSON.stringify({
+          reference: selectedVerse.reference,
+          canonical_ref: selectedVerse.canonical_ref,
+          lang,
+          maxCards: 100,
+        }),
+      });
+
+      const data = (await response.json()) as AutoModeratorReportResponse;
+
+      if (!response.ok || data.ok === false) {
+        throw new Error(data.error || "Не удалось проверить набор.");
+      }
+
+      setAutoModeratorReport(data);
+
+      const health = data.report?.health_score;
+      setNotice(
+        `Проверка набора готова${
+          typeof health === "number" ? `: health ${health}` : ""
+        }.`,
+      );
+    } catch (error) {
+      setAutoModeratorReport(null);
+      setAutoModeratorReportError(
+        error instanceof Error ? error.message : "Не удалось проверить набор.",
+      );
+      setNotice("");
+    } finally {
+      setRunningAutoModeratorReport(false);
     }
   }
 
@@ -3626,6 +3812,25 @@ export default function StudioPage() {
                     >
                       {applyingRunAutoCurator ? "Применяю..." : "Запустить автокуратора"}
                     </button>
+
+                    <button
+                      type="button"
+                      disabled={
+                        runningAutoCuratorPreview ||
+                        applyingRunAutoCurator ||
+                        runningAutoModeratorReport ||
+                        loadingCards
+                      }
+                      onClick={() => runAutoModeratorReport()}
+                      style={getRepairButtonStyle(
+                        runningAutoCuratorPreview ||
+                          applyingRunAutoCurator ||
+                          runningAutoModeratorReport ||
+                          loadingCards,
+                      )}
+                    >
+                      {runningAutoModeratorReport ? "Проверяю..." : "Проверить набор"}
+                    </button>
                   </div>
 
                   {runAutoCuratorError ? (
@@ -3847,6 +4052,193 @@ export default function StudioPage() {
                         </details>
                       ) : null}
                     </div>
+                  {autoModeratorReportError ? (
+                    <MessageBox
+                      kind="error"
+                      text={autoModeratorReportError}
+                      style={{ marginTop: 10 }}
+                    />
+                  ) : null}
+
+                  {autoModeratorReport?.report ? (
+                    <div
+                      style={{
+                        marginTop: 12,
+                        padding: 12,
+                        borderRadius: 14,
+                        background: CARD,
+                        border: `1px solid ${LINE}`,
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          gap: 12,
+                          alignItems: "flex-start",
+                          marginBottom: 9,
+                        }}
+                      >
+                        <div>
+                          <div
+                            style={{
+                              fontSize: 13,
+                              fontWeight: 950,
+                              color: SLATE_DARK,
+                              marginBottom: 5,
+                            }}
+                          >
+                            Auto Moderator Report
+                          </div>
+
+                          <p
+                            style={{
+                              margin: 0,
+                              color: MUTED,
+                              fontSize: 13,
+                              lineHeight: 1.55,
+                            }}
+                          >
+                            {autoModeratorReport.report.summary}
+                          </p>
+                        </div>
+
+                        <span
+                          style={{
+                            minWidth: 46,
+                            height: 42,
+                            borderRadius: 999,
+                            background: getReportHealthBackground(
+                              autoModeratorReport.report.set_status,
+                            ),
+                            color: "#fff",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            fontSize: 14,
+                            fontWeight: 950,
+                            flexShrink: 0,
+                            boxShadow: "0 10px 20px rgba(91, 102, 114, 0.18)",
+                          }}
+                        >
+                          {autoModeratorReport.report.health_score}
+                        </span>
+                      </div>
+
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginBottom: 10 }}>
+                        {autoModeratorReport.run_id ? (
+                          <Badge text={`run: ${autoModeratorReport.run_id.slice(0, 8)}`} strong />
+                        ) : null}
+                        <Badge
+                          text={readableReportStatus(autoModeratorReport.report.set_status)}
+                          strong
+                        />
+                        <Badge text={`active: ${autoModeratorReport.report.active_count}`} />
+                        <Badge text={`reserve: ${autoModeratorReport.report.reserve_count}`} />
+                        <Badge text={`findings: ${autoModeratorReport.report.findings.length}`} />
+                        <Badge text={`Evaluator: ${autoModeratorReport.evaluator_model ?? "—"}`} />
+                      </div>
+
+                      {autoModeratorReport.report.findings.length > 0 ? (
+                        <div style={{ display: "grid", gap: 9 }}>
+                          {autoModeratorReport.report.findings.map((finding, index) => (
+                            <div
+                              key={`${finding.title}-${index}`}
+                              style={{
+                                border: `1px solid ${LINE_SOFT}`,
+                                borderRadius: 12,
+                                background: SLATE_SOFT_2,
+                                padding: 10,
+                              }}
+                            >
+                              <div
+                                style={{
+                                  display: "flex",
+                                  justifyContent: "space-between",
+                                  gap: 10,
+                                  alignItems: "flex-start",
+                                  marginBottom: 6,
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    fontSize: 13,
+                                    fontWeight: 900,
+                                    color: INK,
+                                    lineHeight: 1.35,
+                                  }}
+                                >
+                                  {finding.title}
+                                </div>
+
+                                <Badge text={readableFindingSeverity(finding.severity)} strong />
+                              </div>
+
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 7 }}>
+                                <Badge text={readableReportFindingType(finding.finding_type)} strong />
+                                <Badge text={readableReportAction(finding.recommended_action)} />
+                                <Badge text={readableAngleRelationship(finding.angle_relationship) ?? "угол: —"} />
+                                <Badge text={readableRiskLevel(finding.risk_level)} />
+                                {finding.score_total !== null ? (
+                                  <Badge text={`score: ${finding.score_total}`} />
+                                ) : null}
+                                {finding.audit_decision_id ? (
+                                  <Badge text={`audit: ${finding.audit_decision_id.slice(0, 8)}`} />
+                                ) : null}
+                              </div>
+
+                              <p
+                                style={{
+                                  margin: "0 0 7px",
+                                  color: TEXT,
+                                  fontSize: 12,
+                                  lineHeight: 1.5,
+                                }}
+                              >
+                                {finding.reason}
+                              </p>
+
+                              {finding.suggested_note ? (
+                                <p
+                                  style={{
+                                    margin: 0,
+                                    color: WARM_ACCENT,
+                                    fontSize: 12,
+                                    lineHeight: 1.45,
+                                  }}
+                                >
+                                  <strong>Заметка: </strong>
+                                  {finding.suggested_note}
+                                </p>
+                              ) : null}
+
+                              {finding.primary_card_id || finding.related_card_ids.length > 0 ? (
+                                <p
+                                  style={{
+                                    margin: "7px 0 0",
+                                    color: MUTED_2,
+                                    fontSize: 11,
+                                    lineHeight: 1.45,
+                                  }}
+                                >
+                                  {finding.primary_card_id
+                                    ? `primary: ${finding.primary_card_id.slice(0, 8)}`
+                                    : ""}
+                                  {finding.related_card_ids.length > 0
+                                    ? ` related: ${finding.related_card_ids
+                                        .map((id) => id.slice(0, 8))
+                                        .join(", ")}`
+                                    : ""}
+                                </p>
+                              ) : null}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <EmptyBox text="Auto Moderator не нашёл проблем в текущем наборе." />
+                      )}
+                    </div>
+                  ) : null}
                   ) : null}
                 </div>
               </section>
@@ -4800,8 +5192,9 @@ export default function StudioPage() {
             lineHeight: 1.5,
           }}
         >
-          MVP Studio: Озеро, Автокуратор v2, audit log, очередь решений,
-          переоценка, доработка карточек, ручной редакторский приоритет и ручной материал RU/EN/ES.
+          MVP Studio: Озеро, Автокуратор v2, Auto Moderator Report, audit log,
+          очередь решений, переоценка, доработка карточек, ручной редакторский
+          приоритет и ручной материал RU/EN/ES.
         </p>
       </div>
     </main>
