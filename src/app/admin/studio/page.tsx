@@ -4329,7 +4329,7 @@ export default function StudioPage() {
                                 <p
                                   style={{
                                     margin: "7px 0 0",
-                                    color: DANGER,
+                                    color: "#9f3a2f",
                                     fontSize: 12,
                                     lineHeight: 1.45,
                                   }}
