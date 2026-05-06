@@ -2724,6 +2724,119 @@ export default function StudioPage() {
     }
   }
 
+  function findPendingSuggestionForCard(cardId: string): EditorialSuggestion | null {
+    const suggestions = editorialSuggestions?.suggestions ?? [];
+
+    const feedbackMatch = Object.entries(queueActionFeedback).find(([, feedback]) => {
+      return (
+        feedback.targetCardId === cardId &&
+        (feedback.action === "soft_rewrite" || feedback.action === "accept")
+      );
+    });
+
+    if (feedbackMatch) {
+      const suggestion = suggestions.find((item) => item.id === feedbackMatch[0]);
+      if (suggestion && suggestion.status === "pending") return suggestion;
+    }
+
+    return (
+      suggestions.find((suggestion) => {
+        if (suggestion.status !== "pending") return false;
+        return getSuggestionTargetCardIds(suggestion).includes(cardId);
+      }) ?? null
+    );
+  }
+
+  function removeEditorialSuggestionFromCurrentQueue(suggestionId: string) {
+    setEditorialSuggestions((prev) => {
+      if (!prev?.suggestions) return prev;
+
+      const currentSuggestions = prev.suggestions;
+      const removed = currentSuggestions.find((item) => item.id === suggestionId);
+
+      if (!removed) return prev;
+
+      const nextSuggestions = currentSuggestions.filter(
+        (item) => item.id !== suggestionId,
+      );
+
+      const nextStatuses = prev.summary?.statuses
+        ? {
+            ...prev.summary.statuses,
+            pending: Math.max((prev.summary.statuses.pending ?? 0) - 1, 0),
+            applied: (prev.summary.statuses.applied ?? 0) + 1,
+          }
+        : undefined;
+
+      return {
+        ...prev,
+        count: nextSuggestions.length,
+        summary: prev.summary
+          ? {
+              ...prev.summary,
+              statuses: nextStatuses ?? prev.summary.statuses,
+            }
+          : prev.summary,
+        suggestions: nextSuggestions,
+      };
+    });
+
+    setQueueResolutions((prev) => {
+      const next = { ...prev };
+      delete next[suggestionId];
+      return next;
+    });
+
+    setQueueActionFeedback((prev) => {
+      const next = { ...prev };
+      delete next[suggestionId];
+      return next;
+    });
+  }
+
+  async function markEditorialSuggestionAppliedAfterPatch(args: {
+    suggestionId: string;
+    cardTitle: string;
+  }): Promise<boolean> {
+    try {
+      const response = await fetch("/api/admin/studio/editorial-suggestions", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-secret": adminSecret,
+        },
+        body: JSON.stringify({
+          id: args.suggestionId,
+          status: "applied",
+          moderator_decision: "soft_patch_applied",
+          review_note: `Мягкая правка применена к карточке “${args.cardTitle}”. Score/status сохранены.`,
+          reviewed_by: "studio",
+        }),
+      });
+
+      const data = (await response.json().catch(() => null)) as {
+        ok?: boolean;
+        error?: string;
+      } | null;
+
+      if (!response.ok || !data?.ok) {
+        throw new Error(
+          data?.error || "Не удалось закрыть задачу очереди после мягкой правки.",
+        );
+      }
+
+      removeEditorialSuggestionFromCurrentQueue(args.suggestionId);
+      return true;
+    } catch (error) {
+      setEditorialSuggestionsError(
+        error instanceof Error
+          ? error.message
+          : "Мягкая правка применена, но задачу очереди не удалось закрыть.",
+      );
+      return false;
+    }
+  }
+
   async function applyRewrite(card: StudioCard) {
     const state = rewrites[card.id];
 
@@ -2857,9 +2970,22 @@ export default function StudioPage() {
         },
       }));
 
+      let queueClosed = false;
+      const relatedSuggestion =
+        preserveOriginalMeta && data.ok ? findPendingSuggestionForCard(card.id) : null;
+
+      if (relatedSuggestion) {
+        queueClosed = await markEditorialSuggestionAppliedAfterPatch({
+          suggestionId: relatedSuggestion.id,
+          cardTitle: card.title,
+        });
+      }
+
       setNotice(
         preserveOriginalMeta
-          ? "Мягкая правка применена. RU/EN/ES версии обновлены, исходные score/status сохранены."
+          ? queueClosed
+            ? "Мягкая правка применена. RU/EN/ES версии обновлены, исходные score/status сохранены. Задача очереди закрыта."
+            : "Мягкая правка применена. RU/EN/ES версии обновлены, исходные score/status сохранены."
           : "Доработка применена. RU/EN/ES версии обновлены.",
       );
     } catch (error) {
