@@ -1178,6 +1178,69 @@ function getSuggestionCandidatePreview(suggestion: EditorialSuggestion): string 
   );
 }
 
+
+type EditorialQueueLocalResolution = "kept" | "deferred";
+type EditorialQueueAction = "accept" | "soft_rewrite" | "keep" | "defer";
+
+function getSuggestionTargetCardIds(suggestion: EditorialSuggestion): string[] {
+  return [
+    suggestion.existing_card_id,
+    suggestion.matched_card_id,
+    suggestion.candidate_card_id,
+  ].filter((value): value is string => Boolean(value && value.trim()));
+}
+
+function buildSoftRewriteInstruction(suggestion: EditorialSuggestion): string {
+  const parts = [
+    "Сохрани главный угол карточки. Не регенерируй всё с нуля.",
+    "Сделай мягкую редакторскую правку: убери слишком категоричные формулировки, добавь осторожную оговорку и сохрани сильный инсайт.",
+  ];
+
+  if (suggestion.suggestion_type) {
+    parts.push(`Тип проблемы: ${readableSuggestionType(suggestion.suggestion_type)}.`);
+  }
+
+  if (suggestion.risk_level) {
+    parts.push(`Уровень риска: ${suggestion.risk_level}.`);
+  }
+
+  if (suggestion.reason) {
+    parts.push(`Причина из очереди: ${suggestion.reason}`);
+  }
+
+  if (suggestion.risk) {
+    parts.push(`Риск: ${suggestion.risk}`);
+  }
+
+  if (suggestion.source_summary) {
+    parts.push(`Опора/заметка: ${suggestion.source_summary}`);
+  }
+
+  parts.push(
+    "Важно: если проблема только в одном выражении, замени только это выражение или одно предложение. Не ухудшай стиль и не меняй смысл без необходимости.",
+  );
+
+  return parts.join("\n\n");
+}
+
+function getAcceptRecommendationLabel(suggestion: EditorialSuggestion): string {
+  const type = suggestion.suggestion_type;
+
+  if (type === "overclaim_review" || type === "style_review") {
+    return "Принять рекомендацию: подготовить мягкую правку";
+  }
+
+  if (type === "needs_review" || type === "risk_review") {
+    return "Принять рекомендацию: оставить на проверке";
+  }
+
+  if (type === "replacement") {
+    return "Принять рекомендацию: подготовить замену";
+  }
+
+  return "Принять рекомендацию";
+}
+
 export default function StudioPage() {
   const [adminSecret, setAdminSecret] = useState("");
   const [secretLoaded, setSecretLoaded] = useState(false);
@@ -1209,6 +1272,9 @@ export default function StudioPage() {
   const [loadingEditorialSuggestions, setLoadingEditorialSuggestions] = useState(false);
   const [creatingTestSuggestion, setCreatingTestSuggestion] = useState(false);
   const [editorialSuggestionsError, setEditorialSuggestionsError] = useState("");
+  const [queueResolutions, setQueueResolutions] = useState<
+    Record<string, EditorialQueueLocalResolution>
+  >({});
 
   const [autoCuratorPreview, setAutoCuratorPreview] = useState<AutoCuratorPreviewResponse | null>(null);
   const [loadingAutoCuratorPreview, setLoadingAutoCuratorPreview] = useState(false);
@@ -1242,6 +1308,16 @@ export default function StudioPage() {
   const hiddenRejectedCount = useMemo(() => {
     return cards.filter((card) => card.status === "rejected").length;
   }, [cards]);
+
+  const visibleEditorialSuggestions = useMemo(() => {
+    return (editorialSuggestions?.suggestions ?? []).filter(
+      (suggestion) => queueResolutions[suggestion.id] !== "kept",
+    );
+  }, [editorialSuggestions, queueResolutions]);
+
+  const locallyResolvedSuggestionCount = useMemo(() => {
+    return Object.values(queueResolutions).filter((value) => value === "kept").length;
+  }, [queueResolutions]);
 
   useEffect(() => {
     const saved = window.localStorage.getItem("scriptura_admin_secret");
@@ -1345,6 +1421,7 @@ export default function StudioPage() {
     setResearchMemoryError("");
     setEditorialSuggestions(null);
     setEditorialSuggestionsError("");
+    setQueueResolutions({});
     setAutoCuratorPreview(null);
     setAutoCuratorPreviewError("");
     setApplyAutoCuratorPreviewResult(null);
@@ -2720,6 +2797,67 @@ export default function StudioPage() {
     }
   }
 
+  function findSuggestionTargetCard(suggestion: EditorialSuggestion): StudioCard | null {
+    const targetIds = getSuggestionTargetCardIds(suggestion);
+
+    for (const id of targetIds) {
+      const card = cards.find((item) => item.id === id);
+      if (card) return card;
+    }
+
+    return null;
+  }
+
+  function handleEditorialSuggestionAction(
+    suggestion: EditorialSuggestion,
+    action: EditorialQueueAction,
+  ) {
+    if (action === "keep") {
+      setQueueResolutions((prev) => ({ ...prev, [suggestion.id]: "kept" }));
+      setNotice("Решение принято в текущем просмотре: карточку оставляем как есть.");
+      return;
+    }
+
+    if (action === "defer") {
+      setQueueResolutions((prev) => ({ ...prev, [suggestion.id]: "deferred" }));
+      setNotice("Задача оставлена в очереди: можно вернуться после проверки источника.");
+      return;
+    }
+
+    const targetCard = findSuggestionTargetCard(suggestion);
+
+    if (!targetCard) {
+      setNotice(
+        action === "accept"
+          ? "Рекомендация принята как пункт проверки, но связанная карточка не найдена в текущем списке. Обнови карточки или открой связанный стих."
+          : "Не нашёл связанную карточку для мягкой правки в текущем списке.",
+      );
+      return;
+    }
+
+    const instruction = buildSoftRewriteInstruction(suggestion);
+
+    setRewrites((prev) => ({
+      ...prev,
+      [targetCard.id]: {
+        ...createEmptyRewriteState(prev[targetCard.id]),
+        rewriteMode: "polish",
+        instruction,
+        extraMaterial: suggestion.source_summary ?? suggestion.reason ?? "",
+        result: null,
+        applied: false,
+        error: "",
+        applyError: "",
+      },
+    }));
+
+    setNotice(
+      action === "accept"
+        ? `Рекомендация принята: инструкция для мягкой правки добавлена к карточке “${targetCard.title}”.`
+        : `Мягкая правка подготовлена для карточки “${targetCard.title}”. Открой её блок “Оценка / угол” и нажми “Сделать вариант”.`,
+    );
+  }
+
   async function changeDays(nextDays: number) {
     setDays(nextDays);
     setCardsError("");
@@ -3563,7 +3701,10 @@ export default function StudioPage() {
                 editorialSuggestions ? (
                   <div style={{ display: "grid", gap: 12 }}>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
-                      <Badge text={`Pending: ${editorialSuggestions.count ?? 0}`} strong />
+                      <Badge text={`Pending: ${visibleEditorialSuggestions.length}`} strong />
+                      {locallyResolvedSuggestionCount > 0 ? (
+                        <MiniSourceChip text={`закрыто в этом просмотре: ${locallyResolvedSuggestionCount}`} />
+                      ) : null}
                       {editorialSuggestions.summary?.suggestion_types
                         ? Object.entries(editorialSuggestions.summary.suggestion_types).map(
                             ([kind, count]) => (
@@ -3576,8 +3717,7 @@ export default function StudioPage() {
                         : null}
                     </div>
 
-                    {editorialSuggestions.suggestions &&
-                    editorialSuggestions.suggestions.length > 0 ? (
+                    {visibleEditorialSuggestions.length > 0 ? (
                       <details>
                         <summary
                           style={{
@@ -3595,11 +3735,13 @@ export default function StudioPage() {
                         </summary>
 
                         <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
-                          {editorialSuggestions.suggestions.slice(0, 5).map((suggestion) => {
+                          {visibleEditorialSuggestions.slice(0, 5).map((suggestion) => {
                             const candidatePreview = getSuggestionCandidatePreview(suggestion);
                             const relationship = readableAngleRelationship(
                               suggestion.angle_relationship,
                             );
+                            const localResolution = queueResolutions[suggestion.id];
+                            const targetCard = findSuggestionTargetCard(suggestion);
 
                             return (
                               <div
@@ -3675,6 +3817,12 @@ export default function StudioPage() {
                                   {suggestion.risk_level ? (
                                     <Badge text={`risk: ${suggestion.risk_level}`} />
                                   ) : null}
+                                  {targetCard ? (
+                                    <Badge text="карточка найдена" />
+                                  ) : null}
+                                  {localResolution === "deferred" ? (
+                                    <Badge text="отложено" strong />
+                                  ) : null}
                                 </div>
 
                                 {candidatePreview ? (
@@ -3703,6 +3851,59 @@ export default function StudioPage() {
                                     {suggestion.reason}
                                   </p>
                                 ) : null}
+
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    flexWrap: "wrap",
+                                    gap: 7,
+                                    marginTop: 10,
+                                    paddingTop: 10,
+                                    borderTop: `1px solid ${LINE_SOFT}`,
+                                  }}
+                                >
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleEditorialSuggestionAction(suggestion, "accept")
+                                    }
+                                    title={getAcceptRecommendationLabel(suggestion)}
+                                    style={getApplyButtonStyle(false)}
+                                  >
+                                    Принять рекомендацию
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    disabled={!targetCard}
+                                    onClick={() =>
+                                      handleEditorialSuggestionAction(suggestion, "soft_rewrite")
+                                    }
+                                    style={getRepairButtonStyle(!targetCard)}
+                                  >
+                                    Попросить мягкую правку
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleEditorialSuggestionAction(suggestion, "keep")
+                                    }
+                                    style={getSmallButtonStyle(false)}
+                                  >
+                                    Оставить как есть
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleEditorialSuggestionAction(suggestion, "defer")
+                                    }
+                                    style={getSmallButtonStyle(false)}
+                                  >
+                                    Отложить
+                                  </button>
+                                </div>
                               </div>
                             );
                           })}
@@ -5320,8 +5521,8 @@ export default function StudioPage() {
           }}
         >
           MVP Studio: Озеро, Автокуратор v2, Auto Moderator Report, audit log,
-          очередь решений, переоценка, доработка карточек, ручной редакторский
-          приоритет и ручной материал RU/EN/ES.
+          очередь решений с 4 действиями, переоценка, доработка карточек,
+          ручной редакторский приоритет и ручной материал RU/EN/ES.
         </p>
       </div>
     </main>
