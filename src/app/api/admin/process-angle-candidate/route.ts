@@ -88,6 +88,9 @@ type SaveOneCardArgs = {
   rewritten: boolean;
   sourceProvider: string | null;
   sourceModel: string | null;
+  sourceType: string | null;
+  sourceTitle: string | null;
+  sourceLens: string | null;
   editorProvider: Provider;
   candidate: CandidateCard;
   replace_card_id: string | null;
@@ -800,6 +803,34 @@ function chooseEditorProvider(body: unknown): Provider {
   return "gemini";
 }
 
+function normalizeSourceTitle(args: {
+  sourceTitle: string | null;
+  sourceType: string | null;
+  sourceLens: string | null;
+  lang: Lang;
+  sourceModel: string | null;
+}): string | null {
+  if (args.sourceType === "word_lens_generation" || args.sourceLens === "word") {
+    if (args.lang === "ru") return "Лексика";
+    if (args.lang === "es") return "Léxico";
+    return "Lexicon";
+  }
+
+  return args.sourceTitle ?? args.sourceModel;
+}
+
+function normalizeSourceType(args: {
+  sourceType: string | null;
+  rewritten: boolean;
+  forceSaveDuplicate: boolean;
+}): string {
+  if (args.forceSaveDuplicate) return "manual_force_duplicate";
+  if (args.sourceType) return args.sourceType;
+  return args.rewritten
+    ? "admin_process_candidate_rewrite"
+    : "admin_process_candidate";
+}
+
 async function evaluateCandidate(args: {
   reference: string;
   verseText: string;
@@ -877,6 +908,14 @@ async function saveOneCard(args: SaveOneCardArgs): Promise<{
   lang: Lang;
   error: string | null;
 }> {
+  const displaySourceTitle = normalizeSourceTitle({
+    sourceTitle: args.sourceTitle,
+    sourceType: args.sourceType,
+    sourceLens: args.sourceLens,
+    lang: args.lang,
+    sourceModel: args.sourceModel,
+  });
+
   const saveResult = await saveAngleCard({
     reference: args.reference,
     book: args.book,
@@ -899,25 +938,35 @@ async function saveOneCard(args: SaveOneCardArgs): Promise<{
 
     score_total: args.score_total,
     scores: args.scores,
-    evaluation: args.evaluation,
+    evaluation: {
+      ...args.evaluation,
+      source_title: displaySourceTitle,
+      source_type: args.sourceType,
+      source_lens: args.sourceLens,
+    },
     battle: args.battle,
 
     status: args.status,
     rank: args.status === "featured" ? 999 : null,
     is_locked: false,
 
-    source_type: args.forceSaveDuplicate
-      ? "manual_force_duplicate"
-      : args.rewritten
-        ? "admin_process_candidate_rewrite"
-        : "admin_process_candidate",
+    source_type: normalizeSourceType({
+      sourceType: args.sourceType,
+      rewritten: args.rewritten,
+      forceSaveDuplicate: args.forceSaveDuplicate,
+    }),
     source_provider: args.sourceProvider,
-    source_model: args.sourceModel,
+    source_model: displaySourceTitle ?? args.sourceModel,
 
     editor_provider: args.editorProvider,
     editor_model: getModelName(args.editorProvider),
 
-    original_card: args.candidate,
+    original_card: {
+      ...args.candidate,
+      source_title: displaySourceTitle,
+      source_type: args.sourceType,
+      source_lens: args.sourceLens,
+    },
     rewritten_from_card_id: null,
     replaced_card_id: args.replace_card_id,
 
@@ -960,6 +1009,9 @@ export async function POST(req: Request) {
         : null;
 
     const sourceModel = getString(body?.source_model) ?? null;
+    const sourceTitle = getString(body?.source_title) ?? null;
+    const sourceType = getString(body?.source_type) ?? null;
+    const sourceLens = getString(body?.source_lens) ?? null;
 
     if (!reference || !verseText || !lang || !isCandidateCard(candidate)) {
       return NextResponse.json(
@@ -1039,6 +1091,9 @@ export async function POST(req: Request) {
         book_key: normalizedReference.book_key,
         editor_provider: editorProvider,
         editor_model: getModelName(editorProvider),
+        source_title: sourceTitle,
+        source_type: sourceType,
+        source_lens: sourceLens,
         duplicate,
         first_evaluation: firstEvaluation,
         final_card: candidate,
@@ -1062,6 +1117,9 @@ export async function POST(req: Request) {
         book_key: normalizedReference.book_key,
         editor_provider: editorProvider,
         editor_model: getModelName(editorProvider),
+        source_title: sourceTitle,
+        source_type: sourceType,
+        source_lens: sourceLens,
         duplicate: buildDuplicatePayload({
           evaluation: firstEvaluation,
           candidate,
@@ -1121,6 +1179,9 @@ export async function POST(req: Request) {
           book_key: normalizedReference.book_key,
           editor_provider: editorProvider,
           editor_model: getModelName(editorProvider),
+          source_title: sourceTitle,
+          source_type: sourceType,
+          source_lens: sourceLens,
           duplicate: buildDuplicatePayload({
             evaluation: finalEvaluation,
             candidate,
@@ -1151,6 +1212,9 @@ export async function POST(req: Request) {
         book_key: normalizedReference.book_key,
         editor_provider: editorProvider,
         editor_model: getModelName(editorProvider),
+        source_title: sourceTitle,
+        source_type: sourceType,
+        source_lens: sourceLens,
         first_evaluation: firstEvaluation,
         rewritten_card: rewrittenCard,
         final_card: finalCard,
@@ -1172,6 +1236,9 @@ export async function POST(req: Request) {
         book_key: normalizedReference.book_key,
         editor_provider: editorProvider,
         editor_model: getModelName(editorProvider),
+        source_title: sourceTitle,
+        source_type: sourceType,
+        source_lens: sourceLens,
         first_evaluation: firstEvaluation,
         rewritten_card: rewrittenCard,
         final_card: finalCard,
@@ -1218,6 +1285,9 @@ export async function POST(req: Request) {
           book_key: normalizedReference.book_key,
           editor_provider: editorProvider,
           editor_model: getModelName(editorProvider),
+          source_title: sourceTitle,
+          source_type: sourceType,
+          source_lens: sourceLens,
           first_evaluation: firstEvaluation,
           final_card: finalCard,
           final_evaluation: finalEvaluation,
@@ -1257,6 +1327,9 @@ export async function POST(req: Request) {
         rewritten,
         sourceProvider,
         sourceModel,
+        sourceType,
+        sourceTitle,
+        sourceLens,
         editorProvider,
         candidate,
         replace_card_id: getString(finalEvaluation.replace_card_id),
@@ -1294,6 +1367,9 @@ export async function POST(req: Request) {
       book_key: normalizedReference.book_key,
       editor_provider: editorProvider,
       editor_model: getModelName(editorProvider),
+      source_title: sourceTitle,
+      source_type: sourceType,
+      source_lens: sourceLens,
       first_evaluation: firstEvaluation,
       rewritten_card: rewrittenCard,
       final_card: finalCard,
