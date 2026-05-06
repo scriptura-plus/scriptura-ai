@@ -25,12 +25,14 @@ export function buildLensPrompt(args: {
   const langName = LANG_NAME[args.lang];
   const fence = LANG_FENCE(langName);
 
-  const originalLanguagePrompt =
-    args.lens === "translations"
-      ? formatOriginalLanguagePacketForPrompt(
-          getOriginalLanguagePacket(args.reference),
-        )
-      : "";
+  const shouldUseOriginalLanguagePacket =
+    args.lens === "translations" || args.lens === "angles";
+
+  const originalLanguagePrompt = shouldUseOriginalLanguagePacket
+    ? formatOriginalLanguagePacketForPrompt(
+        getOriginalLanguagePacket(args.reference),
+      )
+    : "";
 
   switch (args.lens) {
     // ─── ANGLES ──────────────────────────────────────────────────────────────
@@ -38,9 +40,18 @@ export function buildLensPrompt(args: {
       return (
         `${fence}\n\n` +
         `Verse: ${args.reference}\n"${args.verseText}"\n\n` +
+        `${originalLanguagePrompt}\n\n` +
         `All string values must be written in ${langName}.\n\n` +
         `${EDITORIAL_VOICE(langName)}\n\n` +
         `${JARGON_BAN}\n\n` +
+
+        `ORIGINAL-LANGUAGE EVIDENCE LAYER — INTERNAL ONLY:\n` +
+        `If a supplied Greek, Hebrew, or Aramaic packet appears above, use it as a verification layer for word forms, repeated roots, lemmas, morphology, and basic sense data.\n` +
+        `Do not invent original-language words, transliterations, roots, morphology, or semantic claims that are not supported by the supplied packet.\n` +
+        `Do not write raw technical labels such as "Strong", "morphology", "gloss", "lemma", "packet", "STEPBible", "dataset", "ГЛОССА", "Стронг", "морфология", "лемма", or "пакет" in reader-facing cards.\n` +
+        `Do not include Hebrew, Aramaic, or Greek characters for decoration. Quote an original-language form only when it is the actual textual anchor of a strong discovery.\n` +
+        `If the packet supports a lexical discovery, translate the evidence into natural reader language. If it does not produce a strong discovery, prefer structure, sequence, rhetoric, absence, agency, contrast, or translation loss.\n` +
+        `The goal is still a Pearl: a non-obvious textual discovery, not a mini lexicon entry.\n\n` +
 
         // ── STEP 1: DISCOVERY HUNT ─────────────────────────────────────────
         `STEP 1 — SILENT DISCOVERY HUNT (do this before writing anything):\n` +
@@ -152,7 +163,7 @@ export function buildLensPrompt(args: {
 
         `ANCHOR STANDARD:\n` +
         `The exact word, phrase, or structural feature from the verse that the angle is grounded in. ` +
-        `If the discovery involves original language, quote the original word alongside the translation.\n\n` +
+        `If the discovery truly depends on a verified original-language form, you may quote that form; otherwise use the visible phrase from the verse. Never add Hebrew, Aramaic, or Greek merely to make the card look scholarly.\n\n` +
 
         `WHY_IT_MATTERS STANDARD:\n` +
         `One sentence. A perceptual shift — how the verse reads differently after seeing this. ` +
@@ -164,7 +175,7 @@ export function buildLensPrompt(args: {
         `Each object has exactly these keys:\n` +
         `- "title": discovery-driven statement, max 14 words, in ${langName}\n` +
         `- "teaser": 2-3 sentences, starts with the discovery not a summary, in ${langName}\n` +
-        `- "anchor": exact word/phrase/structure from the verse (include original-language form if relevant), in ${langName}\n` +
+        `- "anchor": exact word/phrase/structure from the verse; include an original-language form only if verified and essential to the discovery, in ${langName}\n` +
         `- "why_it_matters": 1 sentence, perceptual shift, in ${langName}\n\n` +
 
         `No banned words. No generic angles. No angle that fails the rejection test.\n\n` +
