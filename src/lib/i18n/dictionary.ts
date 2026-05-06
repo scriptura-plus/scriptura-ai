@@ -20,8 +20,8 @@ export const dictionary = {
     language: "Language",
     provider: "AI provider",
     lenses: {
-      angles: "Angles",
-      word: "Word",
+      angles: "Pearls",
+      word: "Lexis",
       context: "Context",
       translations: "Translations",
     },
@@ -64,7 +64,7 @@ export const dictionary = {
     provider: "AI-провайдер",
     lenses: {
       angles: "Жемчужины",
-      word: "Слово",
+      word: "Лексика",
       context: "Контекст",
       translations: "Переводы",
     },
@@ -107,7 +107,7 @@ export const dictionary = {
     provider: "Proveedor de IA",
     lenses: {
       angles: "Perlas",
-      word: "Palabra",
+      word: "Léxico",
       context: "Contexto",
       translations: "Traducciones",
     },
