@@ -617,6 +617,7 @@ type RewriteState = {
   rewriteMode: RewriteMode;
   instruction: string;
   extraMaterial: string;
+  preserveOriginalMeta: boolean;
   loading: boolean;
   applying: boolean;
   applied: boolean;
@@ -741,6 +742,15 @@ function shortStatusLabel(status: string): string {
   if (status === "rejected") return "отклонённых";
   if (status === "rewrite") return "на доработке";
   return status;
+}
+
+function readableCardStatus(status: string): string {
+  if (status === "featured") return "активная";
+  if (status === "reserve") return "запас";
+  if (status === "hidden") return "скрыта";
+  if (status === "rejected") return "отклонена";
+  if (status === "rewrite") return "на доработке";
+  return status || "—";
 }
 
 function coverageLabel(type: string | null): string | null {
@@ -928,6 +938,34 @@ function getEvaluationRisk(result: ReEvaluateResponse | RewriteCardResponse | nu
   return typeof risk === "string" && risk.trim() ? risk.trim() : null;
 }
 
+function placementFromCardStatus(status: string): string {
+  if (status === "featured") return "featured_new";
+  if (status === "reserve") return "reserve";
+  if (status === "hidden") return "hidden";
+  if (status === "rejected") return "rejected";
+  if (status === "rewrite") return "rewrite";
+  return status || "reserve";
+}
+
+function buildPreservedRewriteEvaluation(card: StudioCard, evaluation: ReEvaluation): ReEvaluation {
+  return {
+    ...evaluation,
+    score_total:
+      typeof card.score_total === "number" && Number.isFinite(card.score_total)
+        ? card.score_total
+        : evaluation.score_total,
+    placement: placementFromCardStatus(card.status),
+    coverage_type: card.coverage_type ?? evaluation.coverage_type,
+    angle_summary: card.angle_summary ?? evaluation.angle_summary,
+    reason: [
+      "Soft patch mode: исходный score/status сохранены. Новая проверка использована только как risk-check, а не как решение о продвижении.",
+      evaluation.reason,
+    ]
+      .filter(Boolean)
+      .join(" "),
+  };
+}
+
 function createEmptyReEvaluateState(previous?: ReEvaluateState): ReEvaluateState {
   return {
     loading: false,
@@ -952,6 +990,7 @@ function createEmptyRewriteState(previous?: RewriteState): RewriteState {
     rewriteMode: previous?.rewriteMode ?? "polish",
     instruction: previous?.instruction ?? "",
     extraMaterial: previous?.extraMaterial ?? "",
+    preserveOriginalMeta: previous?.preserveOriginalMeta ?? false,
     loading: false,
     applying: false,
     applied: false,
@@ -1200,8 +1239,9 @@ function getSuggestionTargetCardIds(suggestion: EditorialSuggestion): string[] {
 
 function buildSoftRewriteInstruction(suggestion: EditorialSuggestion): string {
   const parts = [
-    "Сохрани главный угол карточки. Не регенерируй всё с нуля.",
-    "Сделай мягкую редакторскую правку: убери слишком категоричные формулировки, добавь осторожную оговорку и сохрани сильный инсайт.",
+    "Сохрани карточку как уже одобренную. Это НЕ новая генерация и НЕ новая карточка.",
+    "Сделай только мягкий patch: измени одно рискованное выражение, одно предложение или максимум один абзац. Всё остальное оставь максимально близко к оригиналу.",
+    "Не меняй главный угол, статус, силу открытия и композицию карточки. Не превращай её в осторожную справочную заметку.",
   ];
 
   if (suggestion.suggestion_type) {
@@ -1226,6 +1266,7 @@ function buildSoftRewriteInstruction(suggestion: EditorialSuggestion): string {
 
   parts.push(
     "Важно: если проблема только в одном выражении, замени только это выражение или одно предложение. Не ухудшай стиль и не меняй смысл без необходимости.",
+    "Score/status исходной карточки должны считаться сохранёнными: проверка после правки нужна только как risk-check, а не как новое решение о продвижении карточки.",
   );
 
   return parts.join("\n\n");
@@ -2556,6 +2597,7 @@ export default function StudioPage() {
       [cardId]: {
         ...createEmptyRewriteState(prev[cardId]),
         rewriteMode,
+        preserveOriginalMeta: false,
         result: null,
         applied: false,
         error: "",
@@ -2604,6 +2646,7 @@ export default function StudioPage() {
         rewriteMode: state.rewriteMode,
         instruction: state.instruction,
         extraMaterial: state.extraMaterial,
+        preserveOriginalMeta: state.preserveOriginalMeta,
         loading: true,
         applied: false,
       },
@@ -2625,6 +2668,9 @@ export default function StudioPage() {
           rewrite_mode: state.rewriteMode,
           instruction: state.instruction,
           extra_material: state.extraMaterial,
+          soft_patch_mode: state.preserveOriginalMeta,
+          preserve_original_score: state.preserveOriginalMeta,
+          preserve_original_status: state.preserveOriginalMeta,
         }),
       });
 
@@ -2640,6 +2686,7 @@ export default function StudioPage() {
           rewriteMode: state.rewriteMode,
           instruction: state.instruction,
           extraMaterial: state.extraMaterial,
+          preserveOriginalMeta: state.preserveOriginalMeta,
           loading: false,
           applying: false,
           applied: false,
@@ -2653,9 +2700,11 @@ export default function StudioPage() {
       const placement = getEvaluationPlacement(data);
 
       setNotice(
-        `Доработка готова: ${
-          newScore === null ? "без score" : `score ${newScore}`
-        }${placement ? ` / ${placement}` : ""}.`,
+        state.preserveOriginalMeta
+          ? `Мягкий patch готов. Исходные score/status будут сохранены: ${card.score_total ?? "—"} / ${readableCardStatus(card.status)}.`
+          : `Доработка готова: ${
+              newScore === null ? "без score" : `score ${newScore}`
+            }${placement ? ` / ${placement}` : ""}.`,
       );
     } catch (error) {
       setRewrites((prev) => ({
@@ -2665,6 +2714,7 @@ export default function StudioPage() {
           rewriteMode: state.rewriteMode,
           instruction: state.instruction,
           extraMaterial: state.extraMaterial,
+          preserveOriginalMeta: state.preserveOriginalMeta,
           loading: false,
           error:
             error instanceof Error ? error.message : "Не удалось подготовить доработку.",
@@ -2687,6 +2737,11 @@ export default function StudioPage() {
       return;
     }
 
+    const preserveOriginalMeta = state.preserveOriginalMeta === true;
+    const evaluationForApply = preserveOriginalMeta
+      ? buildPreservedRewriteEvaluation(card, state.result.evaluation)
+      : state.result.evaluation;
+
     setRewrites((prev) => ({
       ...prev,
       [card.id]: {
@@ -2694,12 +2749,17 @@ export default function StudioPage() {
         rewriteMode: prev[card.id]?.rewriteMode ?? "polish",
         instruction: prev[card.id]?.instruction ?? "",
         extraMaterial: prev[card.id]?.extraMaterial ?? "",
+        preserveOriginalMeta: prev[card.id]?.preserveOriginalMeta ?? preserveOriginalMeta,
         result: prev[card.id]?.result ?? null,
         applying: true,
       },
     }));
 
-    setNotice(`Применяю доработку RU/EN/ES: ${card.title}`);
+    setNotice(
+      preserveOriginalMeta
+        ? `Применяю мягкую правку RU/EN/ES без изменения score/status: ${card.title}`
+        : `Применяю доработку RU/EN/ES: ${card.title}`,
+    );
 
     try {
       const response = await fetch("/api/admin/studio/apply-card-rewrite", {
@@ -2712,7 +2772,10 @@ export default function StudioPage() {
           card_id: card.id,
           lang,
           rewritten_card: state.result.rewritten_card,
-          evaluation: state.result.evaluation,
+          evaluation: evaluationForApply,
+          soft_patch_mode: preserveOriginalMeta,
+          preserve_original_score: preserveOriginalMeta,
+          preserve_original_status: preserveOriginalMeta,
         }),
       });
 
@@ -2745,21 +2808,25 @@ export default function StudioPage() {
                 data.card?.why_it_matters !== undefined
                   ? data.card.why_it_matters ?? null
                   : state.result?.rewritten_card?.why_it_matters ?? current.why_it_matters,
-              score_total:
-                typeof data.applied?.score_total === "number"
+              score_total: preserveOriginalMeta
+                ? current.score_total
+                : typeof data.applied?.score_total === "number"
                   ? data.applied.score_total
                   : current.score_total,
-              status: data.applied?.status ?? current.status,
-              rank:
-                typeof data.applied?.rank === "number" || data.applied?.rank === null
+              status: preserveOriginalMeta ? current.status : data.applied?.status ?? current.status,
+              rank: preserveOriginalMeta
+                ? current.rank
+                : typeof data.applied?.rank === "number" || data.applied?.rank === null
                   ? data.applied.rank
                   : current.rank,
-              coverage_type:
-                data.applied?.coverage_type === undefined
+              coverage_type: preserveOriginalMeta
+                ? current.coverage_type
+                : data.applied?.coverage_type === undefined
                   ? current.coverage_type
                   : data.applied.coverage_type,
-              angle_summary:
-                data.applied?.angle_summary === undefined
+              angle_summary: preserveOriginalMeta
+                ? current.angle_summary
+                : data.applied?.angle_summary === undefined
                   ? current.angle_summary
                   : data.applied.angle_summary,
               updated_at:
@@ -2780,6 +2847,7 @@ export default function StudioPage() {
           rewriteMode: prev[card.id]?.rewriteMode ?? "polish",
           instruction: prev[card.id]?.instruction ?? "",
           extraMaterial: prev[card.id]?.extraMaterial ?? "",
+          preserveOriginalMeta: prev[card.id]?.preserveOriginalMeta ?? preserveOriginalMeta,
           loading: false,
           applying: false,
           applied: true,
@@ -2789,7 +2857,11 @@ export default function StudioPage() {
         },
       }));
 
-      setNotice("Доработка применена. RU/EN/ES версии обновлены.");
+      setNotice(
+        preserveOriginalMeta
+          ? "Мягкая правка применена. RU/EN/ES версии обновлены, исходные score/status сохранены."
+          : "Доработка применена. RU/EN/ES версии обновлены.",
+      );
     } catch (error) {
       setRewrites((prev) => ({
         ...prev,
@@ -2798,6 +2870,7 @@ export default function StudioPage() {
           rewriteMode: prev[card.id]?.rewriteMode ?? "polish",
           instruction: prev[card.id]?.instruction ?? "",
           extraMaterial: prev[card.id]?.extraMaterial ?? "",
+          preserveOriginalMeta: prev[card.id]?.preserveOriginalMeta ?? preserveOriginalMeta,
           result: prev[card.id]?.result ?? null,
           applying: false,
           applyError:
@@ -2882,6 +2955,7 @@ export default function StudioPage() {
         rewriteMode: "polish",
         instruction,
         extraMaterial: suggestion.source_summary ?? suggestion.reason ?? "",
+        preserveOriginalMeta: true,
         result: null,
         applied: false,
         error: "",
@@ -5517,7 +5591,9 @@ export default function StudioPage() {
                                   text={
                                     rewrite.rewriteMode === "from_idea"
                                       ? "Режим: из моей мысли"
-                                      : "Режим: улучшение угла"
+                                      : rewrite.preserveOriginalMeta
+                                        ? "Режим: мягкий patch"
+                                        : "Режим: улучшение угла"
                                   }
                                   strong
                                 />
@@ -5583,15 +5659,32 @@ export default function StudioPage() {
                                   marginBottom: 9,
                                 }}
                               >
-                                <Badge
-                                  text={`Новая оценка: ${
-                                    rewriteScore === null ? "—" : rewriteScore
-                                  }`}
-                                  strong
-                                />
-                                {rewritePlacement ? (
-                                  <Badge text={`Предложение: ${rewritePlacement}`} />
-                                ) : null}
+                                {rewrite.preserveOriginalMeta ? (
+                                  <>
+                                    <Badge
+                                      text={`Исходная оценка сохраняется: ${card.score_total ?? "—"}`}
+                                      strong
+                                    />
+                                    <Badge text={`Статус сохраняется: ${readableCardStatus(card.status)}`} />
+                                    <Badge
+                                      text={`Risk-check после правки: ${
+                                        rewriteScore === null ? "—" : rewriteScore
+                                      }`}
+                                    />
+                                  </>
+                                ) : (
+                                  <>
+                                    <Badge
+                                      text={`Новая оценка: ${
+                                        rewriteScore === null ? "—" : rewriteScore
+                                      }`}
+                                      strong
+                                    />
+                                    {rewritePlacement ? (
+                                      <Badge text={`Предложение: ${rewritePlacement}`} />
+                                    ) : null}
+                                  </>
+                                )}
                               </div>
 
                               {rewriteReason ? (
@@ -5622,10 +5715,22 @@ export default function StudioPage() {
                                 </p>
                               ) : null}
 
+                              {rewrite.preserveOriginalMeta && !rewrite.applied ? (
+                                <MessageBox
+                                  kind="info"
+                                  text="Это мягкий patch: при применении меняется только текст карточки, а исходные оценка и статус сохраняются. Оценка выше — только справочная проверка риска."
+                                  style={{ marginTop: 10 }}
+                                />
+                              ) : null}
+
                               {rewrite.applied ? (
                                 <MessageBox
                                   kind="success"
-                                  text="Доработка применена. RU/EN/ES версии обновлены."
+                                  text={
+                                    rewrite.preserveOriginalMeta
+                                      ? "Мягкая правка применена. RU/EN/ES версии обновлены, исходные score/status сохранены."
+                                      : "Доработка применена. RU/EN/ES версии обновлены."
+                                  }
                                   style={{ marginTop: 10 }}
                                 />
                               ) : (
@@ -5637,7 +5742,9 @@ export default function StudioPage() {
                                 >
                                   {rewrite.applying
                                     ? "Применяю..."
-                                    : "Применить доработку RU/EN/ES"}
+                                    : rewrite.preserveOriginalMeta
+                                      ? `Применить мягкую правку, сохранив ${card.score_total ?? "—"} / ${readableCardStatus(card.status)}`
+                                      : "Применить доработку RU/EN/ES"}
                                 </button>
                               )}
 
