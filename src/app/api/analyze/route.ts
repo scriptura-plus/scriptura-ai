@@ -1,4 +1,5 @@
 import { after, NextResponse } from "next/server";
+import { createHash } from "crypto";
 import { runAI, resolveAIModel } from "@/lib/ai/runAI";
 import { isProvider, defaultProvider, type Provider } from "@/lib/ai/providers";
 import { normalizeReference } from "@/lib/bible/normalizeReference";
@@ -38,6 +39,8 @@ type Lang = "en" | "ru" | "es";
 
 const TARGET_ANGLE_COUNT = 12;
 const INITIAL_ANGLE_PROCESS_LIMIT = 4;
+const WORD_LENS_ARTICLE_TYPE = "word_lens_generation";
+const WORD_LENS_PROMPT_VERSION = "word_lens_v2_original_packet";
 
 const isLang = (v: unknown): v is Lang =>
   v === "en" || v === "ru" || v === "es";
@@ -63,6 +66,10 @@ type AngleCardLike = {
 
 function getString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function stringifyCachedRawJson(rawJson: unknown): string {
@@ -144,6 +151,12 @@ function getExtraArticleTitle(id: ExtraId, lang: Lang): string {
   };
 
   return labels[lang][id] ?? String(id);
+}
+
+function getWordLensArticleTitle(lang: Lang): string {
+  if (lang === "ru") return "Word Lens / Лексика";
+  if (lang === "es") return "Word Lens / Léxico";
+  return "Word Lens / Lexicon";
 }
 
 function stripCodeFence(text: string): string {
@@ -271,6 +284,156 @@ function toCandidate(card: AngleCardLike, index: number) {
     why_it_matters: card.why_it_matters ?? null,
     body: card.body ?? null,
   };
+}
+
+function computeContentHash(value: unknown): string {
+  return createHash("sha256")
+    .update(JSON.stringify(value))
+    .digest("hex");
+}
+
+function getRecordString(record: Record<string, unknown>, keys: string[]): string | null {
+  for (const key of keys) {
+    const value = getString(record[key]);
+    if (value) return value;
+  }
+
+  return null;
+}
+
+function getWordLensCardArray(parsedJson: unknown): Record<string, unknown>[] {
+  if (Array.isArray(parsedJson)) {
+    return parsedJson.filter(isRecord);
+  }
+
+  if (!isRecord(parsedJson)) return [];
+
+  const possibleArrays = [
+    parsedJson.cards,
+    parsedJson.word_cards,
+    parsedJson.observations,
+    parsedJson.items,
+    parsedJson.findings,
+    parsedJson.results,
+  ];
+
+  for (const value of possibleArrays) {
+    if (Array.isArray(value)) {
+      return value.filter(isRecord);
+    }
+  }
+
+  return [];
+}
+
+function buildWordLensContentText(args: {
+  reference: string;
+  lang: Lang;
+  parsedJson: unknown;
+  rawText: string;
+}): string {
+  const cards = getWordLensCardArray(args.parsedJson);
+
+  if (cards.length === 0) {
+    return stripCodeFence(args.rawText);
+  }
+
+  const chunks = cards.map((card, index) => {
+    const title =
+      getRecordString(card, ["title", "heading", "word", "term"]) ??
+      `Word observation ${index + 1}`;
+
+    const original =
+      getRecordString(card, [
+        "original",
+        "original_word",
+        "hebrew",
+        "greek",
+        "aramaic",
+        "form",
+        "word_form",
+        "lemma",
+      ]) ?? "";
+
+    const anchor =
+      getRecordString(card, [
+        "anchor",
+        "support",
+        "phrase",
+        "text_anchor",
+        "verse_phrase",
+      ]) ?? "";
+
+    const gap =
+      getRecordString(card, [
+        "gap",
+        "translation_gap",
+        "translation_shift",
+        "semantic_range",
+        "word_choice",
+        "observation",
+      ]) ?? "";
+
+    const teaser =
+      getRecordString(card, [
+        "teaser",
+        "body",
+        "text",
+        "explanation",
+        "discovery",
+        "insight",
+      ]) ?? "";
+
+    const why =
+      getRecordString(card, [
+        "why_it_matters",
+        "whyItMatters",
+        "why",
+        "significance",
+        "meaning_shift",
+      ]) ?? "";
+
+    return [
+      `## ${index + 1}. ${title}`,
+      original ? `Original/form: ${original}` : null,
+      anchor ? `Anchor: ${anchor}` : null,
+      gap ? `Translation/semantic gap: ${gap}` : null,
+      teaser ? `Observation: ${teaser}` : null,
+      why ? `Why it matters: ${why}` : null,
+    ]
+      .filter(Boolean)
+      .join("\n");
+  });
+
+  return [
+    `# Word Lens / Lexicon — ${args.reference}`,
+    "",
+    "This is a set of word-card observations produced by the Word Lens. Extract only public-worthy pearl candidates where a word, form, particle, preposition, semantic range, or translation gap changes how the verse is read. Do not extract a candidate if it is merely “the word means X.”",
+    "",
+    ...chunks,
+  ].join("\n");
+}
+
+function getContentHashFromSavedRawJson(rawJson: unknown): string | null {
+  const value =
+    typeof rawJson === "string" ? parseCacheableJson(rawJson) : rawJson;
+
+  if (!isRecord(value)) return null;
+
+  const direct = getString(value.content_hash);
+  if (direct) return direct;
+
+  if (isRecord(value.metadata)) {
+    return getString(value.metadata.content_hash);
+  }
+
+  return null;
+}
+
+function wordLensUsedOriginalLanguagePacket(prompt: string): boolean {
+  return /\b(STEPBible|Greek|Hebrew|Aramaic|original-language|original language|lemma|morphology)\b/i.test(
+    prompt,
+  );
 }
 
 async function buildAnglesResponseFromCards(args: {
@@ -472,6 +635,171 @@ async function runArticleExtractorAndTrack(args: {
   }
 }
 
+async function saveWordLensToResearchLake(args: {
+  req: Request;
+  reference: string;
+  canonicalRef: string | null;
+  verseText: string;
+  lang: Lang;
+  provider: Provider;
+  prompt: string;
+  rawOutput: string;
+}): Promise<{
+  articleId: string | null;
+  extractionStatus: string | null;
+  duplicate: boolean;
+  contentHash: string | null;
+}> {
+  const parsedReference = parseReference(args.reference);
+  const parsedJson = parseCacheableJson(args.rawOutput);
+  const model = getModelName(args.provider);
+  const contentText = buildWordLensContentText({
+    reference: args.reference,
+    lang: args.lang,
+    parsedJson,
+    rawText: args.rawOutput,
+  });
+
+  const usedOriginalLanguagePacket = wordLensUsedOriginalLanguagePacket(args.prompt);
+  const contentHash = computeContentHash({
+    canonical_ref: args.canonicalRef ?? args.reference,
+    lang: args.lang,
+    provider: args.provider,
+    model,
+    prompt_version: WORD_LENS_PROMPT_VERSION,
+    content_text: contentText,
+  });
+
+  const existingArticle = await getResearchArticle({
+    reference: args.reference,
+    lang: args.lang,
+    provider: args.provider,
+    articleType: WORD_LENS_ARTICLE_TYPE,
+  });
+
+  const existingHash = existingArticle?.raw_json
+    ? getContentHashFromSavedRawJson(existingArticle.raw_json)
+    : null;
+
+  const isDuplicate = Boolean(
+    existingArticle?.id && existingHash && existingHash === contentHash,
+  );
+
+  if (isDuplicate) {
+    console.log("[WORD_LENS_RESEARCH_LAKE] duplicate skipped", {
+      reference: args.reference,
+      canonical_ref: args.canonicalRef,
+      lang: args.lang,
+      provider: args.provider,
+      model,
+      contentHash,
+      articleId: existingArticle?.id,
+    });
+
+    if (
+      existingArticle?.id &&
+      (existingArticle.extraction_status === "pending" ||
+        existingArticle.extraction_status === "failed")
+    ) {
+      after(() =>
+        runArticleExtractorAndTrack({
+          articleId: existingArticle.id,
+          req: args.req,
+          reference: args.reference,
+          verseText: args.verseText,
+          lang: args.lang,
+          provider: args.provider,
+          sourceTitle: getWordLensArticleTitle(args.lang),
+          sourceType: WORD_LENS_ARTICLE_TYPE,
+          sourceLens: "word",
+          sourceArticle: contentText,
+        }),
+      );
+    }
+
+    return {
+      articleId: existingArticle?.id ?? null,
+      extractionStatus: existingArticle?.extraction_status ?? null,
+      duplicate: true,
+      contentHash,
+    };
+  }
+
+  const savedArticle = await saveResearchArticle({
+    reference: args.reference,
+    canonicalRef: args.canonicalRef,
+    book: parsedReference.book,
+    chapter: parsedReference.chapter,
+    verse: parsedReference.verse,
+    lang: args.lang,
+    provider: args.provider,
+    model,
+    articleType: WORD_LENS_ARTICLE_TYPE,
+    title: getWordLensArticleTitle(args.lang),
+    rawText: contentText,
+    rawJson: {
+      source_type: WORD_LENS_ARTICLE_TYPE,
+      source_lens: "word",
+      lens_id: "word",
+      prompt_version: WORD_LENS_PROMPT_VERSION,
+      provider: args.provider,
+      model,
+      lang: args.lang,
+      canonical_ref: args.canonicalRef,
+      reference_display: args.reference,
+      raw_output: args.rawOutput,
+      parsed_json: parsedJson,
+      content_text: contentText,
+      used_original_language_packet: usedOriginalLanguagePacket,
+      content_hash: contentHash,
+      metadata: {
+        source_title: getWordLensArticleTitle(args.lang),
+        source_type: WORD_LENS_ARTICLE_TYPE,
+        source_lens: "word",
+        prompt_version: WORD_LENS_PROMPT_VERSION,
+        used_original_language_packet: usedOriginalLanguagePacket,
+        content_hash: contentHash,
+      },
+    },
+  });
+
+  console.log("[WORD_LENS_RESEARCH_LAKE] saved", {
+    reference: args.reference,
+    canonical_ref: args.canonicalRef,
+    lang: args.lang,
+    provider: args.provider,
+    model,
+    articleId: savedArticle?.id ?? null,
+    contentHash,
+    contentLength: contentText.length,
+    usedOriginalLanguagePacket,
+  });
+
+  if (savedArticle?.id) {
+    after(() =>
+      runArticleExtractorAndTrack({
+        articleId: savedArticle.id,
+        req: args.req,
+        reference: args.reference,
+        verseText: args.verseText,
+        lang: args.lang,
+        provider: args.provider,
+        sourceTitle: getWordLensArticleTitle(args.lang),
+        sourceType: WORD_LENS_ARTICLE_TYPE,
+        sourceLens: "word",
+        sourceArticle: contentText,
+      }),
+    );
+  }
+
+  return {
+    articleId: savedArticle?.id ?? null,
+    extractionStatus: savedArticle?.extraction_status ?? null,
+    duplicate: false,
+    contentHash,
+  };
+}
+
 async function autoProcessInitialAngles(args: {
   req: Request;
   reference: string;
@@ -609,6 +937,9 @@ export async function POST(req: Request) {
     const shouldUseTranslationsCache =
       kind === "lens" && id === "translations" && isLensId(id);
 
+    const shouldUseWordCache =
+      kind === "lens" && id === "word" && isLensId(id);
+
     const lensCacheReference = normalizedReference.canonical_ref ?? reference;
 
     if (shouldUseAnglesCache) {
@@ -668,6 +999,66 @@ export async function POST(req: Request) {
           canonical_ref: normalizedReference.canonical_ref,
         });
       }
+    }
+
+    if (shouldUseWordCache) {
+      console.log("[WORD_LENS_CACHE] lookup", {
+        reference,
+        canonical_ref: normalizedReference.canonical_ref,
+        lens: "word",
+        lang,
+        provider,
+      });
+
+      const cachedWordLens = await getCachedResult(reference, "word", lang);
+
+      if (cachedWordLens?.raw_json) {
+        const cachedText = stringifyCachedRawJson(cachedWordLens.raw_json);
+
+        after(() =>
+          saveWordLensToResearchLake({
+            req,
+            reference,
+            canonicalRef: normalizedReference.canonical_ref,
+            verseText,
+            lang,
+            provider,
+            prompt: "cached_word_lens_result; original prompt unavailable",
+            rawOutput: cachedText,
+          }).catch((error) => {
+            console.warn("[WORD_LENS_RESEARCH_LAKE] cached save/extract failed", {
+              reference,
+              canonical_ref: normalizedReference.canonical_ref,
+              lang,
+              provider,
+              model: getModelName(provider),
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }),
+        );
+
+        console.log("[WORD_LENS_CACHE] hit", {
+          reference,
+          canonical_ref: normalizedReference.canonical_ref,
+          lang,
+          provider,
+          model: cachedWordLens.model ?? getModelName(provider),
+        });
+
+        return NextResponse.json({
+          text: cachedText,
+          cached: true,
+          source: "cached_results",
+          canonical_ref: normalizedReference.canonical_ref,
+        });
+      }
+
+      console.log("[WORD_LENS_CACHE] miss", {
+        reference,
+        canonical_ref: normalizedReference.canonical_ref,
+        lang,
+        provider,
+      });
     }
 
     if (shouldUseTranslationsCache) {
@@ -868,6 +1259,76 @@ export async function POST(req: Request) {
       });
     }
 
+    let wordLensArticleId: string | null = null;
+    let wordLensExtractionStatus: string | null = null;
+    let wordLensDuplicate = false;
+    let wordLensContentHash: string | null = null;
+
+    if (kind === "lens" && id === "word" && isLensId(id)) {
+      try {
+        const savedWordLens = await saveWordLensToResearchLake({
+          req,
+          reference,
+          canonicalRef: normalizedReference.canonical_ref,
+          verseText,
+          lang,
+          provider,
+          prompt,
+          rawOutput: text,
+        });
+
+        wordLensArticleId = savedWordLens.articleId;
+        wordLensExtractionStatus = savedWordLens.extractionStatus;
+        wordLensDuplicate = savedWordLens.duplicate;
+        wordLensContentHash = savedWordLens.contentHash;
+      } catch (error) {
+        console.warn("[WORD_LENS_RESEARCH_LAKE] save/extract scheduling failed", {
+          reference,
+          canonical_ref: normalizedReference.canonical_ref,
+          lang,
+          provider,
+          model: getModelName(provider),
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    if (shouldUseWordCache) {
+      const parsedReference = parseReference(reference);
+      const cacheableJson = parseCacheableJson(text);
+
+      if (cacheableJson) {
+        await saveCachedResult({
+          reference,
+          book: parsedReference.book,
+          chapter: parsedReference.chapter,
+          verse: parsedReference.verse,
+          lens: "word",
+          lang,
+          provider,
+          model: getModelName(provider),
+          raw_json: cacheableJson,
+        });
+
+        console.log("[WORD_LENS_CACHE] saved", {
+          reference,
+          canonical_ref: normalizedReference.canonical_ref,
+          lang,
+          provider,
+          model: getModelName(provider),
+        });
+      } else {
+        console.warn("[WORD_LENS_CACHE] skipped save because response was not valid JSON", {
+          reference,
+          lens: "word",
+          lang,
+          provider,
+          model: getModelName(provider),
+          preview: text.slice(0, 1000),
+        });
+      }
+    }
+
     if (shouldUseTranslationsCache) {
       const rawJson = parseCacheableJson(text);
       const normalizedOutput = normalizeLensDiscoveryOutput(rawJson);
@@ -994,7 +1455,11 @@ export async function POST(req: Request) {
       text,
       cached: false,
       canonical_ref: normalizedReference.canonical_ref,
-      article_id: autoIntake?.articleId ?? null,
+      article_id: autoIntake?.articleId ?? wordLensArticleId,
+      word_lens_article_id: wordLensArticleId,
+      word_lens_extraction_status: wordLensExtractionStatus,
+      word_lens_duplicate: wordLensDuplicate,
+      word_lens_content_hash: wordLensContentHash,
     });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : "Analysis failed";
