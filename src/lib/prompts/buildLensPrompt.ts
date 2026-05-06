@@ -26,7 +26,9 @@ export function buildLensPrompt(args: {
   const fence = LANG_FENCE(langName);
 
   const shouldUseOriginalLanguagePacket =
-    args.lens === "translations" || args.lens === "angles";
+    args.lens === "translations" ||
+    args.lens === "angles" ||
+    args.lens === "word";
 
   const originalLanguagePrompt = shouldUseOriginalLanguagePacket
     ? formatOriginalLanguagePacketForPrompt(
@@ -190,79 +192,113 @@ export function buildLensPrompt(args: {
       return (
         `${fence}\n\n` +
         `Verse: ${args.reference}\n"${args.verseText}"\n\n` +
+        `${originalLanguagePrompt}\n\n` +
         `All string values must be written in ${langName}.\n\n` +
         `${EDITORIAL_VOICE(langName)}\n\n` +
         `${JARGON_BAN}\n\n` +
 
-        `STEP 1 — HUNT FOR WORD-LEVEL DISCOVERIES:\n` +
-        `Read the verse. Scan for 2–4 words or short phrases where the original Greek or Hebrew ` +
-        `does something the translation cannot capture or quietly chooses not to.\n\n` +
-        `Hunt in these categories:\n\n` +
-        `Category A — SEMANTIC RANGE:\n` +
-        `Does the original word carry a wider, stranger, or more physical range of meaning ` +
-        `than the translation suggests? What does the single translated word collapse?\n` +
-        `Example: σπλάγχνα (splanchna) covers gut, womb, bowels — translated "compassion" loses every organ.\n\n` +
+        `[SCRIPTURA AI — WORD LENS PROTOCOL v2.0]\n\n` +
 
-        `Category B — ROOT METAPHOR:\n` +
-        `Is there a buried physical image inside an abstract word? ` +
-        `What did the original speakers picture when they used this word?\n` +
-        `Example: χαρίζομαι (to forgive) comes from χάρις (gift, favor) — the root is giving, not releasing.\n\n` +
+        `ROLE:\n` +
+        `You are the Word Lens for Scriptura AI.\n` +
+        `Your task is to make the verse more visible by examining its most important Greek, Hebrew, or Aramaic words and expressions.\n` +
+        `This lens is more specialized than Pearls: Pearls may choose any strong textual angle, but Word Lens must focus on words, roots, expressions, forms, repeated terms, and translation gaps.\n\n` +
 
-        `Category C — WORD CHOICE VS ALTERNATIVE:\n` +
-        `What word did the author use, and what near-synonym could they have chosen instead? ` +
-        `Why does the actual choice matter?\n` +
-        `Example: Paul chose χαρίζομαι, not ἀφίημι — gift-giving logic, not debt-cancelling logic.\n\n` +
+        `OUTPUT LANGUAGE:\n` +
+        `All reader-facing explanation must be written in ${langName}.\n` +
+        `Original-language forms may appear in their own script only when they are verified by the supplied packet and useful for the discovery.\n\n` +
 
-        `Category D — TRANSLATION GAP:\n` +
-        `What does the ${langName} translation smooth over, flatten, or accidentally normalize? ` +
-        `What sounds ordinary in ${langName} but was strange in the original?\n\n` +
+        `SOURCE DISCIPLINE — VERY IMPORTANT:\n` +
+        `If a supplied Greek, Hebrew, or Aramaic packet appears above, it is the controlling source for original-language claims.\n` +
+        `Use it to verify word forms, lemmas, repeated roots, morphology, transliteration, and basic sense data.\n` +
+        `Do not invent Hebrew, Aramaic, or Greek words, transliterations, roots, morphology, or semantic claims.\n` +
+        `If the packet does not support a claim, do not make that claim.\n` +
+        `If the packet is empty or does not cover the needed word, say less and base the card on the visible wording or translation gap.\n\n` +
 
-        `Category E — TENSE, VOICE, OR MOOD:\n` +
-        `Does a grammatical form — aorist, passive, imperative, participle — carry meaning ` +
-        `that the translation paraphrases away?\n\n` +
+        `SOURCE DATA STYLE RULE:\n` +
+        `Use the packet internally, but do not expose raw database language.\n` +
+        `Do not write “Strong”, “morphology”, “morphology code”, “gloss”, “lemma”, “packet”, “dataset”, “STEPBible”, “lexicon”, or “source packet” in reader-facing text.\n` +
+        `Do not write “Стронг”, “морфология”, “морфологический код”, “глосса”, “лемма”, “пакет”, “датасет”, “STEPBible”, or “лексикон” in Russian reader-facing text.\n` +
+        `Do not turn the card into a technical parsing note. Translate the evidence into ordinary language.\n\n` +
 
-        `STEP 2 — REJECTION TEST:\n` +
-        `For each candidate, ask: "Could this be written without knowing the original word, ` +
-        `its root, its tense, or its translation gap?"\n` +
-        `If YES — reject. Only discoveries rooted in specific textual evidence survive.\n\n` +
+        `WORD LENS DIFFERENCE FROM PEARLS:\n` +
+        `Pearls select the strongest discoveries of any kind.\n` +
+        `Word Lens should map the verse through its most revealing words and expressions.\n` +
+        `It may use more original-language forms than Pearls, but every form must serve a clear reading shift.\n` +
+        `The reader should feel: “I now see why this word matters.” Not: “I saw a list of technical data.”\n\n` +
 
-        `STEP 3 — BUILD 3 STRONGEST WORD CARDS:\n` +
-        `Choose the 3 discoveries that survived. Prefer cards from different categories.\n\n` +
+        `DISCOVERY HUNT — INTERNAL ONLY:\n` +
+        `Scan the verse and choose 5 to 7 of the strongest word-level discoveries.\n` +
+        `Do not force seven. Return 5 if only five are strong. Return 6 or 7 only if the extra cards are genuinely distinct and useful.\n\n` +
+
+        `Look especially for:\n` +
+        `1. SEMANTIC RANGE — a word carries more force, texture, or range than the translation can show.\n` +
+        `2. ROOT / FAMILY — repeated roots, related words, or a word family create a pattern in the verse.\n` +
+        `3. WORD CHOICE — the author uses this word rather than a possible near-synonym.\n` +
+        `4. PHYSICAL IMAGE — an abstract translation hides a concrete image: body, movement, weight, space, breath, hand, face, path, house, debt, gift.\n` +
+        `5. GRAMMATICAL FORM — tense, aspect, voice, mood, participle, imperative, or plural/singular changes the feel of the action.\n` +
+        `6. PREPOSITION / PARTICLE — a small word changes direction, agency, location, emphasis, or relationship.\n` +
+        `7. TRANSLATION GAP — a familiar ${langName} word smooths, narrows, domesticates, or over-interprets the original expression.\n` +
+        `8. CONTRAST INSIDE THE VERSE — two words push against each other or form a hidden pair.\n\n` +
+
+        `REJECTION TEST:\n` +
+        `Reject a candidate if it could be written without knowing the actual word, expression, form, repeated root, grammar, or translation gap in this verse.\n` +
+        `Reject generic vocabulary notes.\n` +
+        `Reject decorative etymology.\n` +
+        `Reject claims that sound impressive but do not change how the verse reads.\n` +
+        `Reject any original-language claim not grounded in the supplied packet.\n\n` +
+
+        `SEMANTIC HUMILITY:\n` +
+        `Avoid overstatement.\n` +
+        `Do not write “the word really means only…” unless the supplied data makes that unavoidable.\n` +
+        `Prefer careful formulations:\n` +
+        `- “can carry the sense of…”\n` +
+        `- “in this context, it can sound closer to…”\n` +
+        `- “the translation makes it feel like…, while the wording leaves room for…”\n` +
+        `- “the form gives the action a more direct / ongoing / compressed feel…”\n\n` +
+
+        `CARD SHAPE:\n` +
+        `Each card must be a small word-discovery card, not a long article.\n` +
+        `It should have one clear word or expression at the center.\n` +
+        `It should explain what the familiar reading misses and how the word changes perception.\n\n` +
 
         `TITLE STANDARD:\n` +
-        `A sharp statement of the discovery — not a label, not a topic.\n` +
-        `BAD: "The Word for Compassion", "Greek Vocabulary", "Key Terms"\n` +
-        `GOOD: "The Organ That Got Replaced by a Feeling", "The Verb That Was Always a Gift, Never a Receipt"\n\n` +
+        `The title must be a discovery statement, not a topic label.\n` +
+        `BAD: “The Word for New”, “Greek Vocabulary”, “Important Verb”.\n` +
+        `GOOD: “The ‘New’ Here Is Not Merely New in Time”.\n` +
+        `GOOD: “The Verb Makes the Old World Leave the Room”.\n` +
+        `GOOD: “This Small Preposition Changes the Direction of the Verse”.\n\n` +
 
         `TEASER STANDARD:\n` +
-        `2–3 sentences. Begin with the discovery, not "The Greek word X means…". ` +
-        `Show what the original does that the translation cannot.\n\n` +
+        `2–4 sentences. Begin with the discovery, not with “The Hebrew word…” or “The Greek word…”.\n` +
+        `Mention the original form only after the reader understands why it matters.\n\n` +
 
-        `ORIGINAL STANDARD:\n` +
-        `The original word in its script plus transliteration. Format: "word (transliteration)". ` +
-        `Example: "εὔσπλαγχνοι (eusplanchnoi)"\n\n` +
+        `ORIGINAL FIELD STANDARD:\n` +
+        `Use the original form from the supplied packet.\n` +
+        `Include transliteration only if it is available or can be safely inferred from the supplied packet.\n` +
+        `If transliteration is uncertain, use the original form alone.\n` +
+        `Do not include Strong numbers, morphology codes, raw gloss lists, or source names.\n\n` +
 
         `GAP STANDARD:\n` +
-        `One sentence. Precisely what the ${langName} translation loses or flattens.\n\n` +
+        `One concise sentence in ${langName}: what the familiar translation or ordinary reading loses, smooths, or makes too simple.\n\n` +
 
         `WHY_IT_MATTERS STANDARD:\n` +
-        `One sentence. How the verse reads differently after seeing this word clearly.\n\n` +
+        `One sentence in ${langName}: the reading shift created by seeing this word more clearly.\n` +
+        `This must be perceptual, not devotional.\n\n` +
 
-        `Task: Return a JSON array of exactly 3 word-card objects. ` +
+        `Task: Return a JSON array of 5 to 7 word-card objects.\n` +
         `Output JSON only — no markdown fences, no prose before or after.\n\n` +
 
         `Each object has exactly these keys:\n` +
-        `- "title": discovery-driven statement, max 12 words, in ${langName}\n` +
-        `- "teaser": 2–3 sentences, begins with the discovery, in ${langName}\n` +
-        `- "original": original word with transliteration, in original language script\n` +
-        `- "gap": 1 sentence — what ${langName} translation loses, in ${langName}\n` +
+        `- "title": discovery-driven statement, max 14 words, in ${langName}\n` +
+        `- "teaser": 2–4 sentences, begins with the discovery not a generic vocabulary note, in ${langName}\n` +
+        `- "original": verified original word/expression from the supplied packet; original script plus transliteration only if safe\n` +
+        `- "gap": 1 sentence — what the familiar reading or ${langName} translation loses, in ${langName}\n` +
         `- "why_it_matters": 1 sentence, perceptual shift, in ${langName}\n\n` +
 
-        `Output — valid JSON array only:\n` +
-        `[{"title":"...","teaser":"...","original":"...","gap":"...","why_it_matters":"..."},` +
-        `{"title":"...","teaser":"...","original":"...","gap":"...","why_it_matters":"..."},` +
-        `{"title":"...","teaser":"...","original":"...","gap":"...","why_it_matters":"..."}]` +
-        `\n\nREMINDER: JSON only. All string values except "original" in ${langName}. Every card must survive the rejection test.`
+        `Return valid JSON array only. The array length must be 5, 6, or 7 depending on how many strong distinct word-level discoveries actually exist.\n` +
+        `Do not pad with weak words. Do not invent original-language data. Do not expose technical labels.\n\n` +
+        `[{"title":"...","teaser":"...","original":"...","gap":"...","why_it_matters":"..."}]`
       );
 
     // ─── CONTEXT ──────────────────────────────────────────────────────────────
