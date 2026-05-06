@@ -10,6 +10,10 @@ const SAFE_OPENAI_MODEL = "gpt-5.4-mini";
 const SAFE_CLAUDE_MODEL = "claude-sonnet-4-6";
 const SAFE_GEMINI_MODEL = "gemini-2.5-flash";
 
+const CLAUDE_RETRYABLE_STATUSES = new Set([500, 502, 503, 504, 529]);
+const CLAUDE_MAX_ATTEMPTS = 4;
+const CLAUDE_RETRY_DELAYS_MS = [1500, 4000, 8000];
+
 const LANG_NAME: Record<Lang, string> = {
   en: "English",
   ru: "Russian",
@@ -26,6 +30,38 @@ function systemInstruction(lang: Lang): string {
     `Every sentence of your response must be in ${name}. ` +
     `This rule overrides everything else.`
   );
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getRetryAfterMs(headers: Headers): number | null {
+  const retryAfter = headers.get("retry-after");
+  if (!retryAfter) return null;
+
+  const seconds = Number(retryAfter);
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.min(seconds * 1000, 15000);
+  }
+
+  const dateMs = Date.parse(retryAfter);
+  if (Number.isFinite(dateMs)) {
+    const delay = dateMs - Date.now();
+    if (delay > 0) return Math.min(delay, 15000);
+  }
+
+  return null;
+}
+
+function getClaudeUserMessage(status: number, body: string): string {
+  if (status === 529) {
+    return (
+      "Claude is temporarily overloaded. Please try again in a moment."
+    );
+  }
+
+  return `Claude error ${status}: ${body.slice(0, 400)}`;
 }
 
 export function resolveAIModel(provider: Provider): string {
@@ -143,40 +179,92 @@ async function runClaude(prompt: string, lang: Lang): Promise<string> {
   if (!key) throw new Error(MISSING_KEY("ANTHROPIC_API_KEY"));
 
   const model = resolveAIModel("claude");
+  let lastStatus = 0;
+  let lastBody = "";
 
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": key,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model,
-      max_tokens: 3000,
-      system: systemInstruction(lang),
-      messages: [{ role: "user", content: prompt }],
-    }),
-  });
+  for (let attempt = 1; attempt <= CLAUDE_MAX_ATTEMPTS; attempt += 1) {
+    let res: Response;
 
-  if (!res.ok) {
+    try {
+      res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": key,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify({
+          model,
+          max_tokens: 3000,
+          system: systemInstruction(lang),
+          messages: [{ role: "user", content: prompt }],
+        }),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+
+      console.warn("[Claude] network request failed", {
+        model,
+        endpoint: "/v1/messages",
+        attempt,
+        maxAttempts: CLAUDE_MAX_ATTEMPTS,
+        message,
+      });
+
+      if (attempt >= CLAUDE_MAX_ATTEMPTS) {
+        throw new Error(`Claude network error: ${message}`);
+      }
+
+      await sleep(CLAUDE_RETRY_DELAYS_MS[attempt - 1] ?? 8000);
+      continue;
+    }
+
+    if (res.ok) {
+      const data = await res.json();
+      const blocks: Array<{ type?: string; text?: string }> =
+        data?.content ?? [];
+      const text = blocks.map((b) => b.text ?? "").join("\n").trim();
+
+      if (attempt > 1) {
+        console.log("[Claude] retry succeeded", {
+          model,
+          endpoint: "/v1/messages",
+          attempt,
+        });
+      }
+
+      return text;
+    }
+
     const body = await res.text();
+    lastStatus = res.status;
+    lastBody = body;
+
+    const isRetryable = CLAUDE_RETRYABLE_STATUSES.has(res.status);
+    const retryAfterMs = getRetryAfterMs(res.headers);
+    const defaultDelayMs = CLAUDE_RETRY_DELAYS_MS[attempt - 1] ?? 8000;
+    const delayMs = retryAfterMs ?? defaultDelayMs;
 
     console.error("[Claude] API error:", {
       model,
       endpoint: "/v1/messages",
       status: res.status,
+      attempt,
+      maxAttempts: CLAUDE_MAX_ATTEMPTS,
+      retryable: isRetryable,
+      retryAfterMs,
+      nextDelayMs: isRetryable && attempt < CLAUDE_MAX_ATTEMPTS ? delayMs : null,
       preview: body.slice(0, 400),
     });
 
-    throw new Error(`Claude error ${res.status}: ${body.slice(0, 400)}`);
+    if (!isRetryable || attempt >= CLAUDE_MAX_ATTEMPTS) {
+      throw new Error(getClaudeUserMessage(res.status, body));
+    }
+
+    await sleep(delayMs);
   }
 
-  const data = await res.json();
-  const blocks: Array<{ type?: string; text?: string }> = data?.content ?? [];
-  const text = blocks.map((b) => b.text ?? "").join("\n").trim();
-
-  return text;
+  throw new Error(getClaudeUserMessage(lastStatus, lastBody));
 }
 
 async function runGemini(
