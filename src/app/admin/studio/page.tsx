@@ -1181,6 +1181,14 @@ function getSuggestionCandidatePreview(suggestion: EditorialSuggestion): string 
 
 type EditorialQueueLocalResolution = "kept" | "deferred";
 type EditorialQueueAction = "accept" | "soft_rewrite" | "keep" | "defer";
+type EditorialQueueActionFeedback = {
+  action: EditorialQueueAction;
+  kind: "success" | "info" | "warning";
+  message: string;
+  targetCardId?: string | null;
+  targetCardTitle?: string | null;
+  instruction?: string | null;
+};
 
 function getSuggestionTargetCardIds(suggestion: EditorialSuggestion): string[] {
   return [
@@ -1274,6 +1282,9 @@ export default function StudioPage() {
   const [editorialSuggestionsError, setEditorialSuggestionsError] = useState("");
   const [queueResolutions, setQueueResolutions] = useState<
     Record<string, EditorialQueueLocalResolution>
+  >({});
+  const [queueActionFeedback, setQueueActionFeedback] = useState<
+    Record<string, EditorialQueueActionFeedback>
   >({});
 
   const [autoCuratorPreview, setAutoCuratorPreview] = useState<AutoCuratorPreviewResponse | null>(null);
@@ -2814,12 +2825,30 @@ export default function StudioPage() {
   ) {
     if (action === "keep") {
       setQueueResolutions((prev) => ({ ...prev, [suggestion.id]: "kept" }));
+      setQueueActionFeedback((prev) => ({
+        ...prev,
+        [suggestion.id]: {
+          action,
+          kind: "success",
+          message:
+            "Задача закрыта в текущем просмотре: карточку оставляем как есть. На сервере карточка не изменилась.",
+        },
+      }));
       setNotice("Решение принято в текущем просмотре: карточку оставляем как есть.");
       return;
     }
 
     if (action === "defer") {
       setQueueResolutions((prev) => ({ ...prev, [suggestion.id]: "deferred" }));
+      setQueueActionFeedback((prev) => ({
+        ...prev,
+        [suggestion.id]: {
+          action,
+          kind: "info",
+          message:
+            "Задача отложена в текущем просмотре. Карточка не изменилась; к проверке можно вернуться позже.",
+        },
+      }));
       setNotice("Задача оставлена в очереди: можно вернуться после проверки источника.");
       return;
     }
@@ -2827,11 +2856,20 @@ export default function StudioPage() {
     const targetCard = findSuggestionTargetCard(suggestion);
 
     if (!targetCard) {
-      setNotice(
+      const message =
         action === "accept"
           ? "Рекомендация принята как пункт проверки, но связанная карточка не найдена в текущем списке. Обнови карточки или открой связанный стих."
-          : "Не нашёл связанную карточку для мягкой правки в текущем списке.",
-      );
+          : "Не нашёл связанную карточку для мягкой правки в текущем списке.";
+
+      setQueueActionFeedback((prev) => ({
+        ...prev,
+        [suggestion.id]: {
+          action,
+          kind: "warning",
+          message,
+        },
+      }));
+      setNotice(message);
       return;
     }
 
@@ -2851,11 +2889,29 @@ export default function StudioPage() {
       },
     }));
 
-    setNotice(
+    const message =
       action === "accept"
         ? `Рекомендация принята: инструкция для мягкой правки добавлена к карточке “${targetCard.title}”.`
-        : `Мягкая правка подготовлена для карточки “${targetCard.title}”. Открой её блок “Оценка / угол” и нажми “Сделать вариант”.`,
-    );
+        : `Мягкая правка подготовлена для карточки “${targetCard.title}”. Инструкция уже вставлена в блок доработки ниже.`;
+
+    setQueueActionFeedback((prev) => ({
+      ...prev,
+      [suggestion.id]: {
+        action,
+        kind: "success",
+        message,
+        targetCardId: targetCard.id,
+        targetCardTitle: targetCard.title,
+        instruction,
+      },
+    }));
+
+    setNotice(message);
+
+    window.setTimeout(() => {
+      const el = document.getElementById(`studio-card-${targetCard.id}`);
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 120);
   }
 
   async function changeDays(nextDays: number) {
@@ -3741,6 +3797,7 @@ export default function StudioPage() {
                               suggestion.angle_relationship,
                             );
                             const localResolution = queueResolutions[suggestion.id];
+                            const actionFeedback = queueActionFeedback[suggestion.id];
                             const targetCard = findSuggestionTargetCard(suggestion);
 
                             return (
@@ -3904,6 +3961,68 @@ export default function StudioPage() {
                                     Отложить
                                   </button>
                                 </div>
+
+                                {actionFeedback ? (
+                                  <div
+                                    style={{
+                                      marginTop: 10,
+                                      padding: 10,
+                                      borderRadius: 12,
+                                      border: `1px solid ${
+                                        actionFeedback.kind === "warning"
+                                          ? "rgba(139, 62, 46, 0.22)"
+                                          : "rgba(95, 120, 144, 0.20)"
+                                      }`,
+                                      background:
+                                        actionFeedback.kind === "warning"
+                                          ? ERROR_BG
+                                          : "rgba(95, 120, 144, 0.08)",
+                                      color: TEXT,
+                                      fontSize: 12,
+                                      lineHeight: 1.45,
+                                    }}
+                                  >
+                                    <div style={{ fontWeight: 900, color: SLATE_DARK, marginBottom: 4 }}>
+                                      {actionFeedback.action === "soft_rewrite" || actionFeedback.action === "accept"
+                                        ? "Действие подготовлено"
+                                        : actionFeedback.action === "keep"
+                                          ? "Оставлено без изменений"
+                                          : "Отложено"}
+                                    </div>
+                                    <div>{actionFeedback.message}</div>
+
+                                    {actionFeedback.instruction ? (
+                                      <details style={{ marginTop: 8 }}>
+                                        <summary
+                                          style={{
+                                            cursor: "pointer",
+                                            color: SLATE_DARK,
+                                            fontWeight: 900,
+                                          }}
+                                        >
+                                          Показать инструкцию для правки
+                                        </summary>
+                                        <pre
+                                          style={{
+                                            whiteSpace: "pre-wrap",
+                                            margin: "8px 0 0",
+                                            padding: 9,
+                                            borderRadius: 10,
+                                            background: "rgba(255, 255, 255, 0.58)",
+                                            border: `1px solid ${LINE_SOFT}`,
+                                            color: MUTED,
+                                            fontFamily:
+                                              'ui-sans-serif, -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif',
+                                            fontSize: 11.5,
+                                            lineHeight: 1.45,
+                                          }}
+                                        >
+                                          {actionFeedback.instruction}
+                                        </pre>
+                                      </details>
+                                    ) : null}
+                                  </div>
+                                ) : null}
                               </div>
                             );
                           })}
@@ -4585,6 +4704,9 @@ export default function StudioPage() {
                 const reEval = reEvaluations[card.id] ?? createEmptyReEvaluateState();
                 const retranslation = retranslations[card.id] ?? createEmptyRetranslateState();
                 const rewrite = rewrites[card.id] ?? createEmptyRewriteState();
+                const queueFeedbackForCard = Object.values(queueActionFeedback).find(
+                  (item) => item.targetCardId === card.id,
+                );
 
                 const newScore = getEvaluationScore(reEval.result);
                 const newPlacement = getEvaluationPlacement(reEval.result);
@@ -4609,19 +4731,46 @@ export default function StudioPage() {
                 return (
                   <article
                     key={card.id}
+                    id={`studio-card-${card.id}`}
                     className="studio-card-enter"
                     style={{
-                      border: `1px solid ${card.status === "rejected" ? "rgba(139, 62, 46, 0.22)" : LINE}`,
+                      border: `1px solid ${
+                        queueFeedbackForCard
+                          ? "rgba(95, 120, 144, 0.42)"
+                          : card.status === "rejected"
+                            ? "rgba(139, 62, 46, 0.22)"
+                            : LINE
+                      }`,
                       borderRadius: 20,
                       padding: 16,
-                      background:
-                        card.status === "rejected"
+                      background: queueFeedbackForCard
+                        ? `linear-gradient(180deg, rgba(95, 120, 144, 0.08) 0%, ${PANEL} 100%)`
+                        : card.status === "rejected"
                           ? `linear-gradient(180deg, ${ERROR_BG} 0%, ${PANEL} 100%)`
                           : `linear-gradient(180deg, ${CARD} 0%, ${PANEL} 100%)`,
-                      boxShadow:
-                        "0 1px 2px rgba(42, 31, 22, 0.04), 0 12px 26px rgba(42, 31, 22, 0.06)",
+                      boxShadow: queueFeedbackForCard
+                        ? "0 1px 2px rgba(42, 31, 22, 0.04), 0 16px 34px rgba(95, 120, 144, 0.16)"
+                        : "0 1px 2px rgba(42, 31, 22, 0.04), 0 12px 26px rgba(42, 31, 22, 0.06)",
                     }}
                   >
+                    {queueFeedbackForCard ? (
+                      <div
+                        style={{
+                          marginBottom: 12,
+                          padding: 10,
+                          borderRadius: 12,
+                          border: `1px solid rgba(95, 120, 144, 0.22)`,
+                          background: "rgba(95, 120, 144, 0.08)",
+                          color: TEXT,
+                          fontSize: 12,
+                          lineHeight: 1.45,
+                        }}
+                      >
+                        <strong style={{ color: SLATE_DARK }}>Мягкая правка подготовлена. </strong>
+                        Инструкция уже вставлена в блок доработки этой карточки ниже.
+                      </div>
+                    ) : null}
+
                     <div
                       style={{
                         display: "flex",
