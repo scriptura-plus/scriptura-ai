@@ -218,20 +218,21 @@ export default function Home() {
 const aboutStyles = `
   .scriptura-about-link {
     position: fixed;
-    right: max(22px, env(safe-area-inset-right));
-    bottom: max(20px, env(safe-area-inset-bottom));
+    right: max(30px, calc(env(safe-area-inset-right) + 26px));
+    bottom: max(34px, calc(env(safe-area-inset-bottom) + 28px));
     z-index: 40;
     appearance: none;
     border: 0;
-    border-bottom: 1px solid rgba(90, 74, 55, 0.22);
+    border-bottom: 1px solid rgba(90, 74, 55, 0.2);
     border-radius: 0;
     background: transparent;
-    color: rgba(90, 74, 55, 0.48);
+    color: rgba(90, 74, 55, 0.42);
     cursor: pointer;
     padding: 3px 1px 4px;
     font-family: var(--font-serif, Georgia, serif);
     font-size: 13px;
-    letter-spacing: 0.035em;
+    font-weight: 400;
+    letter-spacing: 0.03em;
     line-height: 1;
     text-transform: none;
     transition:
@@ -241,8 +242,8 @@ const aboutStyles = `
   }
 
   .scriptura-about-link:hover {
-    color: rgba(90, 74, 55, 0.78);
-    border-color: rgba(90, 74, 55, 0.42);
+    color: rgba(90, 74, 55, 0.74);
+    border-color: rgba(90, 74, 55, 0.4);
     transform: translateY(-1px);
   }
 
@@ -309,20 +310,21 @@ const aboutStyles = `
   }
 
   .scriptura-about-eyebrow {
-    margin: 0 0 8px;
-    color: rgba(166, 116, 72, 0.78);
+    margin: 0 0 9px;
+    color: rgba(166, 116, 72, 0.76);
     font-size: 10px;
     font-weight: 800;
-    letter-spacing: 0.24em;
+    letter-spacing: 0.25em;
     text-transform: uppercase;
   }
 
   .scriptura-about-title {
     margin: 0;
     color: #2c241b;
-    font-family: var(--font-serif, Georgia, serif);
-    font-size: clamp(32px, 5vw, 46px);
-    line-height: 1;
+    font-family: var(--font-serif, Georgia, "Times New Roman", serif);
+    font-size: clamp(34px, 5.2vw, 44px);
+    font-weight: 400;
+    line-height: 1.02;
     letter-spacing: -0.045em;
   }
 
@@ -330,19 +332,20 @@ const aboutStyles = `
     appearance: none;
     border: 0;
     background: transparent;
-    color: rgba(90, 74, 55, 0.46);
+    color: rgba(90, 74, 55, 0.44);
     cursor: pointer;
     flex: 0 0 auto;
     width: 32px;
     height: 32px;
     padding: 0;
     font-size: 26px;
+    font-weight: 300;
     line-height: 1;
     transition: color 140ms ease, transform 140ms ease;
   }
 
   .scriptura-about-close:hover {
-    color: rgba(90, 74, 55, 0.78);
+    color: rgba(90, 74, 55, 0.76);
     transform: rotate(4deg);
   }
 
@@ -387,6 +390,7 @@ const aboutStyles = `
     font-family: var(--font-serif, Georgia, serif);
     font-size: 16px;
     font-style: italic;
+    font-weight: 400;
     line-height: 1.48;
   }
 
@@ -451,10 +455,10 @@ const aboutStyles = `
 
   @media (max-width: 560px) {
     .scriptura-about-link {
-      right: max(16px, env(safe-area-inset-right));
-      bottom: max(14px, env(safe-area-inset-bottom));
+      right: max(30px, calc(env(safe-area-inset-right) + 26px));
+      bottom: max(34px, calc(env(safe-area-inset-bottom) + 28px));
       font-size: 12px;
-      color: rgba(90, 74, 55, 0.4);
+      color: rgba(90, 74, 55, 0.38);
     }
 
     .scriptura-about-backdrop {
@@ -466,6 +470,12 @@ const aboutStyles = `
       max-height: 86vh;
       border-radius: 26px;
       padding: 25px 22px 20px;
+    }
+
+    .scriptura-about-title {
+      font-size: clamp(32px, 10vw, 40px);
+      font-weight: 400;
+      letter-spacing: -0.04em;
     }
 
     .scriptura-about-body p {
