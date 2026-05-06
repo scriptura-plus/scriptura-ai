@@ -32,11 +32,12 @@ import {
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 type Lang = "en" | "ru" | "es";
 
 const TARGET_ANGLE_COUNT = 12;
-const INITIAL_ANGLE_PROCESS_LIMIT = 12;
+const INITIAL_ANGLE_PROCESS_LIMIT = 4;
 
 const isLang = (v: unknown): v is Lang =>
   v === "en" || v === "ru" || v === "es";
@@ -506,6 +507,13 @@ async function autoProcessInitialAngles(args: {
   try {
     const origin = new URL(args.req.url).origin;
 
+    console.log("[INITIAL_ANGLES] background processing start", {
+      reference: args.reference,
+      lang: args.lang,
+      count: cards.length,
+      limit: INITIAL_ANGLE_PROCESS_LIMIT,
+    });
+
     for (let index = 0; index < cards.length; index += 1) {
       const card = cards[index];
       const candidate = toCandidate(card, index);
@@ -556,6 +564,12 @@ async function autoProcessInitialAngles(args: {
         data,
       });
     }
+
+    console.log("[INITIAL_ANGLES] background processing done", {
+      reference: args.reference,
+      lang: args.lang,
+      count: cards.length,
+    });
   } catch (error) {
     console.warn("[INITIAL_ANGLES] processing crashed", {
       reference: args.reference,
@@ -563,67 +577,6 @@ async function autoProcessInitialAngles(args: {
       error: error instanceof Error ? error.message : String(error),
     });
   }
-}
-
-async function autoProcessSecondBatch(args: {
-  req: Request;
-  reference: string;
-  verseText: string;
-  lang: Lang;
-  provider: Provider;
-  existingTitles: string[];
-}) {
-  const adminSecret = process.env.ADMIN_SECRET;
-
-  if (!adminSecret) {
-    console.warn("[SECOND_BATCH] skipped: ADMIN_SECRET is not configured", {
-      reference: args.reference,
-      lang: args.lang,
-    });
-    return;
-  }
-
-  console.log("[SECOND_BATCH] start", {
-    reference: args.reference,
-    lang: args.lang,
-  });
-
-  const basePrompt = buildLensPrompt({
-    lens: "angles",
-    reference: args.reference,
-    verseText: args.verseText,
-    lang: args.lang,
-  });
-
-  const avoidList = args.existingTitles
-    .map((t, i) => (i + 1) + ". " + t)
-    .join("\n");
-
-  const prompt =
-    basePrompt +
-    "\n\nCRITICAL: Do NOT repeat any of the following angles that already exist:\n" +
-    avoidList +
-    "\nGenerate entirely new and distinct angles not covered above.";
-
-  const text = await runAI(args.provider, prompt, args.lang, true);
-  const rawJson = parseCacheableJson(text);
-
-  if (rawJson) {
-    await autoProcessInitialAngles({
-      req: args.req,
-      reference: args.reference,
-      verseText: args.verseText,
-      lang: args.lang,
-      provider: args.provider,
-      rawJson,
-      sourceLabel: "second_batch:" + getModelName(args.provider),
-    });
-  }
-
-  console.log("[SECOND_BATCH] done", {
-    reference: args.reference,
-    lang: args.lang,
-  });
 }
 
 export async function POST(req: Request) {
@@ -924,7 +877,7 @@ export async function POST(req: Request) {
           reference: lensCacheReference,
           lensId: "translations",
           lang,
-          protocolVersion: "translation_discovery_v2.1",
+          protocolVersion: "translation_discovery_v2.2",
           provider,
           model: getModelName(provider),
           output: normalizedOutput,
@@ -997,8 +950,8 @@ export async function POST(req: Request) {
           raw_json: cacheableJson,
         });
 
-        after(async () => {
-          await autoProcessInitialAngles({
+        after(() =>
+          autoProcessInitialAngles({
             req,
             reference,
             verseText,
@@ -1006,27 +959,8 @@ export async function POST(req: Request) {
             provider,
             rawJson: cacheableJson,
             sourceLabel: `initial_angles:${getModelName(provider)}`,
-          });
-
-          const currentCards = await getAngleCards({
-            reference,
-            lang,
-            statuses: ["featured"],
-            limit: 12,
-          });
-
-          if (currentCards.ok && currentCards.cards.length < 6) {
-            const existingTitles = currentCards.cards.map((card) => card.title);
-            await autoProcessSecondBatch({
-              req,
-              reference,
-              verseText,
-              lang,
-              provider,
-              existingTitles,
-            });
-          }
-        });
+          }),
+        );
       } else {
         console.warn("[CACHE] skipped save because response was not valid JSON", {
           reference,
