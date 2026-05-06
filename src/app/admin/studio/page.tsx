@@ -1700,7 +1700,7 @@ export default function StudioPage() {
       );
 
       if (apply) {
-        await loadEditorialSuggestions();
+        await loadEditorialSuggestions(selectedVerse);
       }
     } catch (error) {
       setAutoModeratorReport(null);
