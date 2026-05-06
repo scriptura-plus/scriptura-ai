@@ -5717,7 +5717,7 @@ export default function StudioPage() {
 
                               {rewrite.preserveOriginalMeta && !rewrite.applied ? (
                                 <MessageBox
-                                  kind="info"
+                                  kind="success"
                                   text="Это мягкий patch: при применении меняется только текст карточки, а исходные оценка и статус сохраняются. Оценка выше — только справочная проверка риска."
                                   style={{ marginTop: 10 }}
                                 />
