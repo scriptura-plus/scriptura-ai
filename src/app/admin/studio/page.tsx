@@ -2837,6 +2837,90 @@ export default function StudioPage() {
     }
   }
 
+  async function markEditorialSuggestionReviewed(args: {
+    suggestion: EditorialSuggestion;
+    status: "ignored" | "archived";
+    moderatorDecision: string;
+    reviewNote: string;
+    notice: string;
+    feedbackMessage: string;
+    feedbackKind: "success" | "info" | "warning";
+    localResolution: EditorialQueueLocalResolution;
+  }) {
+    if (!adminSecret.trim()) {
+      setEditorialSuggestionsError("Вставь Admin Secret.");
+      return;
+    }
+
+    setQueueActionFeedback((prev) => ({
+      ...prev,
+      [args.suggestion.id]: {
+        action: args.status === "ignored" ? "keep" : "defer",
+        kind: args.feedbackKind,
+        message: "Сохраняю решение...",
+      },
+    }));
+
+    try {
+      const response = await fetch("/api/admin/studio/editorial-suggestions", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-secret": adminSecret,
+        },
+        body: JSON.stringify({
+          id: args.suggestion.id,
+          status: args.status,
+          moderator_decision: args.moderatorDecision,
+          review_note: args.reviewNote,
+          reviewed_by: "studio",
+        }),
+      });
+
+      const data = (await response.json().catch(() => null)) as {
+        ok?: boolean;
+        error?: string;
+      } | null;
+
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.error || "Не удалось сохранить решение очереди.");
+      }
+
+      removeEditorialSuggestionFromCurrentQueue(args.suggestion.id);
+
+      setQueueResolutions((prev) => ({
+        ...prev,
+        [args.suggestion.id]: args.localResolution,
+      }));
+
+      setQueueActionFeedback((prev) => ({
+        ...prev,
+        [args.suggestion.id]: {
+          action: args.status === "ignored" ? "keep" : "defer",
+          kind: args.feedbackKind,
+          message: args.feedbackMessage,
+        },
+      }));
+
+      setNotice(args.notice);
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Не удалось сохранить решение очереди.";
+
+      setQueueActionFeedback((prev) => ({
+        ...prev,
+        [args.suggestion.id]: {
+          action: args.status === "ignored" ? "keep" : "defer",
+          kind: "warning",
+          message,
+        },
+      }));
+      setEditorialSuggestionsError(message);
+    }
+  }
+
   async function applyRewrite(card: StudioCard) {
     const state = rewrites[card.id];
 
@@ -3023,32 +3107,34 @@ export default function StudioPage() {
     action: EditorialQueueAction,
   ) {
     if (action === "keep") {
-      setQueueResolutions((prev) => ({ ...prev, [suggestion.id]: "kept" }));
-      setQueueActionFeedback((prev) => ({
-        ...prev,
-        [suggestion.id]: {
-          action,
-          kind: "success",
-          message:
-            "Задача закрыта в текущем просмотре: карточку оставляем как есть. На сервере карточка не изменилась.",
-        },
-      }));
-      setNotice("Решение принято в текущем просмотре: карточку оставляем как есть.");
+      void markEditorialSuggestionReviewed({
+        suggestion,
+        status: "ignored",
+        moderatorDecision: "keep_as_is",
+        reviewNote:
+          "Модератор оставил карточку как есть. Действий с карточкой не требуется.",
+        notice: "Решение сохранено: карточку оставляем как есть. Задача закрыта.",
+        feedbackMessage:
+          "Решение сохранено на сервере: карточку оставляем как есть. Задача больше не будет висеть в pending.",
+        feedbackKind: "success",
+        localResolution: "kept",
+      });
       return;
     }
 
     if (action === "defer") {
-      setQueueResolutions((prev) => ({ ...prev, [suggestion.id]: "deferred" }));
-      setQueueActionFeedback((prev) => ({
-        ...prev,
-        [suggestion.id]: {
-          action,
-          kind: "info",
-          message:
-            "Задача отложена в текущем просмотре. Карточка не изменилась; к проверке можно вернуться позже.",
-        },
-      }));
-      setNotice("Задача оставлена в очереди: можно вернуться после проверки источника.");
+      void markEditorialSuggestionReviewed({
+        suggestion,
+        status: "archived",
+        moderatorDecision: "deferred",
+        reviewNote:
+          "Модератор отложил задачу. Карточка не изменена; к вопросу можно вернуться позже через archived/all.",
+        notice: "Задача отложена и убрана из pending.",
+        feedbackMessage:
+          "Задача отложена на сервере и убрана из pending. Карточка не изменилась.",
+        feedbackKind: "info",
+        localResolution: "deferred",
+      });
       return;
     }
 
