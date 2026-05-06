@@ -392,10 +392,17 @@ type AutoModeratorFinding = {
     | "lock"
     | "add_note"
     | "rewrite"
+    | "rewrite_with_claude"
     | "create_editorial_suggestion"
     | "no_action";
+  automation_class?:
+    | "audit_only"
+    | "create_editorial_suggestion"
+    | "human_required"
+    | "auto_apply_safe";
   reason: string;
   suggested_note: string | null;
+  human_question?: string | null;
   risk_level: "low" | "medium" | "high" | "unknown";
   angle_relationship:
     | "duplicate"
@@ -405,12 +412,15 @@ type AutoModeratorFinding = {
     | "uncertain";
   score_total: number | null;
   audit_decision_id?: string | null;
+  inserted_suggestion_id?: string | null;
+  applied_action?: string | null;
+  error?: string | null;
 };
 
 type AutoModeratorReportResponse = {
   ok?: boolean;
   error?: string;
-  mode?: "report";
+  mode?: "report" | "apply";
   run_id?: string | null;
   reference?: string;
   canonical_ref?: string | null;
@@ -418,18 +428,24 @@ type AutoModeratorReportResponse = {
   evaluator_provider?: string;
   evaluator_model?: string;
   existing_card_count?: number;
+  inserted_editorial_suggestion_count?: number;
+  error_count?: number;
   report?: {
     health_score: number;
     set_status: "healthy" | "mostly_healthy" | "needs_cleanup" | "risky";
     summary: string;
+    moderator_brief?: string;
     active_count: number;
     reserve_count: number;
     hidden_count: number;
     rejected_count: number;
+    audit_only_count?: number;
+    create_editorial_suggestion_count?: number;
+    human_required_count?: number;
+    auto_apply_safe_count?: number;
     findings: AutoModeratorFinding[];
   };
 };
-
 
 type ReEvaluation = {
   score_total?: number;
@@ -1099,10 +1115,18 @@ function readableReportAction(action: AutoModeratorFinding["recommended_action"]
   if (action === "hide") return "скрыть";
   if (action === "lock") return "защитить";
   if (action === "add_note") return "добавить заметку";
-  if (action === "rewrite") return "доработать";
+  if (action === "rewrite" || action === "rewrite_with_claude") return "доработать Claude";
   if (action === "create_editorial_suggestion") return "в очередь";
   if (action === "no_action") return "без действия";
   return action;
+}
+
+function readableAutomationClass(value: AutoModeratorFinding["automation_class"]): string {
+  if (value === "audit_only") return "только audit";
+  if (value === "create_editorial_suggestion") return "создать очередь";
+  if (value === "human_required") return "нужен человек";
+  if (value === "auto_apply_safe") return "безопасное авто";
+  return "маршрут не указан";
 }
 
 function readableFindingSeverity(severity: AutoModeratorFinding["severity"]): string {
@@ -1203,6 +1227,7 @@ export default function StudioPage() {
   const [autoModeratorReport, setAutoModeratorReport] =
     useState<AutoModeratorReportResponse | null>(null);
   const [runningAutoModeratorReport, setRunningAutoModeratorReport] = useState(false);
+  const [applyingAutoModeratorRouting, setApplyingAutoModeratorRouting] = useState(false);
   const [autoModeratorReportError, setAutoModeratorReportError] = useState("");
 
   const selectedVerse = useMemo(() => {
@@ -1614,7 +1639,7 @@ export default function StudioPage() {
     }
   }
 
-  async function runAutoModeratorReport() {
+  async function runAutoModeratorReport(apply = false) {
     if (!selectedVerse) {
       setCardsError("Сначала выбери стих.");
       return;
@@ -1627,8 +1652,14 @@ export default function StudioPage() {
 
     setAutoModeratorReport(null);
     setAutoModeratorReportError("");
-    setRunningAutoModeratorReport(true);
-    setNotice("GPT-5.5 проверяет здоровье набора...");
+
+    if (apply) {
+      setApplyingAutoModeratorRouting(true);
+      setNotice("Автомодератор создаёт очередь исключений...");
+    } else {
+      setRunningAutoModeratorReport(true);
+      setNotice("GPT-5.5 проверяет здоровье набора...");
+    }
 
     try {
       const response = await fetch("/api/admin/studio/auto-moderator-report", {
@@ -1640,8 +1671,13 @@ export default function StudioPage() {
         body: JSON.stringify({
           reference: selectedVerse.reference,
           canonical_ref: selectedVerse.canonical_ref,
+          book_key: selectedVerse.book_key,
+          book: selectedVerse.book,
+          chapter: selectedVerse.chapter,
+          verse: selectedVerse.verse,
           lang,
           maxCards: 100,
+          apply,
         }),
       });
 
@@ -1654,11 +1690,18 @@ export default function StudioPage() {
       setAutoModeratorReport(data);
 
       const health = data.report?.health_score;
+      const queueCount = data.inserted_editorial_suggestion_count ?? 0;
       setNotice(
-        `Проверка набора готова${
-          typeof health === "number" ? `: health ${health}` : ""
-        }.`,
+        apply
+          ? `Маршрутизация готова: в очередь создано ${queueCount}.`
+          : `Проверка набора готова${
+              typeof health === "number" ? `: health ${health}` : ""
+            }.`,
       );
+
+      if (apply) {
+        await loadEditorialSuggestions();
+      }
     } catch (error) {
       setAutoModeratorReport(null);
       setAutoModeratorReportError(
@@ -1667,6 +1710,7 @@ export default function StudioPage() {
       setNotice("");
     } finally {
       setRunningAutoModeratorReport(false);
+      setApplyingAutoModeratorRouting(false);
     }
   }
 
@@ -3819,17 +3863,42 @@ export default function StudioPage() {
                         runningAutoCuratorPreview ||
                         applyingRunAutoCurator ||
                         runningAutoModeratorReport ||
+                        applyingAutoModeratorRouting ||
                         loadingCards
                       }
-                      onClick={() => runAutoModeratorReport()}
+                      onClick={() => runAutoModeratorReport(false)}
                       style={getRepairButtonStyle(
                         runningAutoCuratorPreview ||
                           applyingRunAutoCurator ||
                           runningAutoModeratorReport ||
+                          applyingAutoModeratorRouting ||
                           loadingCards,
                       )}
                     >
                       {runningAutoModeratorReport ? "Проверяю..." : "Проверить набор"}
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={
+                        runningAutoCuratorPreview ||
+                        applyingRunAutoCurator ||
+                        runningAutoModeratorReport ||
+                        applyingAutoModeratorRouting ||
+                        loadingCards
+                      }
+                      onClick={() => runAutoModeratorReport(true)}
+                      style={getRepairButtonStyle(
+                        runningAutoCuratorPreview ||
+                          applyingRunAutoCurator ||
+                          runningAutoModeratorReport ||
+                          applyingAutoModeratorRouting ||
+                          loadingCards,
+                      )}
+                    >
+                      {applyingAutoModeratorRouting
+                        ? "Маршрутизирую..."
+                        : "Создать очередь исключений"}
                     </button>
                   </div>
 
@@ -4103,7 +4172,8 @@ export default function StudioPage() {
                               lineHeight: 1.55,
                             }}
                           >
-                            {autoModeratorReport.report.summary}
+                            {autoModeratorReport.report.moderator_brief ??
+                              autoModeratorReport.report.summary}
                           </p>
                         </div>
 
@@ -4140,6 +4210,23 @@ export default function StudioPage() {
                         <Badge text={`active: ${autoModeratorReport.report.active_count}`} />
                         <Badge text={`reserve: ${autoModeratorReport.report.reserve_count}`} />
                         <Badge text={`findings: ${autoModeratorReport.report.findings.length}`} />
+                        <Badge text={`audit: ${autoModeratorReport.report.audit_only_count ?? 0}`} />
+                        <Badge
+                          text={`queue: ${
+                            autoModeratorReport.report.create_editorial_suggestion_count ?? 0
+                          }`}
+                          strong
+                        />
+                        <Badge text={`human: ${autoModeratorReport.report.human_required_count ?? 0}`} strong />
+                        <Badge text={`safe: ${autoModeratorReport.report.auto_apply_safe_count ?? 0}`} />
+                        {autoModeratorReport.mode === "apply" ? (
+                          <Badge
+                            text={`created: ${
+                              autoModeratorReport.inserted_editorial_suggestion_count ?? 0
+                            }`}
+                            strong
+                          />
+                        ) : null}
                         <Badge text={`Evaluator: ${autoModeratorReport.evaluator_model ?? "—"}`} />
                       </div>
 
@@ -4180,6 +4267,7 @@ export default function StudioPage() {
 
                               <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 7 }}>
                                 <Badge text={readableReportFindingType(finding.finding_type)} strong />
+                                <Badge text={readableAutomationClass(finding.automation_class)} strong />
                                 <Badge text={readableReportAction(finding.recommended_action)} />
                                 <Badge text={readableAngleRelationship(finding.angle_relationship) ?? "угол: —"} />
                                 <Badge text={readableRiskLevel(finding.risk_level)} />
@@ -4188,6 +4276,12 @@ export default function StudioPage() {
                                 ) : null}
                                 {finding.audit_decision_id ? (
                                   <Badge text={`audit: ${finding.audit_decision_id.slice(0, 8)}`} />
+                                ) : null}
+                                {finding.inserted_suggestion_id ? (
+                                  <Badge text={`queue: ${finding.inserted_suggestion_id.slice(0, 8)}`} strong />
+                                ) : null}
+                                {finding.applied_action ? (
+                                  <Badge text={finding.applied_action} />
                                 ) : null}
                               </div>
 
@@ -4202,6 +4296,21 @@ export default function StudioPage() {
                                 {finding.reason}
                               </p>
 
+                              {finding.human_question ? (
+                                <p
+                                  style={{
+                                    margin: "0 0 7px",
+                                    color: SLATE_DARK,
+                                    fontSize: 12,
+                                    lineHeight: 1.45,
+                                    fontWeight: 800,
+                                  }}
+                                >
+                                  <strong>Вопрос: </strong>
+                                  {finding.human_question}
+                                </p>
+                              ) : null}
+
                               {finding.suggested_note ? (
                                 <p
                                   style={{
@@ -4213,6 +4322,20 @@ export default function StudioPage() {
                                 >
                                   <strong>Заметка: </strong>
                                   {finding.suggested_note}
+                                </p>
+                              ) : null}
+
+                              {finding.error ? (
+                                <p
+                                  style={{
+                                    margin: "7px 0 0",
+                                    color: DANGER,
+                                    fontSize: 12,
+                                    lineHeight: 1.45,
+                                  }}
+                                >
+                                  <strong>Ошибка: </strong>
+                                  {finding.error}
                                 </p>
                               ) : null}
 
