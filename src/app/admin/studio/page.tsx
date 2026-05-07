@@ -1160,6 +1160,158 @@ function getAcceptRecommendationLabel(suggestion: EditorialSuggestion): string {
   return "Принять рекомендацию";
 }
 
+function getFindingPriority(finding: AutoModeratorFinding): number {
+  if (finding.severity === "high") return 0;
+  if (finding.automation_class === "human_required") return 1;
+  if (finding.automation_class === "create_editorial_suggestion") return 2;
+  if (
+    finding.recommended_action !== "keep" &&
+    finding.recommended_action !== "no_action"
+  ) {
+    return 3;
+  }
+  if (finding.severity === "medium") return 4;
+  return 5;
+}
+
+function isImmediateFinding(finding: AutoModeratorFinding): boolean {
+  if (finding.severity === "high") return true;
+  if (finding.automation_class === "human_required") return true;
+  if (finding.automation_class === "create_editorial_suggestion") return true;
+  return (
+    finding.recommended_action !== "keep" &&
+    finding.recommended_action !== "no_action"
+  );
+}
+
+function ReportFindingCard({
+  finding,
+  compact = false,
+}: {
+  finding: AutoModeratorFinding;
+  compact?: boolean;
+}) {
+  return (
+    <div
+      style={{
+        border: `1px solid ${LINE_SOFT}`,
+        borderRadius: 12,
+        background: compact ? CARD : SLATE_SOFT_2,
+        padding: compact ? 9 : 10,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          gap: 10,
+          alignItems: "flex-start",
+          marginBottom: 6,
+        }}
+      >
+        <div
+          style={{
+            fontSize: 13,
+            fontWeight: 900,
+            color: INK,
+            lineHeight: 1.35,
+          }}
+        >
+          {finding.title}
+        </div>
+
+        <Badge text={readableFindingSeverity(finding.severity)} strong />
+      </div>
+
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 7 }}>
+        <Badge text={readableReportFindingType(finding.finding_type)} strong />
+        <Badge text={readableAutomationClass(finding.automation_class)} strong />
+        <Badge text={readableReportAction(finding.recommended_action)} />
+        <Badge text={readableAngleRelationship(finding.angle_relationship) ?? "угол: —"} />
+        <Badge text={readableRiskLevel(finding.risk_level)} />
+        {finding.score_total !== null ? <Badge text={`score: ${finding.score_total}`} /> : null}
+        {!compact && finding.audit_decision_id ? (
+          <Badge text={`audit: ${finding.audit_decision_id.slice(0, 8)}`} />
+        ) : null}
+        {!compact && finding.inserted_suggestion_id ? (
+          <Badge text={`queue: ${finding.inserted_suggestion_id.slice(0, 8)}`} strong />
+        ) : null}
+        {!compact && finding.applied_action ? <Badge text={finding.applied_action} /> : null}
+      </div>
+
+      <p
+        style={{
+          margin: finding.human_question || finding.suggested_note || finding.error ? "0 0 7px" : 0,
+          color: TEXT,
+          fontSize: 12,
+          lineHeight: 1.5,
+        }}
+      >
+        {finding.reason}
+      </p>
+
+      {finding.human_question ? (
+        <p
+          style={{
+            margin: "0 0 7px",
+            color: SLATE_DARK,
+            fontSize: 12,
+            lineHeight: 1.45,
+            fontWeight: 800,
+          }}
+        >
+          <strong>Вопрос: </strong>
+          {finding.human_question}
+        </p>
+      ) : null}
+
+      {finding.suggested_note ? (
+        <p
+          style={{
+            margin: finding.error ? "0 0 7px" : 0,
+            color: WARM_ACCENT,
+            fontSize: 12,
+            lineHeight: 1.45,
+          }}
+        >
+          <strong>Заметка: </strong>
+          {finding.suggested_note}
+        </p>
+      ) : null}
+
+      {finding.error ? (
+        <p
+          style={{
+            margin: compact ? "7px 0 0" : "0 0 7px",
+            color: "#9f3a2f",
+            fontSize: 12,
+            lineHeight: 1.45,
+          }}
+        >
+          <strong>Ошибка: </strong>
+          {finding.error}
+        </p>
+      ) : null}
+
+      {!compact && (finding.primary_card_id || finding.related_card_ids.length > 0) ? (
+        <p
+          style={{
+            margin: "7px 0 0",
+            color: MUTED_2,
+            fontSize: 11,
+            lineHeight: 1.45,
+          }}
+        >
+          {finding.primary_card_id ? `primary: ${finding.primary_card_id.slice(0, 8)}` : ""}
+          {finding.related_card_ids.length > 0
+            ? ` related: ${finding.related_card_ids.map((id) => id.slice(0, 8)).join(", ")}`
+            : ""}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 export default function StudioPage() {
   const [adminSecret, setAdminSecret] = useState("");
   const [secretLoaded, setSecretLoaded] = useState(false);
@@ -4358,136 +4510,171 @@ export default function StudioPage() {
                       </div>
 
                       {autoModeratorReport.report.findings.length > 0 ? (
-                        <div style={{ display: "grid", gap: 9 }}>
-                          {autoModeratorReport.report.findings.map((finding, index) => (
-                            <div
-                              key={`${finding.title}-${index}`}
-                              style={{
-                                border: `1px solid ${LINE_SOFT}`,
-                                borderRadius: 12,
-                                background: SLATE_SOFT_2,
-                                padding: 10,
-                              }}
-                            >
+                        (() => {
+                          const findings = autoModeratorReport.report.findings;
+                          const sortedFindings = [...findings].sort(
+                            (a, b) => getFindingPriority(a) - getFindingPriority(b),
+                          );
+                          const topFindings = sortedFindings.slice(0, 3);
+                          const immediateFindings = findings.filter(isImmediateFinding);
+                          const observationFindings = findings.filter(
+                            (finding) => !isImmediateFinding(finding),
+                          );
+
+                          return (
+                            <div style={{ display: "grid", gap: 12 }}>
                               <div
                                 style={{
-                                  display: "flex",
-                                  justifyContent: "space-between",
-                                  gap: 10,
-                                  alignItems: "flex-start",
-                                  marginBottom: 6,
+                                  border: `1px solid ${LINE_SOFT}`,
+                                  borderRadius: 14,
+                                  background: `linear-gradient(180deg, ${SLATE_SOFT} 0%, ${SLATE_SOFT_2} 100%)`,
+                                  padding: 11,
                                 }}
                               >
                                 <div
                                   style={{
-                                    fontSize: 13,
+                                    fontSize: 11,
                                     fontWeight: 900,
-                                    color: INK,
-                                    lineHeight: 1.35,
+                                    letterSpacing: "0.14em",
+                                    textTransform: "uppercase",
+                                    color: WARM_ACCENT,
+                                    marginBottom: 8,
                                   }}
                                 >
-                                  {finding.title}
+                                  Главные выводы
                                 </div>
 
-                                <Badge text={readableFindingSeverity(finding.severity)} strong />
+                                <div style={{ display: "grid", gap: 7 }}>
+                                  {topFindings.map((finding, index) => (
+                                    <div
+                                      key={`${finding.title}-top-${index}`}
+                                      style={{
+                                        display: "grid",
+                                        gridTemplateColumns: "24px 1fr",
+                                        gap: 8,
+                                        alignItems: "flex-start",
+                                        color: TEXT,
+                                        fontSize: 12,
+                                        lineHeight: 1.5,
+                                      }}
+                                    >
+                                      <span
+                                        style={{
+                                          width: 22,
+                                          height: 22,
+                                          borderRadius: 999,
+                                          background: CARD,
+                                          border: `1px solid ${LINE_SOFT}`,
+                                          color: SLATE_DARK,
+                                          display: "inline-flex",
+                                          alignItems: "center",
+                                          justifyContent: "center",
+                                          fontSize: 11,
+                                          fontWeight: 950,
+                                        }}
+                                      >
+                                        {index + 1}
+                                      </span>
+
+                                      <div>
+                                        <strong style={{ color: INK }}>{finding.title}</strong>
+                                        <span style={{ color: MUTED }}> — {finding.reason}</span>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
                               </div>
 
-                              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 7 }}>
-                                <Badge text={readableReportFindingType(finding.finding_type)} strong />
-                                <Badge text={readableAutomationClass(finding.automation_class)} strong />
-                                <Badge text={readableReportAction(finding.recommended_action)} />
-                                <Badge text={readableAngleRelationship(finding.angle_relationship) ?? "угол: —"} />
-                                <Badge text={readableRiskLevel(finding.risk_level)} />
-                                {finding.score_total !== null ? (
-                                  <Badge text={`score: ${finding.score_total}`} />
-                                ) : null}
-                                {finding.audit_decision_id ? (
-                                  <Badge text={`audit: ${finding.audit_decision_id.slice(0, 8)}`} />
-                                ) : null}
-                                {finding.inserted_suggestion_id ? (
-                                  <Badge text={`queue: ${finding.inserted_suggestion_id.slice(0, 8)}`} strong />
-                                ) : null}
-                                {finding.applied_action ? (
-                                  <Badge text={finding.applied_action} />
-                                ) : null}
-                              </div>
+                              {immediateFindings.length > 0 ? (
+                                <details open>
+                                  <summary
+                                    style={{
+                                      cursor: "pointer",
+                                      color: WARNING_TEXT,
+                                      fontSize: 13,
+                                      fontWeight: 900,
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      gap: 8,
+                                    }}
+                                  >
+                                    <span style={{ fontSize: 12 }}>▼</span>
+                                    Немедленные действия: {immediateFindings.length}
+                                  </summary>
 
-                              <p
-                                style={{
-                                  margin: "0 0 7px",
-                                  color: TEXT,
-                                  fontSize: 12,
-                                  lineHeight: 1.5,
-                                }}
-                              >
-                                {finding.reason}
-                              </p>
+                                  <div style={{ display: "grid", gap: 9, marginTop: 10 }}>
+                                    {immediateFindings.map((finding, index) => (
+                                      <ReportFindingCard
+                                        key={`${finding.title}-immediate-${index}`}
+                                        finding={finding}
+                                      />
+                                    ))}
+                                  </div>
+                                </details>
+                              ) : (
+                                <MessageBox
+                                  kind="success"
+                                  text="Немедленных действий нет: отчёт не требует срочного вмешательства."
+                                />
+                              )}
 
-                              {finding.human_question ? (
-                                <p
+                              {observationFindings.length > 0 ? (
+                                <details>
+                                  <summary
+                                    style={{
+                                      cursor: "pointer",
+                                      color: SLATE_DARK,
+                                      fontSize: 13,
+                                      fontWeight: 900,
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      gap: 8,
+                                    }}
+                                  >
+                                    <span style={{ fontSize: 12 }}>▼</span>
+                                    Наблюдения без срочного действия: {observationFindings.length}
+                                  </summary>
+
+                                  <div style={{ display: "grid", gap: 9, marginTop: 10 }}>
+                                    {observationFindings.map((finding, index) => (
+                                      <ReportFindingCard
+                                        key={`${finding.title}-observation-${index}`}
+                                        finding={finding}
+                                        compact
+                                      />
+                                    ))}
+                                  </div>
+                                </details>
+                              ) : null}
+
+                              <details>
+                                <summary
                                   style={{
-                                    margin: "0 0 7px",
-                                    color: SLATE_DARK,
+                                    cursor: "pointer",
+                                    color: MUTED,
                                     fontSize: 12,
-                                    lineHeight: 1.45,
-                                    fontWeight: 800,
+                                    fontWeight: 900,
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: 8,
                                   }}
                                 >
-                                  <strong>Вопрос: </strong>
-                                  {finding.human_question}
-                                </p>
-                              ) : null}
+                                  <span style={{ fontSize: 12 }}>▼</span>
+                                  Полный список findings: {findings.length}
+                                </summary>
 
-                              {finding.suggested_note ? (
-                                <p
-                                  style={{
-                                    margin: 0,
-                                    color: WARM_ACCENT,
-                                    fontSize: 12,
-                                    lineHeight: 1.45,
-                                  }}
-                                >
-                                  <strong>Заметка: </strong>
-                                  {finding.suggested_note}
-                                </p>
-                              ) : null}
-
-                              {finding.error ? (
-                                <p
-                                  style={{
-                                    margin: "7px 0 0",
-                                    color: "#9f3a2f",
-                                    fontSize: 12,
-                                    lineHeight: 1.45,
-                                  }}
-                                >
-                                  <strong>Ошибка: </strong>
-                                  {finding.error}
-                                </p>
-                              ) : null}
-
-                              {finding.primary_card_id || finding.related_card_ids.length > 0 ? (
-                                <p
-                                  style={{
-                                    margin: "7px 0 0",
-                                    color: MUTED_2,
-                                    fontSize: 11,
-                                    lineHeight: 1.45,
-                                  }}
-                                >
-                                  {finding.primary_card_id
-                                    ? `primary: ${finding.primary_card_id.slice(0, 8)}`
-                                    : ""}
-                                  {finding.related_card_ids.length > 0
-                                    ? ` related: ${finding.related_card_ids
-                                        .map((id) => id.slice(0, 8))
-                                        .join(", ")}`
-                                    : ""}
-                                </p>
-                              ) : null}
+                                <div style={{ display: "grid", gap: 9, marginTop: 10 }}>
+                                  {findings.map((finding, index) => (
+                                    <ReportFindingCard
+                                      key={`${finding.title}-full-${index}`}
+                                      finding={finding}
+                                    />
+                                  ))}
+                                </div>
+                              </details>
                             </div>
-                          ))}
-                        </div>
+                          );
+                        })()
                       ) : (
                         <EmptyBox text="Auto Moderator не нашёл проблем в текущем наборе." />
                       )}
