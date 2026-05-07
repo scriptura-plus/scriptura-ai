@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type CSSProperties } from "react";
+import { useMemo, useRef, useState, type CSSProperties } from "react";
 
 type Lang = "ru" | "en" | "es";
 type Provider = "openai" | "claude" | "gemini";
@@ -1204,6 +1204,8 @@ export function ManualMaterialBuilder({
   const [loading, setLoading] = useState(false);
   const [batchLoading, setBatchLoading] = useState(false);
   const [batchSummary, setBatchSummary] = useState<BatchSummary | null>(null);
+  const batchInFlightRef = useRef(false);
+  const batchRunIdRef = useRef(0);
 
   const [error, setError] = useState("");
   const [summary, setSummary] = useState("");
@@ -1442,28 +1444,24 @@ export function ManualMaterialBuilder({
   }
 
   async function saveSelectedCandidates() {
-    if (batchLoading || loading) return;
+    if (batchInFlightRef.current || batchLoading || loading) {
+      onNotice?.("Массовая проверка уже идёт. Дождись завершения текущего запуска.");
+      return;
+    }
 
-    if (selectedCandidates.length === 0) {
+    const candidatesToProcess = [...selectedCandidates];
+
+    if (candidatesToProcess.length === 0) {
       onError?.("Нет выбранных кандидатов для проверки.");
       return;
     }
 
-    setBatchLoading(true);
-    setBatchSummary({
-      total: selectedCandidates.length,
-      processed: 0,
-      saved: 0,
-      active: 0,
-      reserve: 0,
-      duplicates: 0,
-      rejected: 0,
-      mismatches: 0,
-      errors: 0,
-    });
+    const runId = batchRunIdRef.current + 1;
+    batchRunIdRef.current = runId;
+    batchInFlightRef.current = true;
 
-    let summaryDraft: BatchSummary = {
-      total: selectedCandidates.length,
+    const initialSummary: BatchSummary = {
+      total: candidatesToProcess.length,
       processed: 0,
       saved: 0,
       active: 0,
@@ -1474,8 +1472,21 @@ export function ManualMaterialBuilder({
       errors: 0,
     };
 
+    setBatchLoading(true);
+    setBatchSummary(initialSummary);
+
+    let summaryDraft: BatchSummary = { ...initialSummary };
+
+    onNotice?.(
+      `Начинаю массовую проверку: ${candidatesToProcess.length} выбранных кандидатов. Не нажимай кнопку повторно до завершения.`,
+    );
+
     try {
-      for (const candidate of selectedCandidates) {
+      for (const candidate of candidatesToProcess) {
+        if (batchRunIdRef.current !== runId) {
+          break;
+        }
+
         const result = await saveCandidate(candidate);
 
         summaryDraft = {
@@ -1506,14 +1517,22 @@ export function ManualMaterialBuilder({
           }
         }
 
-        setBatchSummary({ ...summaryDraft });
+        if (batchRunIdRef.current === runId) {
+          setBatchSummary({ ...summaryDraft });
+        }
       }
 
-      onNotice?.(
-        `Готово. Сохранено: ${summaryDraft.saved}. Дубли: ${summaryDraft.duplicates}. Отклонено: ${summaryDraft.rejected}.`,
-      );
+      if (batchRunIdRef.current === runId) {
+        onNotice?.(
+          `Готово. Проверено: ${summaryDraft.processed}/${summaryDraft.total}. Сохранено: ${summaryDraft.saved}. Активные: ${summaryDraft.active}. Запас: ${summaryDraft.reserve}. Дубли: ${summaryDraft.duplicates}. Отклонено: ${summaryDraft.rejected}. Ошибки: ${summaryDraft.errors}.`,
+        );
+      }
     } finally {
-      setBatchLoading(false);
+      if (batchRunIdRef.current === runId) {
+        batchInFlightRef.current = false;
+        setBatchLoading(false);
+        setBatchSummary({ ...summaryDraft });
+      }
     }
   }
 
