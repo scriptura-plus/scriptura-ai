@@ -97,6 +97,23 @@ type SaveOneCardArgs = {
   forceSaveDuplicate: boolean;
 };
 
+type DetectedReference = {
+  raw: string;
+  canonical_ref: string | null;
+  book_key: string | null;
+  book: string | null;
+  chapter: number | null;
+  verse: number | null;
+};
+
+type ReferenceMismatch = {
+  expected_reference: string;
+  expected_canonical_ref: string | null;
+  detected_reference: string;
+  detected_canonical_ref: string | null;
+  detected_references: DetectedReference[];
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -831,6 +848,129 @@ function normalizeSourceType(args: {
     : "admin_process_candidate";
 }
 
+function normalizePossibleReference(raw: string): DetectedReference | null {
+  const cleanRaw = raw
+    .replace(/[«»"“”()[\]{}]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const match = cleanRaw.match(/^(.+?)\s+(\d{1,3})\s*:\s*(\d{1,3})$/);
+  if (!match) return null;
+
+  const bookPart = match[1].trim();
+  const chapter = match[2];
+  const verse = match[3];
+
+  const bookWords = bookPart.split(/\s+/).filter(Boolean);
+  const attempts: string[] = [];
+
+  attempts.push(`${bookPart} ${chapter}:${verse}`);
+
+  for (let i = 0; i < bookWords.length; i += 1) {
+    const suffix = bookWords.slice(i).join(" ");
+    attempts.push(`${suffix} ${chapter}:${verse}`);
+  }
+
+  const uniqueAttempts = Array.from(new Set(attempts));
+
+  for (const attempt of uniqueAttempts) {
+    const normalized = normalizeReference(attempt);
+
+    if (
+      normalized.canonical_ref &&
+      Number.isFinite(normalized.chapter) &&
+      Number.isFinite(normalized.verse) &&
+      normalized.chapter > 0 &&
+      normalized.verse > 0
+    ) {
+      return {
+        raw: attempt,
+        canonical_ref: normalized.canonical_ref,
+        book_key: normalized.book_key ?? null,
+        book: normalized.book ?? null,
+        chapter: normalized.chapter ?? null,
+        verse: normalized.verse ?? null,
+      };
+    }
+  }
+
+  return null;
+}
+
+function extractExplicitReferences(text: string): DetectedReference[] {
+  const refs: DetectedReference[] = [];
+  const seen = new Set<string>();
+
+  const patterns = [
+    /((?:[1-3]\s*)?(?:[A-Za-zА-Яа-яЁёІіЇїЄє]+\.?)(?:\s+[A-Za-zА-Яа-яЁёІіЇїЄє]+\.?){0,3})\s+(\d{1,3})\s*:\s*(\d{1,3})/g,
+    /((?:[1-3]\s*)?(?:[A-Za-zА-Яа-яЁёІіЇїЄє]+\.?))\s*(\d{1,3})\s*:\s*(\d{1,3})/g,
+  ];
+
+  for (const pattern of patterns) {
+    for (const match of text.matchAll(pattern)) {
+      const raw = `${match[1]} ${match[2]}:${match[3]}`;
+      const detected = normalizePossibleReference(raw);
+
+      if (!detected?.canonical_ref) continue;
+
+      const key = detected.canonical_ref;
+      if (seen.has(key)) continue;
+
+      seen.add(key);
+      refs.push(detected);
+    }
+  }
+
+  return refs;
+}
+
+function getCandidateTextForReferenceGuard(candidate: CandidateCard): string {
+  return [
+    candidate.title,
+    candidate.anchor,
+    candidate.teaser,
+    candidate.why_it_matters,
+    candidate.body,
+  ]
+    .filter((part): part is string => typeof part === "string" && part.trim().length > 0)
+    .join("\n\n");
+}
+
+function findReferenceMismatch(args: {
+  reference: string;
+  normalizedReference: ReturnType<typeof normalizeReference>;
+  candidate: CandidateCard;
+}): ReferenceMismatch | null {
+  const expectedCanonical = args.normalizedReference.canonical_ref ?? null;
+
+  if (!expectedCanonical) return null;
+
+  const candidateText = getCandidateTextForReferenceGuard(args.candidate);
+  const detectedReferences = extractExplicitReferences(candidateText);
+
+  if (detectedReferences.length === 0) return null;
+
+  const hasExpectedReference = detectedReferences.some(
+    (ref) => ref.canonical_ref === expectedCanonical,
+  );
+
+  if (hasExpectedReference) return null;
+
+  const mismatch = detectedReferences.find(
+    (ref) => ref.canonical_ref && ref.canonical_ref !== expectedCanonical,
+  );
+
+  if (!mismatch) return null;
+
+  return {
+    expected_reference: args.reference,
+    expected_canonical_ref: expectedCanonical,
+    detected_reference: mismatch.raw,
+    detected_canonical_ref: mismatch.canonical_ref,
+    detected_references: detectedReferences,
+  };
+}
+
 async function evaluateCandidate(args: {
   reference: string;
   verseText: string;
@@ -1024,6 +1164,56 @@ export async function POST(req: Request) {
     }
 
     const normalizedReference = normalizeReference(reference);
+
+    const referenceMismatch = findReferenceMismatch({
+      reference,
+      normalizedReference,
+      candidate,
+    });
+
+    if (referenceMismatch && !forceSaveDuplicate) {
+      return NextResponse.json({
+        ok: true,
+        skipped: true,
+        skip_reason: "reference_mismatch",
+        saved_id: null,
+        saved_ids: [],
+        rewritten: false,
+        status: "skipped_reference_mismatch",
+        score_total: null,
+        canonical_ref: normalizedReference.canonical_ref,
+        book_key: normalizedReference.book_key,
+        editor_provider: editorProvider,
+        editor_model: getModelName(editorProvider),
+        source_title: sourceTitle,
+        source_type: sourceType,
+        source_lens: sourceLens,
+        reference_mismatch: referenceMismatch,
+        first_evaluation: {
+          score_total: null,
+          placement: "rejected",
+          coverage_type: null,
+          angle_summary: "Reference mismatch guard blocked this candidate before AI evaluation.",
+          reason: `Карточка явно ссылается на ${referenceMismatch.detected_reference}, но выбранный стих: ${referenceMismatch.expected_reference}. Сохранение заблокировано до AI-оценки.`,
+          risk: "Карточка может быть сохранена в набор другого стиха.",
+          same_angle: false,
+          matched_card_id: null,
+          reference_mismatch: referenceMismatch,
+        },
+        final_card: candidate,
+        final_evaluation: {
+          score_total: null,
+          placement: "rejected",
+          coverage_type: null,
+          angle_summary: "Reference mismatch guard blocked this candidate before AI evaluation.",
+          reason: `Карточка явно ссылается на ${referenceMismatch.detected_reference}, но выбранный стих: ${referenceMismatch.expected_reference}. Сохранение заблокировано до AI-оценки.`,
+          risk: "Карточка может быть сохранена в набор другого стиха.",
+          same_angle: false,
+          matched_card_id: null,
+          reference_mismatch: referenceMismatch,
+        },
+      });
+    }
 
     const existing = await getAngleCards({
       reference,
