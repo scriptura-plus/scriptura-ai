@@ -208,81 +208,6 @@ type EditorialSuggestionsResponse = {
   suggestions?: EditorialSuggestion[];
 };
 
-type AutoCuratorPreviewCandidate = {
-  candidate: {
-    title: string;
-    anchor: string | null;
-    teaser: string;
-    why_it_matters: string | null;
-  };
-  score_total: number | null;
-  angle_relationship:
-    | "duplicate"
-    | "stronger_version"
-    | "sibling_angle"
-    | "distinct_angle"
-    | "uncertain";
-  relationship_confidence: "low" | "medium" | "high";
-  matched_card_id: string | null;
-  matched_card_title: string | null;
-  recommended_action: "auto_add" | "auto_reject" | "editorial_suggestion";
-  suggestion_type:
-    | "replacement"
-    | "needs_review"
-    | "locked_card_challenger"
-    | "style_review"
-    | "promote_candidate"
-    | "duplicate_uncertain"
-    | null;
-  reason: string;
-  risk_level: "low" | "medium" | "high" | "unknown";
-  risk: string | null;
-  source_basis: string | null;
-};
-
-type AutoCuratorPreviewResponse = {
-  ok?: boolean;
-  error?: string;
-  mode?: "preview_only";
-  reference?: string;
-  canonical_ref?: string | null;
-  lang?: Lang;
-  provider?: string;
-  model?: string;
-  generator_provider?: string;
-  generator_model?: string;
-  source_count?: number;
-  note_count?: number;
-  existing_card_count?: number;
-  summary?: string | null;
-  candidates?: AutoCuratorPreviewCandidate[];
-  raw_preview?: string;
-};
-
-type ApplyAutoCuratorPreviewResponse = {
-  ok?: boolean;
-  error?: string;
-  mode?: "editorial_suggestion_only";
-  reference?: string;
-  canonical_ref?: string | null;
-  lang?: Lang;
-  inserted_count?: number;
-  skipped_count?: number;
-  error_count?: number;
-  inserted_suggestions?: unknown[];
-  skipped?: Array<{
-    index: number;
-    reason: string;
-    title?: string | null;
-    recommended_action?: string | null;
-  }>;
-  errors?: Array<{
-    index: number;
-    title?: string | null;
-    error: string;
-  }>;
-};
-
 type RunAutoCuratorDecision = {
   candidate: {
     title: string;
@@ -559,44 +484,6 @@ type UpdateAngleCardResponse = {
 };
 
 type GroupStatus = "featured" | "reserve" | "hidden" | "rejected";
-
-type RebalanceDecision = {
-  card_id: string;
-  translation_group_id?: string | null;
-  title: string;
-  old_status: string;
-  old_rank: number | null;
-  old_score: number | null;
-  new_status: string;
-  new_rank: number | null;
-  new_score: number | null;
-  is_locked: boolean;
-  reason: string;
-};
-
-type RebalanceResponse = {
-  ok?: boolean;
-  error?: string;
-  applied?: boolean;
-  reference?: string;
-  canonical_ref?: string | null;
-  lang?: Lang;
-  target_featured_count?: number;
-  total_cards_seen?: number;
-  eligible_cards_count?: number;
-  locked_cards_count?: number;
-  changed_count?: number;
-  decisions?: RebalanceDecision[];
-  errors?: string[];
-};
-
-type RebalanceState = {
-  previewLoading: boolean;
-  applyLoading: boolean;
-  applied: boolean;
-  error: string;
-  result: RebalanceResponse | null;
-};
 
 type ReEvaluateState = {
   loading: boolean;
@@ -1000,16 +887,6 @@ function createEmptyRewriteState(previous?: RewriteState): RewriteState {
   };
 }
 
-function createEmptyRebalanceState(previous?: RebalanceState): RebalanceState {
-  return {
-    previewLoading: false,
-    applyLoading: false,
-    applied: false,
-    error: "",
-    result: previous?.result ?? null,
-  };
-}
-
 function summarizeCards(cards: StudioCard[]): CardsSummary {
   const sources = new Set<string>();
   let bestScore: number | null = null;
@@ -1077,14 +954,7 @@ function readableAngleRelationship(value: string | null): string | null {
   return value;
 }
 
-function readableRecommendedAction(action: AutoCuratorPreviewCandidate["recommended_action"]): string {
-  if (action === "auto_add") return "авто-добавить";
-  if (action === "auto_reject") return "авто-отклонить";
-  if (action === "editorial_suggestion") return "в редакторские";
-  return action;
-}
-
-function readableRiskLevel(level: AutoCuratorPreviewCandidate["risk_level"]): string {
+function readableRiskLevel(level: "low" | "medium" | "high" | "unknown" | string | null | undefined): string {
   if (level === "low") return "низкий риск";
   if (level === "medium") return "средний риск";
   if (level === "high") return "высокий риск";
@@ -1313,13 +1183,11 @@ export default function StudioPage() {
   const [retranslations, setRetranslations] = useState<Record<string, RetranslateState>>({});
   const [rewrites, setRewrites] = useState<Record<string, RewriteState>>({});
   const [updatingEditorial, setUpdatingEditorial] = useState<Record<string, boolean>>({});
-  const [rebalance, setRebalance] = useState<RebalanceState>(() => createEmptyRebalanceState());
   const [researchMemory, setResearchMemory] = useState<ResearchMemoryResponse | null>(null);
   const [loadingResearchMemory, setLoadingResearchMemory] = useState(false);
   const [researchMemoryError, setResearchMemoryError] = useState("");
   const [editorialSuggestions, setEditorialSuggestions] = useState<EditorialSuggestionsResponse | null>(null);
   const [loadingEditorialSuggestions, setLoadingEditorialSuggestions] = useState(false);
-  const [creatingTestSuggestion, setCreatingTestSuggestion] = useState(false);
   const [editorialSuggestionsError, setEditorialSuggestionsError] = useState("");
   const [queueResolutions, setQueueResolutions] = useState<
     Record<string, EditorialQueueLocalResolution>
@@ -1327,15 +1195,6 @@ export default function StudioPage() {
   const [queueActionFeedback, setQueueActionFeedback] = useState<
     Record<string, EditorialQueueActionFeedback>
   >({});
-
-  const [autoCuratorPreview, setAutoCuratorPreview] = useState<AutoCuratorPreviewResponse | null>(null);
-  const [loadingAutoCuratorPreview, setLoadingAutoCuratorPreview] = useState(false);
-  const [autoCuratorPreviewError, setAutoCuratorPreviewError] = useState("");
-
-  const [applyingAutoCuratorPreview, setApplyingAutoCuratorPreview] = useState(false);
-  const [applyAutoCuratorPreviewResult, setApplyAutoCuratorPreviewResult] =
-    useState<ApplyAutoCuratorPreviewResponse | null>(null);
-  const [applyAutoCuratorPreviewError, setApplyAutoCuratorPreviewError] = useState("");
 
   const [runAutoCuratorResult, setRunAutoCuratorResult] =
     useState<RunAutoCuratorResponse | null>(null);
@@ -1468,16 +1327,11 @@ export default function StudioPage() {
     setRetranslations({});
     setRewrites({});
     setUpdatingEditorial({});
-    setRebalance(createEmptyRebalanceState());
     setResearchMemory(null);
     setResearchMemoryError("");
     setEditorialSuggestions(null);
     setEditorialSuggestionsError("");
     setQueueResolutions({});
-    setAutoCuratorPreview(null);
-    setAutoCuratorPreviewError("");
-    setApplyAutoCuratorPreviewResult(null);
-    setApplyAutoCuratorPreviewError("");
     setRunAutoCuratorResult(null);
     setRunAutoCuratorError("");
     setAutoModeratorReport(null);
@@ -1519,11 +1373,7 @@ export default function StudioPage() {
       setResearchMemoryError("");
       setEditorialSuggestions(null);
       setEditorialSuggestionsError("");
-      setAutoCuratorPreview(null);
-      setAutoCuratorPreviewError("");
-      setApplyAutoCuratorPreviewResult(null);
-      setApplyAutoCuratorPreviewError("");
-      setRunAutoCuratorResult(null);
+              setRunAutoCuratorResult(null);
       setRunAutoCuratorError("");
       setAutoModeratorReport(null);
       setAutoModeratorReportError("");
@@ -1627,59 +1477,6 @@ export default function StudioPage() {
     }
   }
 
-  async function createTestEditorialSuggestion() {
-    if (!selectedVerse) {
-      setCardsError("Сначала выбери стих.");
-      return;
-    }
-
-    if (!adminSecret.trim()) {
-      setCardsError("Вставь Admin Secret.");
-      return;
-    }
-
-    setCreatingTestSuggestion(true);
-    setEditorialSuggestionsError("");
-    setNotice("Создаю тестовое редакторское предложение...");
-
-    try {
-      const response = await fetch("/api/admin/studio/create-test-editorial-suggestion", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-admin-secret": adminSecret,
-        },
-        body: JSON.stringify({
-          reference: selectedVerse.reference,
-          canonical_ref: selectedVerse.canonical_ref,
-          book_key: selectedVerse.book_key,
-          book: selectedVerse.book,
-          chapter: selectedVerse.chapter,
-          verse: selectedVerse.verse,
-          lang,
-        }),
-      });
-
-      const data = (await response.json()) as { ok?: boolean; error?: string };
-
-      if (!response.ok || !data.ok) {
-        throw new Error(data.error || "Не удалось создать тестовое предложение.");
-      }
-
-      await loadEditorialSuggestions(selectedVerse, adminSecret);
-      setNotice("Тестовое редакторское предложение создано.");
-    } catch (error) {
-      setEditorialSuggestionsError(
-        error instanceof Error
-          ? error.message
-          : "Не удалось создать тестовое предложение.",
-      );
-      setNotice("");
-    } finally {
-      setCreatingTestSuggestion(false);
-    }
-  }
-
   async function runAutoCuratorEngine(apply: boolean) {
     if (!selectedVerse) {
       setCardsError("Сначала выбери стих.");
@@ -1701,8 +1498,6 @@ export default function StudioPage() {
 
     setRunAutoCuratorError("");
     setRunAutoCuratorResult(null);
-    setApplyAutoCuratorPreviewResult(null);
-    setApplyAutoCuratorPreviewError("");
 
     if (apply) {
       setApplyingRunAutoCurator(true);
@@ -1843,142 +1638,6 @@ export default function StudioPage() {
     }
   }
 
-  async function previewAutoCurator() {
-    if (!selectedVerse) {
-      setCardsError("Сначала выбери стих.");
-      return;
-    }
-
-    if (!adminSecret.trim()) {
-      setCardsError("Вставь Admin Secret.");
-      return;
-    }
-
-    setLoadingAutoCuratorPreview(true);
-    setAutoCuratorPreviewError("");
-    setAutoCuratorPreview(null);
-    setApplyAutoCuratorPreviewResult(null);
-    setApplyAutoCuratorPreviewError("");
-    setNotice("Auto Curator смотрит Озеро и ищет новые кандидаты...");
-
-    try {
-      const response = await fetch("/api/admin/studio/auto-curator-preview", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-admin-secret": adminSecret,
-        },
-        body: JSON.stringify({
-          reference: selectedVerse.reference,
-          canonical_ref: selectedVerse.canonical_ref,
-          lang,
-          provider: "claude",
-          maxCandidates: 5,
-        }),
-      });
-
-      const data = (await response.json()) as AutoCuratorPreviewResponse;
-
-      if (!response.ok || !data.ok) {
-        throw new Error(data.error || "Не удалось выполнить предпросмотр Auto Curator.");
-      }
-
-      setAutoCuratorPreview(data);
-      setNotice(`Auto Curator preview готов: кандидатов — ${data.candidates?.length ?? 0}.`);
-    } catch (error) {
-      setAutoCuratorPreview(null);
-      setAutoCuratorPreviewError(
-        error instanceof Error
-          ? error.message
-          : "Не удалось выполнить предпросмотр Auto Curator.",
-      );
-      setNotice("");
-    } finally {
-      setLoadingAutoCuratorPreview(false);
-    }
-  }
-
-  async function applyAutoCuratorPreviewToQueue() {
-    if (!selectedVerse) {
-      setCardsError("Сначала выбери стих.");
-      return;
-    }
-
-    if (!adminSecret.trim()) {
-      setCardsError("Вставь Admin Secret.");
-      return;
-    }
-
-    if (!autoCuratorPreview?.candidates || autoCuratorPreview.candidates.length === 0) {
-      setAutoCuratorPreviewError("Сначала сделай preview и получи кандидатов.");
-      return;
-    }
-
-    const queueCandidates = autoCuratorPreview.candidates.map((candidate) => ({
-      ...candidate,
-      recommended_action: "editorial_suggestion" as const,
-      suggestion_type:
-        candidate.recommended_action === "auto_add"
-          ? "promote_candidate"
-          : candidate.suggestion_type ?? "needs_review",
-      reason:
-        candidate.recommended_action === "auto_add"
-          ? `Модератор вручную отправил auto-add кандидата в очередь решений. Исходное решение Auto Curator: auto_add. ${candidate.reason}`
-          : candidate.reason,
-    }));
-
-    setApplyingAutoCuratorPreview(true);
-    setApplyAutoCuratorPreviewError("");
-    setApplyAutoCuratorPreviewResult(null);
-    setNotice("Отправляю кандидатов Auto Curator в очередь решений...");
-
-    try {
-      const response = await fetch("/api/admin/studio/apply-auto-curator-preview", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-admin-secret": adminSecret,
-        },
-        body: JSON.stringify({
-          reference: selectedVerse.reference,
-          canonical_ref: selectedVerse.canonical_ref,
-          book_key: selectedVerse.book_key,
-          book: selectedVerse.book,
-          chapter: selectedVerse.chapter,
-          verse: selectedVerse.verse,
-          lang,
-          provider: autoCuratorPreview.provider,
-          model: autoCuratorPreview.model,
-          generator_provider: autoCuratorPreview.generator_provider,
-          generator_model: autoCuratorPreview.generator_model,
-          candidates: queueCandidates,
-        }),
-      });
-
-      const data = (await response.json()) as ApplyAutoCuratorPreviewResponse;
-
-      if (!response.ok || data.ok === false) {
-        const firstError = data.errors?.[0]?.error;
-        throw new Error(
-          data.error || firstError || "Не удалось отправить preview в очередь решений.",
-        );
-      }
-
-      setApplyAutoCuratorPreviewResult(data);
-      await loadEditorialSuggestions(selectedVerse, adminSecret);
-      setNotice(`Очередь обновлена: добавлено ${data.inserted_count ?? 0}.`);
-    } catch (error) {
-      setApplyAutoCuratorPreviewError(
-        error instanceof Error
-          ? error.message
-          : "Не удалось отправить preview в очередь решений.",
-      );
-      setNotice("");
-    } finally {
-      setApplyingAutoCuratorPreview(false);
-    }
-  }
-
   async function applyGroupStatusLocally(
     card: StudioCard,
     status: GroupStatus,
@@ -2014,144 +1673,6 @@ export default function StudioPage() {
 
     if (selectedVerse) {
       await loadCards(selectedVerse);
-    }
-  }
-
-  async function previewRebalanceVerseCards() {
-    if (!selectedVerse) {
-      setCardsError("Сначала выбери стих.");
-      return;
-    }
-
-    if (!adminSecret.trim()) {
-      setCardsError("Вставь Admin Secret.");
-      return;
-    }
-
-    setRebalance((prev) => ({
-      ...createEmptyRebalanceState(prev),
-      previewLoading: true,
-      applied: false,
-      error: "",
-    }));
-    setCardsError("");
-    setNotice("Пересобираю набор в режиме предпросмотра...");
-
-    try {
-      const response = await fetch("/api/admin/studio/rebalance-verse-cards", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-admin-secret": adminSecret,
-        },
-        body: JSON.stringify({
-          reference: selectedVerse.reference,
-          canonical_ref: selectedVerse.canonical_ref,
-          lang,
-          provider: "openai",
-          targetFeaturedCount: 12,
-          maxCards: 24,
-          apply: false,
-        }),
-      });
-
-      const data = (await response.json()) as RebalanceResponse;
-
-      if (!response.ok || !data.ok) {
-        throw new Error(data.error || data.errors?.[0] || "Не удалось пересобрать набор.");
-      }
-
-      setRebalance({
-        previewLoading: false,
-        applyLoading: false,
-        applied: false,
-        error: "",
-        result: data,
-      });
-
-      setNotice(`Предпросмотр готов: изменений — ${data.changed_count ?? 0}.`);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Не удалось пересобрать набор.";
-
-      setRebalance((prev) => ({
-        ...createEmptyRebalanceState(prev),
-        previewLoading: false,
-        error: message,
-      }));
-      setCardsError(message);
-      setNotice("");
-    }
-  }
-
-  async function applyRebalanceVerseCards() {
-    if (!selectedVerse) {
-      setCardsError("Сначала выбери стих.");
-      return;
-    }
-
-    if (!adminSecret.trim()) {
-      setCardsError("Вставь Admin Secret.");
-      return;
-    }
-
-    const confirmed = window.confirm(
-      "Применить автоматическую пересборку набора? Статусы active/reserve/rank обновятся для этого стиха.",
-    );
-
-    if (!confirmed) return;
-
-    setRebalance((prev) => ({
-      ...createEmptyRebalanceState(prev),
-      applyLoading: true,
-      error: "",
-    }));
-    setCardsError("");
-    setNotice("Применяю пересборку набора...");
-
-    try {
-      const response = await fetch("/api/admin/studio/rebalance-verse-cards", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-admin-secret": adminSecret,
-        },
-        body: JSON.stringify({
-          reference: selectedVerse.reference,
-          canonical_ref: selectedVerse.canonical_ref,
-          lang,
-          provider: "openai",
-          targetFeaturedCount: 12,
-          maxCards: 24,
-          apply: true,
-        }),
-      });
-
-      const data = (await response.json()) as RebalanceResponse;
-
-      if (!response.ok || !data.ok) {
-        throw new Error(data.error || data.errors?.[0] || "Не удалось применить пересборку.");
-      }
-
-      setRebalance({
-        previewLoading: false,
-        applyLoading: false,
-        applied: true,
-        error: "",
-        result: data,
-      });
-
-      setNotice(`Пересборка применена: изменений — ${data.changed_count ?? 0}.`);
-      await loadCards(selectedVerse);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Не удалось применить пересборку.";
-
-      setRebalance((prev) => ({
-        ...createEmptyRebalanceState(prev),
-        applyLoading: false,
-        error: message,
-      }));
-      setCardsError(message);
-      setNotice("");
     }
   }
 
