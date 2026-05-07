@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import { runAI } from "@/lib/ai/runAI";
-import { isProvider, defaultProvider, type Provider } from "@/lib/ai/providers";
+import { isProvider, type Provider } from "@/lib/ai/providers";
 import { getVerseText } from "@/lib/bible/getVerseText";
+import { getAngleCards, type AngleCardRow } from "@/lib/cache/angleCards";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type Lang = "ru" | "en" | "es";
+type MaterialMode = "normal" | "deep_search_report" | "ready_cards_json";
 
 type ExtractedCandidate = {
   id: string;
@@ -35,6 +37,14 @@ function isLang(value: unknown): value is Lang {
   return value === "ru" || value === "en" || value === "es";
 }
 
+function isMaterialMode(value: unknown): value is MaterialMode {
+  return (
+    value === "normal" ||
+    value === "deep_search_report" ||
+    value === "ready_cards_json"
+  );
+}
+
 function isAdminRequest(req: Request): boolean {
   const expected = process.env.ADMIN_SECRET;
 
@@ -46,12 +56,40 @@ function isAdminRequest(req: Request): boolean {
   return req.headers.get("x-admin-secret") === expected;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 function getString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
 function getNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function firstString(
+  record: Record<string, unknown>,
+  keys: string[],
+): string | null {
+  for (const key of keys) {
+    const value = getString(record[key]);
+    if (value) return value;
+  }
+
+  return null;
+}
+
+function firstNumber(
+  record: Record<string, unknown>,
+  keys: string[],
+): number | null {
+  for (const key of keys) {
+    const value = getNumber(record[key]);
+    if (typeof value === "number") return value;
+  }
+
+  return null;
 }
 
 function stripCodeFence(text: string): string {
@@ -71,55 +109,95 @@ function extractJsonObject(text: string): unknown {
   try {
     return JSON.parse(stripped);
   } catch {
-    const start = stripped.indexOf("{");
-    const end = stripped.lastIndexOf("}");
+    const objectStart = stripped.indexOf("{");
+    const objectEnd = stripped.lastIndexOf("}");
 
-    if (start !== -1 && end !== -1 && end > start) {
-      return JSON.parse(stripped.slice(start, end + 1));
+    if (objectStart !== -1 && objectEnd !== -1 && objectEnd > objectStart) {
+      return JSON.parse(stripped.slice(objectStart, objectEnd + 1));
+    }
+
+    const arrayStart = stripped.indexOf("[");
+    const arrayEnd = stripped.lastIndexOf("]");
+
+    if (arrayStart !== -1 && arrayEnd !== -1 && arrayEnd > arrayStart) {
+      return JSON.parse(stripped.slice(arrayStart, arrayEnd + 1));
     }
 
     throw new Error("AI returned non-JSON response");
   }
 }
 
-function normalizeCandidate(value: unknown, index: number): ExtractedCandidate | null {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return null;
-  }
+function normalizeScore(value: unknown): number | null {
+  const rawScore = getNumber(value);
+  if (rawScore === null) return null;
+  return Math.max(0, Math.min(100, Math.round(rawScore)));
+}
 
-  const record = value as Record<string, unknown>;
+function normalizeCandidate(
+  value: unknown,
+  index: number,
+  prefix = "manual_candidate",
+): ExtractedCandidate | null {
+  if (!isRecord(value)) return null;
 
-  const title = getString(record.title);
-  const teaser = getString(record.teaser);
+  const title = firstString(value, ["title", "заголовок", "heading"]);
+  const teaser = firstString(value, [
+    "teaser",
+    "body",
+    "summary",
+    "description",
+    "кратко",
+    "текст",
+  ]);
 
   if (!title || !teaser) return null;
 
-  const rawScore = getNumber(record.estimated_score);
-  const estimatedScore =
-    rawScore === null ? null : Math.max(0, Math.min(100, Math.round(rawScore)));
+  const estimatedScore = normalizeScore(
+    value.estimated_score ??
+      value.discovery_score ??
+      value.score_total ??
+      value.score,
+  );
+
+  const sourceBasis = firstString(value, [
+    "source_basis",
+    "sourceBasis",
+    "evidence",
+    "basis",
+  ]);
+
+  const riskNote = firstString(value, ["risk_note", "riskNote", "risk"]);
 
   return {
-    id: getString(record.id) ?? `manual_candidate_${index + 1}`,
+    id: firstString(value, ["id"]) ?? `${prefix}_${index + 1}`,
     title,
-    anchor: getString(record.anchor),
+    anchor: firstString(value, [
+      "anchor",
+      "textual_anchor",
+      "textualAnchor",
+      "опора",
+    ]),
     teaser,
-    why_it_matters: getString(record.why_it_matters),
+    why_it_matters: firstString(value, [
+      "why_it_matters",
+      "whyItMatters",
+      "why",
+      "почему_важно",
+    ]),
     estimated_score: estimatedScore,
-    strength_reason: getString(record.strength_reason),
-    risk: getString(record.risk),
-    source_excerpt: getString(record.source_excerpt),
+    strength_reason:
+      firstString(value, ["strength_reason", "strengthReason"]) ?? sourceBasis,
+    risk: riskNote,
+    source_excerpt:
+      firstString(value, ["source_excerpt", "sourceExcerpt"]) ?? sourceBasis,
   };
 }
 
 function normalizeRejected(value: unknown): RejectedIdea | null {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return null;
-  }
+  if (!isRecord(value)) return null;
 
-  const record = value as Record<string, unknown>;
-
-  const idea = getString(record.idea);
-  const reason = getString(record.reason);
+  const idea = getString(value.idea);
+  const reason = getString(value.reason);
 
   if (!idea || !reason) return null;
 
@@ -127,14 +205,17 @@ function normalizeRejected(value: unknown): RejectedIdea | null {
 }
 
 function normalizeExtractResponse(parsed: unknown): ExtractResponse {
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+  if (!isRecord(parsed)) {
     throw new Error("Extractor returned invalid JSON object");
   }
 
-  const record = parsed as Record<string, unknown>;
+  const candidatesRaw = Array.isArray(parsed.candidates)
+    ? parsed.candidates
+    : Array.isArray(parsed.cards)
+      ? parsed.cards
+      : [];
 
-  const candidatesRaw = Array.isArray(record.candidates) ? record.candidates : [];
-  const rejectedRaw = Array.isArray(record.rejected) ? record.rejected : [];
+  const rejectedRaw = Array.isArray(parsed.rejected) ? parsed.rejected : [];
 
   const candidates = candidatesRaw
     .map((item, index) => normalizeCandidate(item, index))
@@ -147,7 +228,41 @@ function normalizeExtractResponse(parsed: unknown): ExtractResponse {
   return {
     candidates,
     rejected,
-    summary: getString(record.summary) ?? "",
+    summary: getString(parsed.summary) ?? "",
+  };
+}
+
+function normalizeReadyCardsJson(parsed: unknown): ExtractResponse {
+  const rawCards = Array.isArray(parsed)
+    ? parsed
+    : isRecord(parsed) && Array.isArray(parsed.cards)
+      ? parsed.cards
+      : isRecord(parsed) && Array.isArray(parsed.candidates)
+        ? parsed.candidates
+        : [];
+
+  const candidates = rawCards
+    .map((item, index) => normalizeCandidate(item, index, "ready_card"))
+    .filter((item): item is ExtractedCandidate => item !== null);
+
+  return {
+    candidates,
+    rejected: [],
+    summary: candidates.length
+      ? `Готовые JSON-карточки распознаны: ${candidates.length}. Теперь их можно отправить в обычную проверку и сохранение.`
+      : "Готовые JSON-карточки не найдены. Проверь, что вставлен объект с массивом cards или candidates.",
+  };
+}
+
+function compactExistingCard(card: AngleCardRow) {
+  return {
+    id: card.id,
+    title: card.title,
+    anchor: card.anchor,
+    angle_summary: card.angle_summary,
+    status: card.status,
+    score_total: card.score_total,
+    coverage_type: card.coverage_type,
   };
 }
 
@@ -157,18 +272,57 @@ function buildManualExtractionPrompt(args: {
   lang: Lang;
   material: string;
   direction: string | null;
+  materialMode: MaterialMode;
+  existingCards: AngleCardRow[];
 }): string {
   const langName =
     args.lang === "ru" ? "Russian" : args.lang === "es" ? "Spanish" : "English";
 
+  const isDeepSearch = args.materialMode === "deep_search_report";
+  const maxCandidates = isDeepSearch ? 20 : 5;
+
+  const modeInstruction = isDeepSearch
+    ? `
+This moderator material is an external Deep Search / research report.
+
+Your job is to turn the strongest net-new discoveries in the report into polished candidate Scriptura cards.
+
+Important:
+- Do NOT summarize the report.
+- Do NOT preserve weak ideas just because they appear in the report.
+- Do NOT artificially limit good discoveries to 3 or 5.
+- Extract as many genuinely card-worthy, non-duplicate candidates as the report supports, up to ${maxCandidates}.
+- If the report contains 12 strong net-new angles, return 12.
+- If it contains only 2 strong net-new angles, return 2.
+- Filter only duplicates, weak paraphrases, unsupported claims, and overclaim.
+`
+    : `
+This moderator material may be a short note, paragraph, article, or idea.
+
+Your job:
+Find possible short insight cards hidden inside the moderator material.
+
+Candidate rules:
+- Extract 1 to ${maxCandidates} candidates.
+- Only include candidates that have a realistic chance to become useful cards.
+- Prefer fewer strong candidates over many weak ones.
+- If the material contains only one strong idea, return only one candidate.
+`;
+
   return `
-You are the Scriptura AI editorial extractor.
+You are the Scriptura AI editorial extractor and card writer.
+
+Primary model strategy:
+Use Claude as a careful Scriptura card writer: discovery-first, elegant, precise, not preachy.
 
 All user-visible string values must be written in ${langName}.
 
 Verse:
 ${args.reference}
 "${args.verseText}"
+
+Existing Scriptura cards already stored for this verse:
+${JSON.stringify(args.existingCards.map(compactExistingCard), null, 2)}
 
 Moderator material:
 """
@@ -180,8 +334,7 @@ Moderator direction:
 ${args.direction ?? "No special direction. Find the strongest card-worthy discoveries in the material."}
 """
 
-Your job:
-Find possible short insight cards hidden inside the moderator material.
+${modeInstruction}
 
 A good Scriptura card has this structure:
 specific textual support → unexpected observation → perceptual shift.
@@ -189,6 +342,7 @@ specific textual support → unexpected observation → perceptual shift.
 Do NOT merely summarize the material.
 Do NOT create sermon points.
 Do NOT create generic religious lessons.
+Do NOT repeat existing cards in new words.
 Do NOT create a card unless it is specific to this verse or to the immediate biblical argument around it.
 
 Important audience calibration:
@@ -196,26 +350,22 @@ The audience is mature Bible readers. They already know common moral lessons.
 A card can be simple, but it must feel genuinely fresh to that audience.
 Reject ideas that are “true but obvious.”
 
-Candidate rules:
-- Extract 1 to 5 candidates.
-- Only include candidates that have a realistic chance to become useful cards.
-- Prefer fewer strong candidates over many weak ones.
-- Each candidate must be different from the others.
-- If the material contains only one strong idea, return only one candidate.
-- If nothing is strong, return an empty candidates array and explain in summary.
-
 For each candidate:
 - title: sharp discovery statement, not a topic.
 - anchor: exact phrase / word / contextual hinge / verse detail that supports the card. If unavailable, null.
-- teaser: 2–4 sentences. It must read like a card, not like notes.
+- teaser: 2–5 sentences. It must read like a card, not like notes.
 - why_it_matters: one perceptual shift, not a moral lesson.
 - estimated_score: your rough editorial estimate from 0 to 100.
 - strength_reason: why this may work for mature Bible readers.
-- risk: what may make it weak, obvious, speculative, or duplicate.
+- risk: what may make it weak, obvious, speculative, unsupported, or duplicate.
 - source_excerpt: exact useful sentence or fragment from the material that inspired it.
 
+Ancient-version / commentary rule:
+If a discovery depends on LXX, Targum, Rashi, Malbim, Vulgate, Peshitta, or a modern scholar, say so clearly in the card.
+Do not say “the Hebrew means...” when the point comes from an ancient translation or later commentary.
+
 Rejected ideas:
-Also list 0–5 rejected ideas if the material contains weak/obvious candidates.
+Also list 0–8 rejected ideas if the material contains weak/obvious/duplicate/risky candidates.
 Give a short reason for each rejection.
 
 Output JSON only. No markdown. No prose outside JSON.
@@ -259,10 +409,13 @@ export async function POST(req: Request) {
     const lang = isLang(body?.lang) ? body.lang : "ru";
     const material = getString(body?.material);
     const direction = getString(body?.direction);
+    const materialMode = isMaterialMode(body?.material_mode)
+      ? body.material_mode
+      : "normal";
 
     const provider: Provider = isProvider(body?.provider)
       ? body.provider
-      : defaultProvider();
+      : "claude";
 
     if (!reference || !material) {
       return NextResponse.json(
@@ -275,12 +428,44 @@ export async function POST(req: Request) {
       ? { reference, text: inputVerseText }
       : await getVerseText(reference, lang, provider);
 
+    if (materialMode === "ready_cards_json") {
+      const parsed = extractJsonObject(material);
+      const normalized = normalizeReadyCardsJson(parsed);
+
+      return NextResponse.json({
+        ok: true,
+        reference,
+        lang,
+        provider,
+        material_mode: materialMode,
+        verseText: verseResult.text,
+        verse_text_source: inputVerseText ? "request" : "getVerseText",
+        ...normalized,
+      });
+    }
+
+    const existing = await getAngleCards({
+      reference,
+      lang,
+      statuses: ["featured", "reserve"],
+      limit: 120,
+    });
+
+    if (!existing.ok) {
+      return NextResponse.json(
+        { error: existing.error ?? "Failed to read existing angle cards" },
+        { status: 500 },
+      );
+    }
+
     const prompt = buildManualExtractionPrompt({
       reference,
       verseText: verseResult.text,
       lang,
       material,
       direction,
+      materialMode,
+      existingCards: existing.cards,
     });
 
     const raw = await runAI(provider, prompt, lang, true);
@@ -292,9 +477,12 @@ export async function POST(req: Request) {
       reference,
       lang,
       provider,
+      material_mode: materialMode,
       verseText: verseResult.text,
       verse_text_source: inputVerseText ? "request" : "getVerseText",
+      existing_cards_checked: existing.cards.length,
       ...normalized,
+      raw,
     });
   } catch (error) {
     return NextResponse.json(
