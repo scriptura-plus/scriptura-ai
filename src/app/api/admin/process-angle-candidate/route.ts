@@ -8,6 +8,7 @@ import { buildEvaluateAnglePrompt } from "@/lib/prompts/buildEvaluateAnglePrompt
 import { buildRewriteAnglePrompt } from "@/lib/prompts/buildRewriteAnglePrompt";
 import {
   getAngleCards,
+  hideAngleCardThoughtGroupByCardId,
   saveAngleCard,
   type AngleCardInput,
   type AngleCardRow,
@@ -130,8 +131,7 @@ function isAdminRequest(req: Request): boolean {
     return false;
   }
 
-  const provided = req.headers.get("x-admin-secret");
-  return provided === expected;
+  return req.headers.get("x-admin-secret") === expected;
 }
 
 function getString(value: unknown): string | null {
@@ -240,11 +240,19 @@ function normalizePlacementValue(value: unknown): string | null {
 
   const normalized = raw.trim().toLowerCase();
 
-  if (normalized === "избранное" || normalized === "новая_избранная") {
+  if (
+    normalized === "избранное" ||
+    normalized === "новая_избранная" ||
+    normalized === "featured_new"
+  ) {
     return "featured_new";
   }
 
-  if (normalized === "заменить" || normalized === "заменить_существующую") {
+  if (
+    normalized === "заменить" ||
+    normalized === "заменить_существующую" ||
+    normalized === "replace_existing"
+  ) {
     return "replace_existing";
   }
 
@@ -327,7 +335,11 @@ function normalizeBattleAction(value: unknown): string | null {
     return "keep_existing_send_candidate_to_reserve";
   }
 
-  if (normalized === "заменить_старую" || normalized === "replace_existing") {
+  if (
+    normalized === "заменить_старую" ||
+    normalized === "replace_existing" ||
+    normalized === "replace"
+  ) {
     return "replace_existing";
   }
 
@@ -399,7 +411,7 @@ function normalizeEvaluation(parsed: unknown): Evaluation {
 
   const battle = normalizeBattle(parsed.battle ?? parsed["сравнение"]);
 
-  const evaluation: Evaluation = {
+  return {
     angle_summary:
       firstString(parsed, ["angle_summary", "краткое_описание_угла"]) ?? null,
     coverage_type: normalizeCoverageType(
@@ -434,37 +446,17 @@ function normalizeEvaluation(parsed: unknown): Evaluation {
         "указание_для_переписывания",
       ]) ?? null,
   };
-
-  return evaluation;
 }
 
 function toRewriteEvaluation(evaluation: Evaluation): RewriteAngleEvaluation {
   const normalized: RewriteAngleEvaluation = {};
 
-  if (evaluation.angle_summary) {
-    normalized.angle_summary = evaluation.angle_summary;
-  }
-
-  if (evaluation.coverage_type) {
-    normalized.coverage_type = evaluation.coverage_type;
-  }
-
-  if (typeof evaluation.score_total === "number") {
-    normalized.score_total = evaluation.score_total;
-  }
-
-  if (evaluation.placement) {
-    normalized.placement = evaluation.placement;
-  }
-
-  if (evaluation.reason) {
-    normalized.reason = evaluation.reason;
-  }
-
-  if (evaluation.risk) {
-    normalized.risk = evaluation.risk;
-  }
-
+  if (evaluation.angle_summary) normalized.angle_summary = evaluation.angle_summary;
+  if (evaluation.coverage_type) normalized.coverage_type = evaluation.coverage_type;
+  if (typeof evaluation.score_total === "number") normalized.score_total = evaluation.score_total;
+  if (evaluation.placement) normalized.placement = evaluation.placement;
+  if (evaluation.reason) normalized.reason = evaluation.reason;
+  if (evaluation.risk) normalized.risk = evaluation.risk;
   if (evaluation.rewrite_instruction) {
     normalized.rewrite_instruction = evaluation.rewrite_instruction;
   }
@@ -521,20 +513,128 @@ function stripCodeFence(text: string): string {
     .trim();
 }
 
-function extractJsonObject(text: string): unknown {
+function extractJsonCandidate(text: string): string {
   const stripped = stripCodeFence(text);
 
   try {
-    return JSON.parse(stripped);
+    JSON.parse(stripped);
+    return stripped;
   } catch {
-    const start = stripped.indexOf("{");
-    const end = stripped.lastIndexOf("}");
+    // Continue to extraction attempts.
+  }
 
-    if (start !== -1 && end !== -1 && end > start) {
-      return JSON.parse(stripped.slice(start, end + 1));
-    }
+  const objectStart = stripped.indexOf("{");
+  const objectEnd = stripped.lastIndexOf("}");
 
-    throw new Error("AI returned non-JSON response");
+  if (objectStart !== -1 && objectEnd !== -1 && objectEnd > objectStart) {
+    return stripped.slice(objectStart, objectEnd + 1);
+  }
+
+  const arrayStart = stripped.indexOf("[");
+  const arrayEnd = stripped.lastIndexOf("]");
+
+  if (arrayStart !== -1 && arrayEnd !== -1 && arrayEnd > arrayStart) {
+    return stripped.slice(arrayStart, arrayEnd + 1);
+  }
+
+  return stripped;
+}
+
+async function repairJsonWithAI(args: {
+  provider: Provider;
+  lang: Lang;
+  brokenJson: string;
+  parseError: string;
+  expectedShape: "evaluation" | "rewrite";
+}): Promise<unknown> {
+  const expectedShapeText =
+    args.expectedShape === "rewrite"
+      ? `{ "card": { "title": "...", "anchor": "...", "teaser": "...", "why_it_matters": "..." } }`
+      : `{
+  "angle_summary": "...",
+  "coverage_type": "lexical",
+  "same_angle": false,
+  "matched_card_id": null,
+  "similarity_confidence": 0,
+  "scores": {},
+  "score_total": 75,
+  "battle": {},
+  "placement": "reserve",
+  "replace_card_id": null,
+  "reason": "...",
+  "risk": "...",
+  "rewrite_instruction": null
+}`;
+
+  const prompt = `
+You are a JSON repair tool.
+
+The following text was supposed to be valid JSON, but JSON.parse failed.
+
+Parse error:
+${args.parseError}
+
+Broken JSON-like text:
+"""
+${args.brokenJson}
+"""
+
+Repair it into valid JSON.
+
+Rules:
+- Output valid JSON only.
+- Do not add new evaluation ideas.
+- Do not change the judgment unless syntax forces you.
+- Preserve Russian/English/Spanish user-visible text as much as possible.
+- Escape quotation marks correctly.
+- Remove markdown, code fences, trailing comments, and illegal control characters if needed.
+- Use this expected shape:
+${expectedShapeText}
+
+Output JSON only.
+`.trim();
+
+  const repaired = await runAI(args.provider, prompt, args.lang, true);
+  const candidate = extractJsonCandidate(repaired);
+
+  return JSON.parse(candidate);
+}
+
+async function extractJsonObjectWithRepair(args: {
+  text: string;
+  provider: Provider;
+  lang: Lang;
+  expectedShape: "evaluation" | "rewrite";
+}): Promise<{
+  parsed: unknown;
+  repaired: boolean;
+  parse_error: string | null;
+}> {
+  const candidate = extractJsonCandidate(args.text);
+
+  try {
+    return {
+      parsed: JSON.parse(candidate),
+      repaired: false,
+      parse_error: null,
+    };
+  } catch (error) {
+    const parseError =
+      error instanceof Error ? error.message : "Unknown JSON parse error";
+
+    const parsed = await repairJsonWithAI({
+      provider: args.provider,
+      lang: args.lang,
+      brokenJson: candidate,
+      parseError,
+      expectedShape: args.expectedShape,
+    });
+
+    return {
+      parsed,
+      repaired: true,
+      parse_error: parseError,
+    };
   }
 }
 
@@ -570,11 +670,7 @@ function toDuplicateCard(card: AngleCardRow | null) {
     source_provider: card.source_provider,
     source_model: card.source_model,
     editor_model: card.editor_model,
-    moderator_boost:
-      "moderator_boost" in card
-        ? (card as AngleCardRow & { moderator_boost?: number | null })
-            .moderator_boost ?? null
-        : null,
+    moderator_boost: card.moderator_boost ?? null,
   };
 }
 
@@ -587,25 +683,11 @@ function normalizeStatusFromPlacement(
     return "featured";
   }
 
-  if (normalized === "reserve") {
-    return "reserve";
-  }
-
-  if (normalized === "rewrite") {
-    return "rewrite";
-  }
-
-  if (normalized === "hidden") {
-    return "hidden";
-  }
-
-  if (normalized === "reject" || normalized === "rejected") {
-    return "rejected";
-  }
-
-  if (normalized === "needs_human_review") {
-    return "reserve";
-  }
+  if (normalized === "reserve") return "reserve";
+  if (normalized === "rewrite") return "rewrite";
+  if (normalized === "hidden") return "hidden";
+  if (normalized === "reject" || normalized === "rejected") return "rejected";
+  if (normalized === "needs_human_review") return "reserve";
 
   return "reserve";
 }
@@ -758,6 +840,18 @@ function shouldSkipInsteadOfSave(evaluation: Evaluation): {
   };
 }
 
+function shouldReplaceExisting(evaluation: Evaluation): boolean {
+  const placement = normalizePlacementValue(evaluation.placement);
+  const battle = getBattle(evaluation);
+  const battleAction = normalizeBattleAction(battle?.battle_action);
+
+  return (
+    placement === "replace_existing" ||
+    battleAction === "replace_existing" ||
+    Boolean(getString(evaluation.replace_card_id))
+  );
+}
+
 function getFinalCardForSave(card: CandidateCard): {
   title: string;
   anchor: string | null;
@@ -773,51 +867,26 @@ function getFinalCardForSave(card: CandidateCard): {
 }
 
 function getModelName(provider: string): string {
-  if (provider === "openai") {
-    return process.env.OPENAI_MODEL || "gpt-5.5";
-  }
-
-  if (provider === "claude") {
-    return process.env.ANTHROPIC_MODEL || "claude";
-  }
-
-  if (provider === "gemini") {
-    return process.env.GEMINI_MODEL || "gemini";
-  }
-
+  if (provider === "openai") return process.env.OPENAI_MODEL || "gpt-5.5";
+  if (provider === "claude") return process.env.ANTHROPIC_MODEL || "claude";
+  if (provider === "gemini") return process.env.GEMINI_MODEL || "gemini";
   return provider;
 }
 
 function chooseEditorProvider(body: unknown): Provider {
-  if (!isRecord(body)) {
-    return "gemini";
-  }
+  if (!isRecord(body)) return "claude";
 
-  if (isProvider(body.editor_provider)) {
-    return body.editor_provider;
-  }
-
-  if (isProvider(body.evaluator_provider)) {
-    return body.evaluator_provider;
-  }
-
-  if (isProvider(body.provider) && body.provider !== "openai") {
-    return body.provider;
-  }
+  if (isProvider(body.editor_provider)) return body.editor_provider;
+  if (isProvider(body.evaluator_provider)) return body.evaluator_provider;
+  if (isProvider(body.provider)) return body.provider;
 
   const envProvider = process.env.ANGLE_EDITOR_PROVIDER;
-
-  if (isProvider(envProvider)) {
-    return envProvider;
-  }
+  if (isProvider(envProvider)) return envProvider;
 
   const fallback = defaultProvider();
+  if (isProvider(fallback)) return fallback;
 
-  if (fallback !== "openai") {
-    return fallback;
-  }
-
-  return "gemini";
+  return "claude";
 }
 
 function normalizeSourceTitle(args: {
@@ -942,7 +1011,6 @@ function findReferenceMismatch(args: {
   candidate: CandidateCard;
 }): ReferenceMismatch | null {
   const expectedCanonical = args.normalizedReference.canonical_ref ?? null;
-
   if (!expectedCanonical) return null;
 
   const candidateText = getCandidateTextForReferenceGuard(args.candidate);
@@ -981,7 +1049,11 @@ async function evaluateCandidate(args: {
   sourceArticle?: string;
   targetFeaturedCount: number;
   editorProvider: Provider;
-}): Promise<Evaluation> {
+}): Promise<{
+  evaluation: Evaluation;
+  json_repaired: boolean;
+  json_parse_error: string | null;
+}> {
   const prompt = buildEvaluateAnglePrompt({
     reference: args.reference,
     verseText: args.verseText,
@@ -994,9 +1066,19 @@ async function evaluateCandidate(args: {
   });
 
   const text = await runAI(args.editorProvider, prompt, args.lang, true);
-  const parsed = extractJsonObject(text);
 
-  return normalizeEvaluation(parsed);
+  const parsedResult = await extractJsonObjectWithRepair({
+    text,
+    provider: args.editorProvider,
+    lang: args.lang,
+    expectedShape: "evaluation",
+  });
+
+  return {
+    evaluation: normalizeEvaluation(parsedResult.parsed),
+    json_repaired: parsedResult.repaired,
+    json_parse_error: parsedResult.parse_error,
+  };
 }
 
 async function rewriteCandidate(args: {
@@ -1007,7 +1089,11 @@ async function rewriteCandidate(args: {
   evaluation: Evaluation;
   sourceArticle?: string;
   editorProvider: Provider;
-}): Promise<CandidateCard> {
+}): Promise<{
+  card: CandidateCard;
+  json_repaired: boolean;
+  json_parse_error: string | null;
+}> {
   const prompt = buildRewriteAnglePrompt({
     reference: args.reference,
     verseText: args.verseText,
@@ -1018,7 +1104,15 @@ async function rewriteCandidate(args: {
   });
 
   const text = await runAI(args.editorProvider, prompt, args.lang, true);
-  const parsed = extractJsonObject(text);
+
+  const parsedResult = await extractJsonObjectWithRepair({
+    text,
+    provider: args.editorProvider,
+    lang: args.lang,
+    expectedShape: "rewrite",
+  });
+
+  const parsed = parsedResult.parsed;
 
   if (!isRecord(parsed) || !isRecord(parsed.card)) {
     throw new Error("Rewrite returned invalid JSON object");
@@ -1034,11 +1128,15 @@ async function rewriteCandidate(args: {
   }
 
   return {
-    id: "rewritten_candidate",
-    title,
-    anchor: getString(card.anchor),
-    teaser,
-    why_it_matters: getString(card.why_it_matters),
+    card: {
+      id: "rewritten_candidate",
+      title,
+      anchor: getString(card.anchor),
+      teaser,
+      why_it_matters: getString(card.why_it_matters),
+    },
+    json_repaired: parsedResult.repaired,
+    json_parse_error: parsedResult.parse_error,
   };
 }
 
@@ -1189,6 +1287,7 @@ export async function POST(req: Request) {
         source_type: sourceType,
         source_lens: sourceLens,
         reference_mismatch: referenceMismatch,
+        json_repaired: false,
         first_evaluation: {
           score_total: null,
           placement: "rejected",
@@ -1236,7 +1335,7 @@ export async function POST(req: Request) {
       (card) => card.status === "reserve",
     );
 
-    const firstEvaluation = await evaluateCandidate({
+    const firstEvaluationResult = await evaluateCandidate({
       reference,
       verseText,
       lang,
@@ -1247,6 +1346,8 @@ export async function POST(req: Request) {
       targetFeaturedCount,
       editorProvider,
     });
+
+    const firstEvaluation = firstEvaluationResult.evaluation;
 
     if (previewOnly) {
       const duplicate = shouldSkipMatchedDuplicate(firstEvaluation)
@@ -1285,6 +1386,8 @@ export async function POST(req: Request) {
         source_type: sourceType,
         source_lens: sourceLens,
         duplicate,
+        json_repaired: firstEvaluationResult.json_repaired,
+        json_parse_error: firstEvaluationResult.json_parse_error,
         first_evaluation: firstEvaluation,
         final_card: candidate,
         final_evaluation: firstEvaluation,
@@ -1316,6 +1419,8 @@ export async function POST(req: Request) {
           finalCard: candidate,
           matchedCard,
         }),
+        json_repaired: firstEvaluationResult.json_repaired,
+        json_parse_error: firstEvaluationResult.json_parse_error,
         first_evaluation: firstEvaluation,
         final_card: candidate,
         final_evaluation: firstEvaluation,
@@ -1326,9 +1431,13 @@ export async function POST(req: Request) {
     let finalEvaluation: Evaluation = firstEvaluation;
     let rewritten = false;
     let rewrittenCard: CandidateCard | null = null;
+    let rewriteJsonRepaired = false;
+    let rewriteJsonParseError: string | null = null;
+    let finalEvaluationJsonRepaired = firstEvaluationResult.json_repaired;
+    let finalEvaluationJsonParseError = firstEvaluationResult.json_parse_error;
 
     if (shouldRewrite(firstEvaluation) && !forceSaveDuplicate) {
-      rewrittenCard = await rewriteCandidate({
+      const rewriteResult = await rewriteCandidate({
         reference,
         verseText,
         lang,
@@ -1339,9 +1448,12 @@ export async function POST(req: Request) {
       });
 
       rewritten = true;
-      finalCard = rewrittenCard;
+      rewrittenCard = rewriteResult.card;
+      finalCard = rewriteResult.card;
+      rewriteJsonRepaired = rewriteResult.json_repaired;
+      rewriteJsonParseError = rewriteResult.json_parse_error;
 
-      finalEvaluation = await evaluateCandidate({
+      const finalEvaluationResult = await evaluateCandidate({
         reference,
         verseText,
         lang,
@@ -1352,6 +1464,10 @@ export async function POST(req: Request) {
         targetFeaturedCount,
         editorProvider,
       });
+
+      finalEvaluation = finalEvaluationResult.evaluation;
+      finalEvaluationJsonRepaired = finalEvaluationResult.json_repaired;
+      finalEvaluationJsonParseError = finalEvaluationResult.json_parse_error;
 
       if (shouldSkipMatchedDuplicate(finalEvaluation) && !forceSaveDuplicate) {
         const matchedCard = findMatchedCard(finalEvaluation, existing.cards);
@@ -1378,6 +1494,8 @@ export async function POST(req: Request) {
             finalCard,
             matchedCard,
           }),
+          json_repaired: finalEvaluationJsonRepaired || rewriteJsonRepaired,
+          json_parse_error: finalEvaluationJsonParseError ?? rewriteJsonParseError,
           first_evaluation: firstEvaluation,
           rewritten_card: rewrittenCard,
           final_card: finalCard,
@@ -1405,30 +1523,8 @@ export async function POST(req: Request) {
         source_title: sourceTitle,
         source_type: sourceType,
         source_lens: sourceLens,
-        first_evaluation: firstEvaluation,
-        rewritten_card: rewrittenCard,
-        final_card: finalCard,
-        final_evaluation: finalEvaluation,
-      });
-    }
-
-    if (skipDecision.reason === "invalid_score_total") {
-      return NextResponse.json({
-        ok: true,
-        skipped: true,
-        skip_reason: "invalid_score_total",
-        saved_id: null,
-        saved_ids: [],
-        rewritten,
-        status: "skipped_not_savable",
-        score_total: null,
-        canonical_ref: normalizedReference.canonical_ref,
-        book_key: normalizedReference.book_key,
-        editor_provider: editorProvider,
-        editor_model: getModelName(editorProvider),
-        source_title: sourceTitle,
-        source_type: sourceType,
-        source_lens: sourceLens,
+        json_repaired: finalEvaluationJsonRepaired || rewriteJsonRepaired,
+        json_parse_error: finalEvaluationJsonParseError ?? rewriteJsonParseError,
         first_evaluation: firstEvaluation,
         rewritten_card: rewrittenCard,
         final_card: finalCard,
@@ -1438,6 +1534,14 @@ export async function POST(req: Request) {
 
     const referenceParts = parseReferenceParts(reference);
     const cardForSave = getFinalCardForSave(finalCard);
+
+    const replacementNeeded = shouldReplaceExisting(finalEvaluation) && !forceSaveDuplicate;
+    const matchedCardForReplacement = replacementNeeded
+      ? findMatchedCard(finalEvaluation, existing.cards)
+      : null;
+    const replacementTargetId =
+      getMatchedCardId(finalEvaluation) ?? matchedCardForReplacement?.id ?? null;
+
     let status =
       forceStatus ??
       (forceSaveDuplicate
@@ -1446,7 +1550,6 @@ export async function POST(req: Request) {
 
     const scoreTotal = getNumber(finalEvaluation.score_total);
 
-    // Force weaker cards into reserve instead of featured
     if (typeof scoreTotal === "number" && scoreTotal < 73) {
       status = "reserve";
     }
@@ -1522,7 +1625,7 @@ export async function POST(req: Request) {
         sourceLens,
         editorProvider,
         candidate,
-        replace_card_id: getString(finalEvaluation.replace_card_id),
+        replace_card_id: replacementTargetId,
         forceSaveDuplicate,
       });
 
@@ -1538,6 +1641,48 @@ export async function POST(req: Request) {
       }
 
       saveResults.push(saveResult);
+    }
+
+    let replacementResult: Awaited<
+      ReturnType<typeof hideAngleCardThoughtGroupByCardId>
+    > | null = null;
+
+    if (replacementNeeded && replacementTargetId) {
+      replacementResult = await hideAngleCardThoughtGroupByCardId({
+        cardId: replacementTargetId,
+        reason:
+          getString(finalEvaluation.reason) ??
+          getString(getBattle(finalEvaluation)?.battle_reason) ??
+          "Hidden automatically because evaluator selected a stronger replacement card.",
+        moderator_decision: "replaced_by_better_card",
+      });
+
+      if (!replacementResult.ok) {
+        return NextResponse.json(
+          {
+            error:
+              replacementResult.error ??
+              "New card was saved, but failed to hide replaced card",
+            saved_ids: saveResults,
+            replacement_needed: replacementNeeded,
+            replacement_target_id: replacementTargetId,
+            replacement_result: replacementResult,
+            canonical_ref: normalizedReference.canonical_ref,
+            book_key: normalizedReference.book_key,
+            editor_provider: editorProvider,
+            editor_model: getModelName(editorProvider),
+            source_title: sourceTitle,
+            source_type: sourceType,
+            source_lens: sourceLens,
+            first_evaluation: firstEvaluation,
+            rewritten_card: rewrittenCard,
+            final_card: finalCard,
+            translated_cards: translationResult.cards,
+            final_evaluation: finalEvaluation,
+          },
+          { status: 500 },
+        );
+      }
     }
 
     const originSaved =
@@ -1560,6 +1705,11 @@ export async function POST(req: Request) {
       source_title: sourceTitle,
       source_type: sourceType,
       source_lens: sourceLens,
+      json_repaired: finalEvaluationJsonRepaired || rewriteJsonRepaired,
+      json_parse_error: finalEvaluationJsonParseError ?? rewriteJsonParseError,
+      replacement_needed: replacementNeeded,
+      replacement_target_id: replacementTargetId,
+      replacement_result: replacementResult,
       first_evaluation: firstEvaluation,
       rewritten_card: rewrittenCard,
       final_card: finalCard,
