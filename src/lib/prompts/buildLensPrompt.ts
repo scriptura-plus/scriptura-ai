@@ -47,13 +47,27 @@ export function buildLensPrompt(args: {
         `${EDITORIAL_VOICE(langName)}\n\n` +
         `${JARGON_BAN}\n\n` +
 
-        `ORIGINAL-LANGUAGE EVIDENCE LAYER — INTERNAL ONLY:\n` +
-        `If a supplied Greek, Hebrew, or Aramaic packet appears above, use it as a verification layer for word forms, repeated roots, lemmas, morphology, and basic sense data.\n` +
+        `ORIGINAL-LANGUAGE PACKET — DISPLAY AND VERIFICATION ONLY:\n` +
+        `If a supplied Greek, Hebrew, or Aramaic packet appears above, do NOT treat it as the main discovery agenda for Pearls.\n` +
+        `Use the packet mainly to verify and display original-language forms accurately when a strong non-lexical pearl already requires them.\n` +
+        `Do not mine the packet for many word-level cards. Word-level discoveries belong primarily to the Lexis / Word Lens.\n` +
         `Do not invent original-language words, transliterations, roots, morphology, or semantic claims that are not supported by the supplied packet.\n` +
         `Do not write raw technical labels such as "Strong", "morphology", "gloss", "lemma", "packet", "STEPBible", "dataset", "ГЛОССА", "Стронг", "морфология", "лемма", or "пакет" in reader-facing cards.\n` +
-        `Do not include Hebrew, Aramaic, or Greek characters for decoration. Quote an original-language form only when it is the actual textual anchor of a strong discovery.\n` +
-        `If the packet supports a lexical discovery, translate the evidence into natural reader language. If it does not produce a strong discovery, prefer structure, sequence, rhetoric, absence, agency, contrast, or translation loss.\n` +
-        `The goal is still a Pearl: a non-obvious textual discovery, not a mini lexicon entry.\n\n` +
+        `Do not include Hebrew, Aramaic, or Greek characters for decoration. Quote an original-language form only when it is verified and essential to that one discovery.\n` +
+        `At most ONE final Pearl may be primarily lexical/original-language, and only if it is clearly one of the strongest discoveries.\n` +
+        `The goal is a portfolio of non-obvious textual discoveries, not a second Lexis lens.\n\n` +
+
+        `PORTFOLIO DIVERSITY RULE — CRITICAL:\n` +
+        `Before writing the final JSON, build a broad internal candidate pool. Look for many possible angles first — even 15–20 if the verse allows it — then select only the strongest distinct discoveries.\n` +
+        `The final set must feel like a portfolio of different ways of seeing the verse. It must NOT be dominated by lexical/original-language observations.\n` +
+        `Final output constraints:\n` +
+        `- Maximum 1 primary lexical/original-language card.\n` +
+        `- Maximum 1 primary translation-loss/rendering card, unless the verse has no other strong angles.\n` +
+        `- At least 3 cards must be non-lexical: structure, rhetoric, sequence, contrast, agency, meaningful absence, image, scene, pressure point, expectation reversal, or immediate-context function.\n` +
+        `- If a candidate would fit better in Lexis, reject it unless it is the single strongest Pearl.\n` +
+        `- If a candidate would fit better in Translations, reject it unless it creates a broader discovery beyond translation comparison.\n` +
+        `- Do not include duplicates in different clothes.\n` +
+        `Score candidates internally for “wow-effect”: would a serious reader think, “I have read this before, but I never noticed THAT”? Prefer distinct candidates likely to score 82+ under a strict Scriptura AI evaluation.\n\n` +
 
         // ── STEP 1: DISCOVERY HUNT ─────────────────────────────────────────
         `STEP 1 — SILENT DISCOVERY HUNT (do this before writing anything):\n` +
@@ -139,11 +153,11 @@ export function buildLensPrompt(args: {
         `- "Russian 'простите' may hide the fact that Paul did not choose the debt-cancelling verb" — specific to translation gap\n\n` +
 
         // ── STEP 3: BUILD CARDS ────────────────────────────────────────────
-        `STEP 3 — BUILD THE STRONGEST DISCOVERIES INTO CARDS:\n` +
+        `STEP 3 — BUILD THE STRONGEST DIVERSE DISCOVERIES INTO CARDS:\n` +
         `Return between 4 and 8 cards.\n` +
-        `Start with the strongest 4 discoveries. Add a 5th, 6th, 7th, or 8th card ONLY if the extra card is a genuinely distinct angle and would likely deserve a score of 82+ under a strict Scriptura AI evaluation.\n` +
+        `Start with the strongest 4 discoveries from DIFFERENT categories. Add a 5th, 6th, 7th, or 8th card ONLY if the extra card is genuinely distinct and would likely deserve a score of 82+ under a strict Scriptura AI evaluation.\n` +
         `Do not fill the list just to reach 8. If only 4 strong angles exist, return exactly 4. If 5 or 6 strong angles exist, return 5 or 6. If the verse is unusually rich and 7 or 8 distinct strong angles exist, return 7 or 8.\n` +
-        `Prefer discoveries from different categories. No two cards may make the same basic point. Do not include weaker duplicates, alternate phrasings of the same angle, or generic applications.\n\n` +
+        `The final set must not be a chain of word studies. Include a range of discovery types. No two cards may make the same basic point. Do not include weaker duplicates, alternate phrasings of the same angle, or generic applications.\n\n` +
 
         `QUALITY THRESHOLD FOR EXTRA CARDS:\n` +
         `Cards 1–4 must be the best surviving discoveries.\n` +
@@ -165,7 +179,7 @@ export function buildLensPrompt(args: {
 
         `ANCHOR STANDARD:\n` +
         `The exact word, phrase, or structural feature from the verse that the angle is grounded in. ` +
-        `If the discovery truly depends on a verified original-language form, you may quote that form; otherwise use the visible phrase from the verse. Never add Hebrew, Aramaic, or Greek merely to make the card look scholarly.\n\n` +
+        `Prefer the visible phrase from the verse. Quote Hebrew, Aramaic, or Greek only if the card is the one allowed lexical/original-language Pearl and the form is essential to the discovery. Never add original-language script merely to make the card look scholarly.\n\n` +
 
         `WHY_IT_MATTERS STANDARD:\n` +
         `One sentence. A perceptual shift — how the verse reads differently after seeing this. ` +
@@ -177,14 +191,14 @@ export function buildLensPrompt(args: {
         `Each object has exactly these keys:\n` +
         `- "title": discovery-driven statement, max 14 words, in ${langName}\n` +
         `- "teaser": 2-3 sentences, starts with the discovery not a summary, in ${langName}\n` +
-        `- "anchor": exact word/phrase/structure from the verse; include an original-language form only if verified and essential to the discovery, in ${langName}\n` +
+        `- "anchor": exact word/phrase/structure from the verse; prefer the visible phrase and include an original-language form only for the one allowed lexical Pearl if verified and essential, in ${langName}\n` +
         `- "why_it_matters": 1 sentence, perceptual shift, in ${langName}\n\n` +
 
         `No banned words. No generic angles. No angle that fails the rejection test.\n\n` +
 
         `Output — valid JSON array only. The array length must be 4, 5, 6, 7, or 8 depending on how many strong distinct discoveries actually exist:\n` +
         `[{"title":"...","teaser":"...","anchor":"...","why_it_matters":"..."}]` +
-        `\n\nREMINDER: JSON only. All strings in ${langName}. Every angle must survive the rejection test. Do not pad the array with weak material.`
+        `\n\nREMINDER: JSON only. All strings in ${langName}. Every angle must survive the rejection test. Do not pad the array with weak material. The final set must be diverse: at most one primary lexical/original-language Pearl and at least three non-lexical discoveries.`
       );
 
     // ─── WORD ─────────────────────────────────────────────────────────────────
