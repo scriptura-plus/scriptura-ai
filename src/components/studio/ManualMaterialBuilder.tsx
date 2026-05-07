@@ -348,6 +348,7 @@ function statusLabel(status?: string | null): string {
   if (status === "rewrite") return "на доработку";
   if (status === "skipped_duplicate") return "дубль";
   if (status === "skipped_reference_mismatch") return "чужой стих";
+  if (status === "replace_existing") return "замена";
   return status;
 }
 
@@ -795,7 +796,125 @@ function DebugEvaluationView({ state }: { state: SaveState }) {
   const response = state.response;
   if (!response) return null;
 
+  const extendedResponse = response as ProcessCandidateResponse & {
+    json_repaired?: boolean | null;
+    json_parse_error?: string | null;
+    replacement_needed?: boolean | null;
+    replacement_target_id?: string | null;
+    replacement_result?: {
+      ok?: boolean;
+      hidden_count?: number;
+      hidden_ids?: string[];
+      used_translation_group?: boolean;
+      error?: string | null;
+    } | null;
+  };
+
   const evaluation = response.final_evaluation ?? response.first_evaluation;
+  const evaluationRecord = isRecord(evaluation) ? evaluation : null;
+
+  const score =
+    getNumber(response.score_total) ??
+    getNumber(evaluationRecord?.score_total) ??
+    null;
+
+  const placement =
+    getString(response.status) ??
+    getString(evaluationRecord?.placement) ??
+    null;
+
+  const coverageType =
+    getString(evaluationRecord?.coverage_type) ??
+    getString(evaluationRecord?.["тип_охвата"]) ??
+    null;
+
+  const angleSummary =
+    getString(evaluationRecord?.angle_summary) ??
+    getString(evaluationRecord?.["краткое_описание_угла"]) ??
+    null;
+
+  const reason =
+    getString(evaluationRecord?.reason) ??
+    getString(evaluationRecord?.["причина"]) ??
+    null;
+
+  const risk =
+    getString(evaluationRecord?.risk) ??
+    getString(evaluationRecord?.["риск"]) ??
+    null;
+
+  const matchedCardId =
+    getString(evaluationRecord?.matched_card_id) ??
+    getString(evaluationRecord?.replace_card_id) ??
+    null;
+
+  const battle = isRecord(evaluationRecord?.battle) ? evaluationRecord.battle : null;
+
+  const battleWinner = getString(battle?.winner);
+  const battleAction = getString(battle?.battle_action);
+  const battleReason = getString(battle?.battle_reason);
+  const oldScore = getNumber(battle?.old_score);
+  const newScore = getNumber(battle?.new_score);
+  const scoreDelta = getNumber(battle?.score_delta);
+
+  const sameAngle =
+    typeof evaluationRecord?.same_angle === "boolean"
+      ? evaluationRecord.same_angle
+      : null;
+
+  const similarityConfidence = getNumber(evaluationRecord?.similarity_confidence);
+
+  const replacementHidden =
+    extendedResponse.replacement_result?.ok === true &&
+    typeof extendedResponse.replacement_result.hidden_count === "number" &&
+    extendedResponse.replacement_result.hidden_count > 0;
+
+  const replacementNeeded =
+    extendedResponse.replacement_needed === true ||
+    placement === "replace_existing" ||
+    battleAction === "replace_existing";
+
+  function readableCoverage(value: string | null): string {
+    if (!value) return "—";
+    if (value === "lexical") return "слово / лексика";
+    if (value === "grammatical") return "грамматика";
+    if (value === "structural") return "структура";
+    if (value === "contextual") return "контекст";
+    if (value === "translation") return "перевод";
+    if (value === "rhetorical") return "риторика";
+    if (value === "historical") return "история";
+    if (value === "conceptual") return "концепт";
+    if (value === "other") return "другое";
+    return value;
+  }
+
+  function readableBattleWinner(value: string | null): string {
+    if (!value) return "—";
+    if (value === "candidate") return "новый кандидат";
+    if (value === "matched") return "существующая карточка";
+    return value;
+  }
+
+  function readableBattleAction(value: string | null): string {
+    if (!value || value === "none") return "без замены";
+    if (value === "replace_existing") return "заменить старую карточку";
+    if (value === "keep_existing_hide_candidate") return "оставить старую, скрыть новую";
+    if (value === "keep_existing_send_candidate_to_reserve") {
+      return "оставить старую, нового кандидата в запас";
+    }
+    return value;
+  }
+
+  const showReplacementBox = replacementNeeded || replacementHidden;
+  const showBattleBox =
+    Boolean(battleWinner) ||
+    Boolean(battleAction) ||
+    Boolean(battleReason) ||
+    typeof oldScore === "number" ||
+    typeof newScore === "number" ||
+    typeof scoreDelta === "number" ||
+    sameAngle !== null ||
+    typeof similarityConfidence === "number";
 
   return (
     <details
@@ -815,32 +934,257 @@ function DebugEvaluationView({ state }: { state: SaveState }) {
           fontWeight: 900,
         }}
       >
-        Детали оценки evaluator
+        Оценка / решение evaluator
       </summary>
 
-      <pre
+      <div
         style={{
-          whiteSpace: "pre-wrap",
-          overflowWrap: "anywhere",
-          margin: "10px 0 0",
+          display: "grid",
+          gap: 9,
+          marginTop: 10,
           color: TEXT,
-          fontSize: 11,
-          lineHeight: 1.45,
+          fontSize: 13,
+          lineHeight: 1.5,
         }}
       >
-        {JSON.stringify(
-          {
-            skipped: response.skipped,
-            skip_reason: response.skip_reason,
-            status: response.status,
-            score_total: response.score_total,
-            reference_mismatch: response.reference_mismatch ?? null,
-            evaluation,
-          },
-          null,
-          2,
-        )}
-      </pre>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
+          <span
+            style={{
+              borderRadius: 999,
+              background: CARD,
+              color: SLATE_DARK,
+              padding: "6px 9px",
+              fontSize: 12,
+              fontWeight: 850,
+              border: `1px solid ${LINE_SOFT}`,
+            }}
+          >
+            Оценка: {score ?? "—"}
+          </span>
+
+          <span
+            style={{
+              borderRadius: 999,
+              background: CARD,
+              color: SLATE_DARK,
+              padding: "6px 9px",
+              fontSize: 12,
+              fontWeight: 850,
+              border: `1px solid ${LINE_SOFT}`,
+            }}
+          >
+            Решение: {statusLabel(placement)}
+          </span>
+
+          <span
+            style={{
+              borderRadius: 999,
+              background: CARD,
+              color: SLATE_DARK,
+              padding: "6px 9px",
+              fontSize: 12,
+              fontWeight: 850,
+              border: `1px solid ${LINE_SOFT}`,
+            }}
+          >
+            Тип: {readableCoverage(coverageType)}
+          </span>
+
+          {extendedResponse.json_repaired ? (
+            <span
+              style={{
+                borderRadius: 999,
+                background: WARNING_BG,
+                color: WARNING_TEXT,
+                padding: "6px 9px",
+                fontSize: 12,
+                fontWeight: 850,
+                border: `1px solid rgba(138, 99, 48, 0.18)`,
+              }}
+            >
+              JSON исправлен автоматически
+            </span>
+          ) : null}
+        </div>
+
+        {angleSummary ? (
+          <div>
+            <strong style={{ color: SLATE_DARK }}>Краткий угол: </strong>
+            {angleSummary}
+          </div>
+        ) : null}
+
+        {reason ? (
+          <div>
+            <strong style={{ color: SLATE_DARK }}>Причина: </strong>
+            {reason}
+          </div>
+        ) : null}
+
+        {risk ? (
+          <div style={{ color: WARNING_TEXT }}>
+            <strong>Риск: </strong>
+            {risk}
+          </div>
+        ) : null}
+
+        {showBattleBox ? (
+          <div
+            style={{
+              borderTop: `1px solid ${LINE_SOFT}`,
+              paddingTop: 9,
+              display: "grid",
+              gap: 6,
+            }}
+          >
+            <div
+              style={{
+                fontSize: 11,
+                fontWeight: 900,
+                letterSpacing: "0.14em",
+                textTransform: "uppercase",
+                color: WARM_ACCENT,
+              }}
+            >
+              Сравнение с существующими карточками
+            </div>
+
+            {sameAngle !== null ? (
+              <div>
+                <strong style={{ color: SLATE_DARK }}>Тот же угол: </strong>
+                {sameAngle ? "да" : "нет"}
+              </div>
+            ) : null}
+
+            {matchedCardId ? (
+              <div>
+                <strong style={{ color: SLATE_DARK }}>Совпавшая карточка: </strong>
+                {matchedCardId}
+              </div>
+            ) : null}
+
+            {typeof similarityConfidence === "number" ? (
+              <div>
+                <strong style={{ color: SLATE_DARK }}>Уверенность сходства: </strong>
+                {similarityConfidence}
+              </div>
+            ) : null}
+
+            {battleWinner ? (
+              <div>
+                <strong style={{ color: SLATE_DARK }}>Победитель: </strong>
+                {readableBattleWinner(battleWinner)}
+              </div>
+            ) : null}
+
+            {battleAction ? (
+              <div>
+                <strong style={{ color: SLATE_DARK }}>Действие: </strong>
+                {readableBattleAction(battleAction)}
+              </div>
+            ) : null}
+
+            {typeof oldScore === "number" || typeof newScore === "number" ? (
+              <div>
+                <strong style={{ color: SLATE_DARK }}>Сравнение оценок: </strong>
+                старая {typeof oldScore === "number" ? oldScore : "—"} → новая{" "}
+                {typeof newScore === "number" ? newScore : "—"}
+                {typeof scoreDelta === "number" ? `, разница: ${scoreDelta}` : ""}
+              </div>
+            ) : null}
+
+            {battleReason ? (
+              <div>
+                <strong style={{ color: SLATE_DARK }}>Почему: </strong>
+                {battleReason}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {showReplacementBox ? (
+          <div
+            style={{
+              padding: 10,
+              borderRadius: 12,
+              background: replacementHidden ? SUCCESS_BG : WARNING_BG,
+              color: replacementHidden ? SUCCESS_TEXT : WARNING_TEXT,
+              fontSize: 12,
+              fontWeight: 800,
+              lineHeight: 1.45,
+            }}
+          >
+            {replacementHidden
+              ? `Замена выполнена: старая группа карточек скрыта (${extendedResponse.replacement_result?.hidden_count ?? 0}).`
+              : "Evaluator предложил заменить старую карточку. Проверь, скрылась ли старая группа после сохранения."}
+          </div>
+        ) : null}
+
+        {response.reference_mismatch ? (
+          <div
+            style={{
+              padding: 10,
+              borderRadius: 12,
+              background: WARNING_BG,
+              color: WARNING_TEXT,
+              fontSize: 12,
+              fontWeight: 800,
+              lineHeight: 1.45,
+            }}
+          >
+            Защита от чужого стиха: найдено{" "}
+            {response.reference_mismatch.detected_reference ?? "другое место"}, выбран{" "}
+            {response.reference_mismatch.expected_reference ?? "текущий стих"}.
+          </div>
+        ) : null}
+
+        <details
+          style={{
+            borderTop: `1px solid ${LINE_SOFT}`,
+            paddingTop: 8,
+          }}
+        >
+          <summary
+            style={{
+              cursor: "pointer",
+              color: MUTED,
+              fontSize: 12,
+              fontWeight: 850,
+            }}
+          >
+            Raw JSON
+          </summary>
+
+          <pre
+            style={{
+              whiteSpace: "pre-wrap",
+              overflowWrap: "anywhere",
+              margin: "10px 0 0",
+              color: TEXT,
+              fontSize: 11,
+              lineHeight: 1.45,
+            }}
+          >
+            {JSON.stringify(
+              {
+                skipped: response.skipped,
+                skip_reason: response.skip_reason,
+                status: response.status,
+                score_total: response.score_total,
+                reference_mismatch: response.reference_mismatch ?? null,
+                json_repaired: extendedResponse.json_repaired ?? false,
+                json_parse_error: extendedResponse.json_parse_error ?? null,
+                replacement_needed: extendedResponse.replacement_needed ?? null,
+                replacement_target_id: extendedResponse.replacement_target_id ?? null,
+                replacement_result: extendedResponse.replacement_result ?? null,
+                evaluation,
+              },
+              null,
+              2,
+            )}
+          </pre>
+        </details>
+      </div>
     </details>
   );
 }
@@ -1341,7 +1685,7 @@ export function ManualMaterialBuilder({
         onChange={(event) => setMaterial(event.target.value)}
         placeholder={
           mode === "ready_json"
-            ? "Вставь сюда JSON: { \"cards\": [...] }"
+            ? 'Вставь сюда JSON: { "cards": [...] }'
             : mode === "deep_report"
               ? "Вставь сюда внешний Deep Search report..."
               : "Вставь сюда статью, фрагмент из линзы, свою мысль или заметку модератора..."
