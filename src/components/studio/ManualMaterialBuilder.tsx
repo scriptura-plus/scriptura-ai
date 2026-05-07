@@ -117,6 +117,9 @@ type ProcessCandidateResponse = {
   source_type?: string | null;
   source_lens?: string | null;
   duplicate?: DuplicatePayload | null;
+  first_evaluation?: unknown;
+  final_evaluation?: unknown;
+  final_card?: unknown;
 };
 
 type SaveState = {
@@ -125,6 +128,7 @@ type SaveState = {
   error: string;
   message: string;
   duplicate: DuplicatePayload | null;
+  evaluation: unknown | null;
 };
 
 type Props = {
@@ -243,6 +247,204 @@ function MessageBox({
   );
 }
 
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function displayValue(value: unknown): string {
+  if (value === null || value === undefined) return "—";
+  if (typeof value === "string") return value.trim() || "—";
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return "—";
+  }
+}
+
+function getEvalString(evaluation: unknown, keys: string[]): string | null {
+  if (!isPlainRecord(evaluation)) return null;
+
+  for (const key of keys) {
+    const value = evaluation[key];
+
+    if (typeof value === "string" && value.trim()) return value.trim();
+    if (typeof value === "number" && Number.isFinite(value)) return String(value);
+    if (typeof value === "boolean") return String(value);
+  }
+
+  return null;
+}
+
+function EvaluationDebugBox({ evaluation }: { evaluation: unknown }) {
+  if (!isPlainRecord(evaluation)) return null;
+
+  const score = getEvalString(evaluation, ["score_total", "общая_оценка"]);
+  const placement = getEvalString(evaluation, ["placement", "размещение"]);
+  const reason = getEvalString(evaluation, ["reason", "причина"]);
+  const risk = getEvalString(evaluation, ["risk", "риск"]);
+  const angleSummary = getEvalString(evaluation, [
+    "angle_summary",
+    "краткое_описание_угла",
+  ]);
+  const coverageType = getEvalString(evaluation, ["coverage_type", "тип_охвата"]);
+  const sameAngle = getEvalString(evaluation, ["same_angle", "тот_же_угол"]);
+  const matchedCardId = getEvalString(evaluation, [
+    "matched_card_id",
+    "идентификатор_совпавшей_карточки",
+  ]);
+
+  const battle = isPlainRecord(evaluation.battle)
+    ? evaluation.battle
+    : isPlainRecord(evaluation["сравнение"])
+      ? evaluation["сравнение"]
+      : null;
+
+  const battleWinner = getEvalString(battle, ["winner", "победитель"]);
+  const battleReason = getEvalString(battle, [
+    "battle_reason",
+    "причина_сравнения",
+  ]);
+  const battleAction = getEvalString(battle, [
+    "battle_action",
+    "действие_по_сравнению",
+  ]);
+
+  return (
+    <details
+      style={{
+        marginTop: 10,
+        border: `1px solid rgba(111, 123, 136, 0.18)`,
+        borderRadius: 14,
+        background: "#f7f9fb",
+        padding: 10,
+      }}
+    >
+      <summary
+        style={{
+          cursor: "pointer",
+          color: SLATE_DARK,
+          fontSize: 12,
+          fontWeight: 900,
+        }}
+      >
+        Детали оценки evaluator
+      </summary>
+
+      <div
+        style={{
+          display: "grid",
+          gap: 7,
+          marginTop: 10,
+          color: TEXT,
+          fontSize: 12,
+          lineHeight: 1.45,
+        }}
+      >
+        <div>
+          <strong>Оценка: </strong>
+          {score ?? "—"}
+        </div>
+
+        <div>
+          <strong>Placement: </strong>
+          {placement ?? "—"}
+        </div>
+
+        <div>
+          <strong>Тип: </strong>
+          {coverageType ?? "—"}
+        </div>
+
+        <div>
+          <strong>Краткий угол: </strong>
+          {angleSummary ?? "—"}
+        </div>
+
+        <div>
+          <strong>Причина: </strong>
+          {reason ?? "—"}
+        </div>
+
+        <div>
+          <strong>Риск: </strong>
+          {risk ?? "—"}
+        </div>
+
+        <div>
+          <strong>Тот же угол: </strong>
+          {sameAngle ?? "—"}
+        </div>
+
+        <div>
+          <strong>Совпавшая карточка: </strong>
+          {matchedCardId ?? "—"}
+        </div>
+
+        {battle ? (
+          <div
+            style={{
+              marginTop: 4,
+              paddingTop: 8,
+              borderTop: `1px solid ${LINE_SOFT}`,
+              display: "grid",
+              gap: 6,
+            }}
+          >
+            <div>
+              <strong>Battle winner: </strong>
+              {battleWinner ?? "—"}
+            </div>
+
+            <div>
+              <strong>Battle action: </strong>
+              {battleAction ?? "—"}
+            </div>
+
+            <div>
+              <strong>Battle reason: </strong>
+              {battleReason ?? "—"}
+            </div>
+          </div>
+        ) : null}
+
+        <details style={{ marginTop: 6 }}>
+          <summary
+            style={{
+              cursor: "pointer",
+              color: MUTED,
+              fontSize: 12,
+              fontWeight: 850,
+            }}
+          >
+            Raw JSON
+          </summary>
+
+          <pre
+            style={{
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-word",
+              margin: "8px 0 0",
+              padding: 10,
+              borderRadius: 10,
+              background: CARD,
+              border: `1px solid ${LINE_SOFT}`,
+              color: MUTED,
+              fontSize: 11,
+              lineHeight: 1.45,
+              maxHeight: 320,
+              overflow: "auto",
+            }}
+          >
+            {displayValue(evaluation)}
+          </pre>
+        </details>
+      </div>
+    </details>
+  );
+}
+
 function createEmptySaveState(previous?: SaveState): SaveState {
   return {
     loading: false,
@@ -250,6 +452,7 @@ function createEmptySaveState(previous?: SaveState): SaveState {
     error: "",
     message: previous?.message ?? "",
     duplicate: previous?.duplicate ?? null,
+    evaluation: previous?.evaluation ?? null,
   };
 }
 
@@ -314,7 +517,7 @@ function materialModeSourceLens(mode: MaterialMode): string {
 
 function materialModeSourceTitle(mode: MaterialMode, provider: Provider): string {
   if (mode === "deep_search_report") return `Deep Search report → ${provider}`;
-  if (mode === "ready_cards_json") return `Ready candidate cards JSON`;
+  if (mode === "ready_cards_json") return "Ready candidate cards JSON";
   return `Материал модератора → ${provider}`;
 }
 
@@ -753,6 +956,7 @@ export function ManualMaterialBuilder({
     if (!verseText.trim()) {
       const message =
         "Не могу сохранить: не найден текст стиха после извлечения кандидатов. Нажми «Найти кандидаты» ещё раз.";
+
       setSaveStates((prev) => ({
         ...prev,
         [candidate.id]: {
@@ -760,6 +964,7 @@ export function ManualMaterialBuilder({
           error: message,
         },
       }));
+
       onError?.(message);
       return;
     }
@@ -773,6 +978,7 @@ export function ManualMaterialBuilder({
         error: "",
         message: "",
         duplicate: null,
+        evaluation: null,
       },
     }));
 
@@ -814,7 +1020,21 @@ export function ManualMaterialBuilder({
             anchor: candidate.anchor,
             teaser: candidate.teaser,
             why_it_matters: candidate.why_it_matters,
-            body: candidate.teaser,
+            body: [
+              candidate.teaser,
+              candidate.why_it_matters
+                ? `Почему важно: ${candidate.why_it_matters}`
+                : null,
+              candidate.strength_reason
+                ? `Сила / источник: ${candidate.strength_reason}`
+                : null,
+              candidate.source_excerpt
+                ? `Источник / фрагмент: ${candidate.source_excerpt}`
+                : null,
+              candidate.risk ? `Риск / оговорка: ${candidate.risk}` : null,
+            ]
+              .filter(Boolean)
+              .join("\n\n"),
           },
         }),
       });
@@ -835,6 +1055,7 @@ export function ManualMaterialBuilder({
           error: "",
           message,
           duplicate: data.duplicate ?? null,
+          evaluation: data.final_evaluation ?? data.first_evaluation ?? null,
         },
       }));
 
@@ -851,6 +1072,7 @@ export function ManualMaterialBuilder({
           saved: false,
           error: message,
           duplicate: null,
+          evaluation: null,
         },
       }));
 
@@ -1210,6 +1432,10 @@ export function ManualMaterialBuilder({
                     text={saveState.message}
                     style={{ marginTop: 10 }}
                   />
+                ) : null}
+
+                {saveState.evaluation ? (
+                  <EvaluationDebugBox evaluation={saveState.evaluation} />
                 ) : null}
 
                 {saveState.duplicate ? (
