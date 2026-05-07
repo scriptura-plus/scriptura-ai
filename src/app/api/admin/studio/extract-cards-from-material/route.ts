@@ -37,12 +37,18 @@ function isLang(value: unknown): value is Lang {
   return value === "ru" || value === "en" || value === "es";
 }
 
-function isMaterialMode(value: unknown): value is MaterialMode {
-  return (
-    value === "normal" ||
-    value === "deep_search_report" ||
-    value === "ready_cards_json"
-  );
+function normalizeMaterialMode(value: unknown): MaterialMode {
+  if (value === "normal" || value === "material") return "normal";
+
+  if (value === "deep_search_report" || value === "deep_report") {
+    return "deep_search_report";
+  }
+
+  if (value === "ready_cards_json" || value === "ready_json") {
+    return "ready_cards_json";
+  }
+
+  return "normal";
 }
 
 function isAdminRequest(req: Request): boolean {
@@ -80,18 +86,6 @@ function firstString(
   return null;
 }
 
-function firstNumber(
-  record: Record<string, unknown>,
-  keys: string[],
-): number | null {
-  for (const key of keys) {
-    const value = getNumber(record[key]);
-    if (typeof value === "number") return value;
-  }
-
-  return null;
-}
-
 function stripCodeFence(text: string): string {
   const trimmed = text.trim();
 
@@ -103,28 +97,136 @@ function stripCodeFence(text: string): string {
     .trim();
 }
 
-function extractJsonObject(text: string): unknown {
+function extractJsonCandidate(text: string): string {
   const stripped = stripCodeFence(text);
 
   try {
-    return JSON.parse(stripped);
+    JSON.parse(stripped);
+    return stripped;
   } catch {
-    const objectStart = stripped.indexOf("{");
-    const objectEnd = stripped.lastIndexOf("}");
-
-    if (objectStart !== -1 && objectEnd !== -1 && objectEnd > objectStart) {
-      return JSON.parse(stripped.slice(objectStart, objectEnd + 1));
-    }
-
-    const arrayStart = stripped.indexOf("[");
-    const arrayEnd = stripped.lastIndexOf("]");
-
-    if (arrayStart !== -1 && arrayEnd !== -1 && arrayEnd > arrayStart) {
-      return JSON.parse(stripped.slice(arrayStart, arrayEnd + 1));
-    }
-
-    throw new Error("AI returned non-JSON response");
+    // Continue to extraction attempts.
   }
+
+  const objectStart = stripped.indexOf("{");
+  const objectEnd = stripped.lastIndexOf("}");
+
+  if (objectStart !== -1 && objectEnd !== -1 && objectEnd > objectStart) {
+    return stripped.slice(objectStart, objectEnd + 1);
+  }
+
+  const arrayStart = stripped.indexOf("[");
+  const arrayEnd = stripped.lastIndexOf("]");
+
+  if (arrayStart !== -1 && arrayEnd !== -1 && arrayEnd > arrayStart) {
+    return stripped.slice(arrayStart, arrayEnd + 1);
+  }
+
+  return stripped;
+}
+
+function extractJsonObjectStrict(text: string): unknown {
+  const candidate = extractJsonCandidate(text);
+  return JSON.parse(candidate);
+}
+
+async function repairJsonWithAI(args: {
+  provider: Provider;
+  lang: Lang;
+  brokenJson: string;
+  parseError: string;
+}): Promise<unknown> {
+  const repairPrompt = `
+You are a JSON repair tool.
+
+The following text was supposed to be valid JSON, but JSON.parse failed.
+
+Parse error:
+${args.parseError}
+
+Broken JSON-like text:
+"""
+${args.brokenJson}
+"""
+
+Repair it into valid JSON.
+
+Rules:
+- Output valid JSON only.
+- Do not add new ideas.
+- Do not remove useful cards unless the syntax is impossible to repair.
+- Preserve all Russian/English/Spanish user-visible text as much as possible.
+- Escape quotation marks correctly.
+- Remove markdown, LaTeX delimiters, trailing comments, and illegal control characters if needed.
+- The final JSON must be either:
+  {
+    "summary": "...",
+    "candidates": [...],
+    "rejected": [...]
+  }
+  or
+  {
+    "cards": [...]
+  }
+
+Output JSON only.
+`.trim();
+
+  const repaired = await runAI(args.provider, repairPrompt, args.lang, true);
+  const repairedCandidate = extractJsonCandidate(repaired);
+
+  return JSON.parse(repairedCandidate);
+}
+
+async function extractJsonObjectWithRepair(args: {
+  text: string;
+  provider: Provider;
+  lang: Lang;
+}): Promise<{
+  parsed: unknown;
+  repaired: boolean;
+  raw_for_debug: string;
+}> {
+  const candidate = extractJsonCandidate(args.text);
+
+  try {
+    return {
+      parsed: JSON.parse(candidate),
+      repaired: false,
+      raw_for_debug: args.text,
+    };
+  } catch (error) {
+    const parseError =
+      error instanceof Error ? error.message : "Unknown JSON parse error";
+
+    const parsed = await repairJsonWithAI({
+      provider: args.provider,
+      lang: args.lang,
+      brokenJson: candidate,
+      parseError,
+    });
+
+    return {
+      parsed,
+      repaired: true,
+      raw_for_debug: args.text,
+    };
+  }
+}
+
+function cleanShortText(value: string | null, maxLength: number): string | null {
+  if (!value) return null;
+
+  const cleaned = value
+    .replace(/\$\$/g, "")
+    .replace(/```/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!cleaned) return null;
+
+  if (cleaned.length <= maxLength) return cleaned;
+
+  return `${cleaned.slice(0, maxLength - 1).trim()}…`;
 }
 
 function normalizeScore(value: unknown): number | null {
@@ -170,34 +272,44 @@ function normalizeCandidate(
 
   return {
     id: firstString(value, ["id"]) ?? `${prefix}_${index + 1}`,
-    title,
-    anchor: firstString(value, [
-      "anchor",
-      "textual_anchor",
-      "textualAnchor",
-      "опора",
-    ]),
-    teaser,
-    why_it_matters: firstString(value, [
-      "why_it_matters",
-      "whyItMatters",
-      "why",
-      "почему_важно",
-    ]),
+    title: cleanShortText(title, 120) ?? title,
+    anchor: cleanShortText(
+      firstString(value, [
+        "anchor",
+        "textual_anchor",
+        "textualAnchor",
+        "опора",
+      ]),
+      260,
+    ),
+    teaser: cleanShortText(teaser, 900) ?? teaser,
+    why_it_matters: cleanShortText(
+      firstString(value, [
+        "why_it_matters",
+        "whyItMatters",
+        "why",
+        "почему_важно",
+      ]),
+      420,
+    ),
     estimated_score: estimatedScore,
-    strength_reason:
+    strength_reason: cleanShortText(
       firstString(value, ["strength_reason", "strengthReason"]) ?? sourceBasis,
-    risk: riskNote,
-    source_excerpt:
+      420,
+    ),
+    risk: cleanShortText(riskNote, 360),
+    source_excerpt: cleanShortText(
       firstString(value, ["source_excerpt", "sourceExcerpt"]) ?? sourceBasis,
+      260,
+    ),
   };
 }
 
 function normalizeRejected(value: unknown): RejectedIdea | null {
   if (!isRecord(value)) return null;
 
-  const idea = getString(value.idea);
-  const reason = getString(value.reason);
+  const idea = cleanShortText(getString(value.idea), 180);
+  const reason = cleanShortText(getString(value.reason), 360);
 
   if (!idea || !reason) return null;
 
@@ -228,7 +340,7 @@ function normalizeExtractResponse(parsed: unknown): ExtractResponse {
   return {
     candidates,
     rejected,
-    summary: getString(parsed.summary) ?? "",
+    summary: cleanShortText(getString(parsed.summary), 700) ?? "",
   };
 }
 
@@ -279,7 +391,7 @@ function buildManualExtractionPrompt(args: {
     args.lang === "ru" ? "Russian" : args.lang === "es" ? "Spanish" : "English";
 
   const isDeepSearch = args.materialMode === "deep_search_report";
-  const maxCandidates = isDeepSearch ? 20 : 5;
+  const maxCandidates = isDeepSearch ? 20 : 7;
 
   const modeInstruction = isDeepSearch
     ? `
@@ -350,6 +462,23 @@ The audience is mature Bible readers. They already know common moral lessons.
 A card can be simple, but it must feel genuinely fresh to that audience.
 Reject ideas that are “true but obvious.”
 
+Style requirements:
+- Write like a premium Scriptura card, not like a classroom note.
+- Use a hook, but do not overdramatize.
+- Keep the claim careful and textually grounded.
+- Prefer concrete textual mechanisms over broad religious conclusions.
+
+JSON safety rules:
+- Return valid JSON only.
+- No markdown.
+- No code fences.
+- No LaTeX.
+- No $$ delimiters.
+- No multiline strings.
+- Escape quotation marks correctly.
+- source_excerpt must be plain text, one line, max 180 characters.
+- Do not paste long formulas, tables, or raw citations into JSON fields.
+
 For each candidate:
 - title: sharp discovery statement, not a topic.
 - anchor: exact phrase / word / contextual hinge / verse detail that supports the card. If unavailable, null.
@@ -358,7 +487,7 @@ For each candidate:
 - estimated_score: your rough editorial estimate from 0 to 100.
 - strength_reason: why this may work for mature Bible readers.
 - risk: what may make it weak, obvious, speculative, unsupported, or duplicate.
-- source_excerpt: exact useful sentence or fragment from the material that inspired it.
+- source_excerpt: exact useful sentence or fragment from the material that inspired it, max 180 characters.
 
 Ancient-version / commentary rule:
 If a discovery depends on LXX, Targum, Rashi, Malbim, Vulgate, Peshitta, or a modern scholar, say so clearly in the card.
@@ -409,9 +538,10 @@ export async function POST(req: Request) {
     const lang = isLang(body?.lang) ? body.lang : "ru";
     const material = getString(body?.material);
     const direction = getString(body?.direction);
-    const materialMode = isMaterialMode(body?.material_mode)
-      ? body.material_mode
-      : "normal";
+
+    const materialMode = normalizeMaterialMode(
+      body?.material_mode ?? body?.mode,
+    );
 
     const provider: Provider = isProvider(body?.provider)
       ? body.provider
@@ -429,7 +559,7 @@ export async function POST(req: Request) {
       : await getVerseText(reference, lang, provider);
 
     if (materialMode === "ready_cards_json") {
-      const parsed = extractJsonObject(material);
+      const parsed = extractJsonObjectStrict(material);
       const normalized = normalizeReadyCardsJson(parsed);
 
       return NextResponse.json({
@@ -440,6 +570,7 @@ export async function POST(req: Request) {
         material_mode: materialMode,
         verseText: verseResult.text,
         verse_text_source: inputVerseText ? "request" : "getVerseText",
+        json_repaired: false,
         ...normalized,
       });
     }
@@ -469,8 +600,14 @@ export async function POST(req: Request) {
     });
 
     const raw = await runAI(provider, prompt, lang, true);
-    const parsed = extractJsonObject(raw);
-    const normalized = normalizeExtractResponse(parsed);
+
+    const parsedResult = await extractJsonObjectWithRepair({
+      text: raw,
+      provider,
+      lang,
+    });
+
+    const normalized = normalizeExtractResponse(parsedResult.parsed);
 
     return NextResponse.json({
       ok: true,
@@ -481,6 +618,7 @@ export async function POST(req: Request) {
       verseText: verseResult.text,
       verse_text_source: inputVerseText ? "request" : "getVerseText",
       existing_cards_checked: existing.cards.length,
+      json_repaired: parsedResult.repaired,
       ...normalized,
       raw,
     });
