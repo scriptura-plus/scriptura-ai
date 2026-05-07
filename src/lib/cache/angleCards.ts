@@ -152,7 +152,9 @@ export type StudioVerseSummary = {
   last_activity_at: string;
 };
 
-function getEffectiveScore(card: Pick<AngleCardRow, "score_total" | "moderator_boost">): number {
+function getEffectiveScore(
+  card: Pick<AngleCardRow, "score_total" | "moderator_boost">,
+): number {
   return (card.score_total ?? 0) + (card.moderator_boost ?? 0);
 }
 
@@ -590,6 +592,218 @@ export async function getReserveAngleCards(args: {
     statuses: ["reserve"],
     limit: args.limit ?? 24,
   });
+}
+
+export async function getAngleCardById(id: string): Promise<{
+  ok: boolean;
+  card: AngleCardRow | null;
+  error: string | null;
+}> {
+  const client = createAdminClient();
+
+  if (!client) {
+    return {
+      ok: false,
+      card: null,
+      error: "Supabase admin client unavailable",
+    };
+  }
+
+  const { data, error } = await client
+    .from("angle_cards")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) {
+    return {
+      ok: false,
+      card: null,
+      error: error.message,
+    };
+  }
+
+  return {
+    ok: true,
+    card: (data as AngleCardRow | null) ?? null,
+    error: null,
+  };
+}
+
+export async function updateAngleCardStatus(args: {
+  id: string;
+  status: AngleCardStatus;
+  moderator_decision?: string | null;
+  moderator_note?: string | null;
+}): Promise<{
+  ok: boolean;
+  id: string | null;
+  error: string | null;
+}> {
+  const client = createAdminClient();
+
+  if (!client) {
+    return {
+      ok: false,
+      id: null,
+      error: "Supabase admin client unavailable",
+    };
+  }
+
+  const { data, error } = await client
+    .from("angle_cards")
+    .update({
+      status: args.status,
+      moderator_decision: args.moderator_decision ?? null,
+      moderator_note: args.moderator_note ?? null,
+      moderator_reviewed_at: new Date().toISOString(),
+      rank: args.status === "featured" ? 999 : null,
+    })
+    .eq("id", args.id)
+    .eq("is_locked", false)
+    .select("id")
+    .maybeSingle();
+
+  if (error) {
+    return {
+      ok: false,
+      id: null,
+      error: error.message,
+    };
+  }
+
+  return {
+    ok: true,
+    id: data?.id ?? null,
+    error: null,
+  };
+}
+
+export async function hideAngleCardThoughtGroupByCardId(args: {
+  cardId: string;
+  reason?: string | null;
+  moderator_decision?: string | null;
+}): Promise<{
+  ok: boolean;
+  hidden_count: number;
+  hidden_ids: string[];
+  target_card: AngleCardRow | null;
+  used_translation_group: boolean;
+  error: string | null;
+}> {
+  const client = createAdminClient();
+
+  if (!client) {
+    return {
+      ok: false,
+      hidden_count: 0,
+      hidden_ids: [],
+      target_card: null,
+      used_translation_group: false,
+      error: "Supabase admin client unavailable",
+    };
+  }
+
+  const target = await getAngleCardById(args.cardId);
+
+  if (!target.ok) {
+    return {
+      ok: false,
+      hidden_count: 0,
+      hidden_ids: [],
+      target_card: null,
+      used_translation_group: false,
+      error: target.error ?? "Failed to read target card",
+    };
+  }
+
+  if (!target.card) {
+    return {
+      ok: false,
+      hidden_count: 0,
+      hidden_ids: [],
+      target_card: null,
+      used_translation_group: false,
+      error: "Target card not found",
+    };
+  }
+
+  const decision = args.moderator_decision ?? "replaced_by_better_card";
+  const note =
+    args.reason ??
+    "Hidden automatically because evaluator selected a stronger replacement card.";
+
+  const updatePayload = {
+    status: "hidden" as AngleCardStatus,
+    rank: null,
+    moderator_decision: decision,
+    moderator_note: note,
+    moderator_reviewed_at: new Date().toISOString(),
+  };
+
+  const activeStatuses: AngleCardStatus[] = ["featured", "reserve", "rewrite"];
+
+  if (target.card.translation_group_id) {
+    const { data, error } = await client
+      .from("angle_cards")
+      .update(updatePayload)
+      .eq("translation_group_id", target.card.translation_group_id)
+      .eq("is_locked", false)
+      .in("status", activeStatuses)
+      .select("id");
+
+    if (error) {
+      return {
+        ok: false,
+        hidden_count: 0,
+        hidden_ids: [],
+        target_card: target.card,
+        used_translation_group: true,
+        error: error.message,
+      };
+    }
+
+    const hiddenIds = ((data ?? []) as Array<{ id: string }>).map((row) => row.id);
+
+    return {
+      ok: true,
+      hidden_count: hiddenIds.length,
+      hidden_ids: hiddenIds,
+      target_card: target.card,
+      used_translation_group: true,
+      error: null,
+    };
+  }
+
+  const { data, error } = await client
+    .from("angle_cards")
+    .update(updatePayload)
+    .eq("id", args.cardId)
+    .eq("is_locked", false)
+    .in("status", activeStatuses)
+    .select("id");
+
+  if (error) {
+    return {
+      ok: false,
+      hidden_count: 0,
+      hidden_ids: [],
+      target_card: target.card,
+      used_translation_group: false,
+      error: error.message,
+    };
+  }
+
+  const hiddenIds = ((data ?? []) as Array<{ id: string }>).map((row) => row.id);
+
+  return {
+    ok: true,
+    hidden_count: hiddenIds.length,
+    hidden_ids: hiddenIds,
+    target_card: target.card,
+    used_translation_group: false,
+    error: null,
+  };
 }
 
 export function toPublicAngleCard(card: AngleCardRow): PublicAngleCard {
