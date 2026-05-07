@@ -1164,6 +1164,504 @@ function getAcceptRecommendationLabel(suggestion: EditorialSuggestion): string {
   return "Принять рекомендацию";
 }
 
+
+type EditorialQueueSection = "urgent" | "soft_patch" | "review";
+
+type EditorialQueueGroups = {
+  urgent: EditorialSuggestion[];
+  soft_patch: EditorialSuggestion[];
+  review: EditorialSuggestion[];
+};
+
+function getSuggestionScore(suggestion: EditorialSuggestion): number {
+  const candidate =
+    typeof suggestion.score_candidate === "number" && Number.isFinite(suggestion.score_candidate)
+      ? suggestion.score_candidate
+      : null;
+  const existing =
+    typeof suggestion.score_existing === "number" && Number.isFinite(suggestion.score_existing)
+      ? suggestion.score_existing
+      : null;
+
+  return candidate ?? existing ?? 0;
+}
+
+function isHighRiskSuggestion(suggestion: EditorialSuggestion): boolean {
+  return suggestion.risk_level === "high";
+}
+
+function isMediumRiskSuggestion(suggestion: EditorialSuggestion): boolean {
+  return suggestion.risk_level === "medium";
+}
+
+function isSoftPatchSuggestion(suggestion: EditorialSuggestion): boolean {
+  return (
+    suggestion.suggestion_type === "overclaim_review" ||
+    suggestion.suggestion_type === "style_review" ||
+    suggestion.suggestion_type === "risk_review" ||
+    isMediumRiskSuggestion(suggestion)
+  );
+}
+
+function getEditorialQueueSection(suggestion: EditorialSuggestion): EditorialQueueSection {
+  if (
+    isHighRiskSuggestion(suggestion) ||
+    suggestion.suggestion_type === "replacement" ||
+    suggestion.suggestion_type === "locked_card_challenger" ||
+    suggestion.angle_relationship === "stronger_version"
+  ) {
+    return "urgent";
+  }
+
+  if (isSoftPatchSuggestion(suggestion)) return "soft_patch";
+
+  return "review";
+}
+
+function sortEditorialSuggestions(a: EditorialSuggestion, b: EditorialSuggestion): number {
+  const aSection = getEditorialQueueSection(a);
+  const bSection = getEditorialQueueSection(b);
+  const sectionOrder: Record<EditorialQueueSection, number> = {
+    urgent: 0,
+    soft_patch: 1,
+    review: 2,
+  };
+
+  const sectionDiff = sectionOrder[aSection] - sectionOrder[bSection];
+  if (sectionDiff !== 0) return sectionDiff;
+
+  const riskOrder: Record<string, number> = {
+    high: 0,
+    medium: 1,
+    low: 2,
+    unknown: 3,
+  };
+
+  const riskDiff =
+    (riskOrder[a.risk_level ?? "unknown"] ?? 3) -
+    (riskOrder[b.risk_level ?? "unknown"] ?? 3);
+  if (riskDiff !== 0) return riskDiff;
+
+  const scoreDiff = getSuggestionScore(b) - getSuggestionScore(a);
+  if (scoreDiff !== 0) return scoreDiff;
+
+  return a.created_at.localeCompare(b.created_at);
+}
+
+function groupEditorialSuggestions(suggestions: EditorialSuggestion[]): EditorialQueueGroups {
+  const groups: EditorialQueueGroups = {
+    urgent: [],
+    soft_patch: [],
+    review: [],
+  };
+
+  for (const suggestion of suggestions) {
+    groups[getEditorialQueueSection(suggestion)].push(suggestion);
+  }
+
+  return {
+    urgent: groups.urgent.sort(sortEditorialSuggestions),
+    soft_patch: groups.soft_patch.sort(sortEditorialSuggestions),
+    review: groups.review.sort(sortEditorialSuggestions),
+  };
+}
+
+function getQueueSectionTitle(section: EditorialQueueSection): string {
+  if (section === "urgent") return "Требует решения сейчас";
+  if (section === "soft_patch") return "Мягкая правка / риск формулировки";
+  return "Обычная проверка / можно позже";
+}
+
+function getQueueSectionDescription(section: EditorialQueueSection): string {
+  if (section === "urgent") {
+    return "Сюда попадают high-risk, возможные замены, сильные версии того же угла и случаи, где лучше не оставлять задачу без решения.";
+  }
+
+  if (section === "soft_patch") {
+    return "Здесь обычно не нужна новая карточка: достаточно осторожно смягчить одно выражение или оставить текущий вариант как есть.";
+  }
+
+  return "Менее срочные предложения. Их можно обработать после главных рисков или отложить без вреда для публичного набора.";
+}
+
+function getSuggestionShortReason(suggestion: EditorialSuggestion): string {
+  const text = suggestion.reason || suggestion.risk || suggestion.source_summary || "Причина не указана.";
+  const normalized = text.replace(/\s+/g, " ").trim();
+
+  if (normalized.length <= 190) return normalized;
+  return `${normalized.slice(0, 187).trim()}…`;
+}
+
+function getSuggestionActionHint(suggestion: EditorialSuggestion): string {
+  if (isHighRiskSuggestion(suggestion)) {
+    return "Сначала проверь риск: чаще всего здесь нужна мягкая правка или отложенная ручная проверка.";
+  }
+
+  if (isSoftPatchSuggestion(suggestion)) {
+    return "Хороший кандидат на soft patch: лучше менять минимально и сохранить score/status.";
+  }
+
+  return "Можно быстро принять решение: оставить как есть, отложить или подготовить правку, если риск подтверждается.";
+}
+
+function EditorialSuggestionCard({
+  suggestion,
+  targetCard,
+  localResolution,
+  actionFeedback,
+  onAction,
+}: {
+  suggestion: EditorialSuggestion;
+  targetCard: StudioCard | null;
+  localResolution?: EditorialQueueLocalResolution;
+  actionFeedback?: EditorialQueueActionFeedback;
+  onAction: (suggestion: EditorialSuggestion, action: EditorialQueueAction) => void;
+}) {
+  const candidatePreview = getSuggestionCandidatePreview(suggestion);
+  const relationship = readableAngleRelationship(suggestion.angle_relationship);
+  const section = getEditorialQueueSection(suggestion);
+  const score = getSuggestionScore(suggestion);
+  const isUrgent = section === "urgent";
+  const isSoftPatch = section === "soft_patch";
+
+  return (
+    <div
+      style={{
+        border: `1px solid ${
+          isUrgent
+            ? "rgba(139, 62, 46, 0.22)"
+            : isSoftPatch
+              ? "rgba(154, 128, 97, 0.28)"
+              : LINE_SOFT
+        }`,
+        borderRadius: 14,
+        background: isUrgent ? "#fff8f5" : isSoftPatch ? "#fffbf3" : SLATE_SOFT_2,
+        padding: 11,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          gap: 10,
+          alignItems: "flex-start",
+          marginBottom: 7,
+        }}
+      >
+        <div>
+          <div
+            style={{
+              fontSize: 13.5,
+              fontWeight: 950,
+              color: INK,
+              lineHeight: 1.32,
+              marginBottom: 5,
+            }}
+          >
+            {getSuggestionCandidateTitle(suggestion)}
+          </div>
+
+          <div
+            style={{
+              color: MUTED,
+              fontSize: 12,
+              lineHeight: 1.45,
+            }}
+          >
+            {getSuggestionShortReason(suggestion)}
+          </div>
+        </div>
+
+        {score > 0 ? (
+          <span
+            style={{
+              minWidth: 38,
+              height: 34,
+              borderRadius: 999,
+              background: isUrgent
+                ? `linear-gradient(180deg, ${ERROR_TEXT} 0%, #6f3328 100%)`
+                : isSoftPatch
+                  ? `linear-gradient(180deg, ${WARM_ACCENT} 0%, #7f674c 100%)`
+                  : `linear-gradient(180deg, ${SLATE} 0%, ${SLATE_DARK} 100%)`,
+              color: "#fff",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 13,
+              fontWeight: 900,
+              flexShrink: 0,
+            }}
+          >
+            {score}
+          </span>
+        ) : null}
+      </div>
+
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+        <Badge text={readableSuggestionType(suggestion.suggestion_type)} strong />
+        <Badge text={getQueueSectionTitle(section)} strong />
+        {relationship ? <Badge text={relationship} /> : null}
+        {suggestion.risk_level ? <Badge text={`risk: ${suggestion.risk_level}`} /> : null}
+        {suggestion.score_existing !== null ? <Badge text={`старая: ${suggestion.score_existing}`} /> : null}
+        {suggestion.score_delta !== null ? (
+          <Badge text={`delta: ${suggestion.score_delta > 0 ? "+" : ""}${suggestion.score_delta}`} />
+        ) : null}
+        {targetCard ? <Badge text="карточка найдена" /> : null}
+        {localResolution === "deferred" ? <Badge text="отложено" strong /> : null}
+      </div>
+
+      <div
+        style={{
+          padding: "8px 9px",
+          borderRadius: 11,
+          background: "rgba(255, 255, 255, 0.58)",
+          border: `1px solid ${LINE_SOFT}`,
+          color: SLATE_DARK,
+          fontSize: 12,
+          lineHeight: 1.45,
+          fontWeight: 800,
+          marginBottom: 9,
+        }}
+      >
+        {getSuggestionActionHint(suggestion)}
+      </div>
+
+      {(candidatePreview || suggestion.reason || suggestion.risk || suggestion.source_summary) ? (
+        <details>
+          <summary
+            style={{
+              cursor: "pointer",
+              color: SLATE_DARK,
+              fontSize: 12,
+              fontWeight: 900,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 7,
+            }}
+          >
+            <span style={{ fontSize: 11 }}>▼</span>
+            Подробности evaluator
+          </summary>
+
+          <div
+            style={{
+              marginTop: 8,
+              padding: 9,
+              borderRadius: 11,
+              background: CARD,
+              border: `1px solid ${LINE_SOFT}`,
+              display: "grid",
+              gap: 7,
+            }}
+          >
+            {candidatePreview ? (
+              <p
+                style={{
+                  margin: 0,
+                  color: TEXT,
+                  fontSize: 12,
+                  lineHeight: 1.5,
+                }}
+              >
+                {candidatePreview}
+              </p>
+            ) : null}
+
+            {suggestion.reason ? (
+              <p style={{ margin: 0, color: MUTED, fontSize: 12, lineHeight: 1.45 }}>
+                <strong style={{ color: SLATE_DARK }}>Причина: </strong>
+                {suggestion.reason}
+              </p>
+            ) : null}
+
+            {suggestion.risk ? (
+              <p style={{ margin: 0, color: WARNING_TEXT, fontSize: 12, lineHeight: 1.45 }}>
+                <strong>Риск: </strong>
+                {suggestion.risk}
+              </p>
+            ) : null}
+
+            {suggestion.source_summary ? (
+              <p style={{ margin: 0, color: WARM_ACCENT, fontSize: 12, lineHeight: 1.45 }}>
+                <strong>Заметка: </strong>
+                {suggestion.source_summary}
+              </p>
+            ) : null}
+          </div>
+        </details>
+      ) : null}
+
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 7,
+          marginTop: 10,
+          paddingTop: 10,
+          borderTop: `1px solid ${LINE_SOFT}`,
+        }}
+      >
+        <button
+          type="button"
+          disabled={!targetCard}
+          onClick={() => onAction(suggestion, "soft_rewrite")}
+          style={getRepairButtonStyle(!targetCard)}
+        >
+          Подготовить мягкую правку
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onAction(suggestion, "accept")}
+          title={getAcceptRecommendationLabel(suggestion)}
+          style={getApplyButtonStyle(false)}
+        >
+          Принять рекомендацию
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onAction(suggestion, "keep")}
+          style={getSmallButtonStyle(false)}
+        >
+          Оставить как есть
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onAction(suggestion, "defer")}
+          style={getSmallButtonStyle(false)}
+        >
+          Отложить
+        </button>
+      </div>
+
+      {actionFeedback ? (
+        <div
+          style={{
+            marginTop: 10,
+            padding: 10,
+            borderRadius: 12,
+            border: `1px solid ${
+              actionFeedback.kind === "warning"
+                ? "rgba(139, 62, 46, 0.22)"
+                : "rgba(95, 120, 144, 0.20)"
+            }`,
+            background:
+              actionFeedback.kind === "warning" ? ERROR_BG : "rgba(95, 120, 144, 0.08)",
+            color: TEXT,
+            fontSize: 12,
+            lineHeight: 1.45,
+          }}
+        >
+          <div style={{ fontWeight: 900, color: SLATE_DARK, marginBottom: 4 }}>
+            {actionFeedback.action === "soft_rewrite" || actionFeedback.action === "accept"
+              ? "Действие подготовлено"
+              : actionFeedback.action === "keep"
+                ? "Оставлено без изменений"
+                : "Отложено"}
+          </div>
+          <div>{actionFeedback.message}</div>
+
+          {actionFeedback.instruction ? (
+            <details style={{ marginTop: 8 }}>
+              <summary
+                style={{
+                  cursor: "pointer",
+                  color: SLATE_DARK,
+                  fontWeight: 900,
+                }}
+              >
+                Показать инструкцию для правки
+              </summary>
+              <pre
+                style={{
+                  whiteSpace: "pre-wrap",
+                  margin: "8px 0 0",
+                  padding: 9,
+                  borderRadius: 10,
+                  background: "rgba(255, 255, 255, 0.58)",
+                  border: `1px solid ${LINE_SOFT}`,
+                  color: MUTED,
+                  fontFamily:
+                    'ui-sans-serif, -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif',
+                  fontSize: 11.5,
+                  lineHeight: 1.45,
+                }}
+              >
+                {actionFeedback.instruction}
+              </pre>
+            </details>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function EditorialSuggestionSection({
+  section,
+  suggestions,
+  queueResolutions,
+  queueActionFeedback,
+  findTargetCard,
+  onAction,
+  defaultOpen = false,
+}: {
+  section: EditorialQueueSection;
+  suggestions: EditorialSuggestion[];
+  queueResolutions: Record<string, EditorialQueueLocalResolution>;
+  queueActionFeedback: Record<string, EditorialQueueActionFeedback>;
+  findTargetCard: (suggestion: EditorialSuggestion) => StudioCard | null;
+  onAction: (suggestion: EditorialSuggestion, action: EditorialQueueAction) => void;
+  defaultOpen?: boolean;
+}) {
+  if (suggestions.length === 0) return null;
+
+  return (
+    <details open={defaultOpen}>
+      <summary
+        style={{
+          cursor: "pointer",
+          color: section === "urgent" ? WARNING_TEXT : section === "soft_patch" ? WARM_ACCENT : SLATE_DARK,
+          fontSize: 13,
+          fontWeight: 950,
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 8,
+        }}
+      >
+        <span style={{ fontSize: 12 }}>▼</span>
+        {getQueueSectionTitle(section)}: {suggestions.length}
+      </summary>
+
+      <p
+        style={{
+          margin: "7px 0 10px",
+          color: MUTED,
+          fontSize: 12,
+          lineHeight: 1.45,
+        }}
+      >
+        {getQueueSectionDescription(section)}
+      </p>
+
+      <div style={{ display: "grid", gap: 9 }}>
+        {suggestions.map((suggestion) => (
+          <EditorialSuggestionCard
+            key={suggestion.id}
+            suggestion={suggestion}
+            targetCard={findTargetCard(suggestion)}
+            localResolution={queueResolutions[suggestion.id]}
+            actionFeedback={queueActionFeedback[suggestion.id]}
+            onAction={onAction}
+          />
+        ))}
+      </div>
+    </details>
+  );
+}
+
 function getFindingPriority(finding: AutoModeratorFinding): number {
   if (finding.severity === "high") return 0;
   if (finding.automation_class === "human_required") return 1;
@@ -1378,13 +1876,29 @@ export default function StudioPage() {
 
   const visibleEditorialSuggestions = useMemo(() => {
     return (editorialSuggestions?.suggestions ?? []).filter(
-      (suggestion) => queueResolutions[suggestion.id] !== "kept",
+      (suggestion) => !queueResolutions[suggestion.id],
     );
   }, [editorialSuggestions, queueResolutions]);
 
   const locallyResolvedSuggestionCount = useMemo(() => {
-    return Object.values(queueResolutions).filter((value) => value === "kept").length;
+    return Object.values(queueResolutions).filter(
+      (value) => value === "kept" || value === "deferred",
+    ).length;
   }, [queueResolutions]);
+
+
+  const editorialQueueGroups = useMemo(() => {
+    return groupEditorialSuggestions(visibleEditorialSuggestions);
+  }, [visibleEditorialSuggestions]);
+
+  const editorialQueueStats = useMemo(() => {
+    return {
+      highRisk: visibleEditorialSuggestions.filter(isHighRiskSuggestion).length,
+      mediumRisk: visibleEditorialSuggestions.filter(isMediumRiskSuggestion).length,
+      softPatch: visibleEditorialSuggestions.filter(isSoftPatchSuggestion).length,
+      urgent: editorialQueueGroups.urgent.length,
+    };
+  }, [visibleEditorialSuggestions, editorialQueueGroups]);
 
   useEffect(() => {
     const saved = window.localStorage.getItem("scriptura_admin_secret");
@@ -3735,283 +4249,142 @@ export default function StudioPage() {
                 !editorialSuggestionsError &&
                 editorialSuggestions ? (
                   <div style={{ display: "grid", gap: 12 }}>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
-                      <Badge text={`Pending: ${visibleEditorialSuggestions.length}`} strong />
-                      {locallyResolvedSuggestionCount > 0 ? (
-                        <MiniSourceChip text={`закрыто в этом просмотре: ${locallyResolvedSuggestionCount}`} />
+                    <div
+                      style={{
+                        border: `1px solid ${LINE_SOFT}`,
+                        borderRadius: 14,
+                        background: `linear-gradient(180deg, ${SLATE_SOFT} 0%, ${SLATE_SOFT_2} 100%)`,
+                        padding: 11,
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 900,
+                          letterSpacing: "0.14em",
+                          textTransform: "uppercase",
+                          color: WARM_ACCENT,
+                          marginBottom: 8,
+                        }}
+                      >
+                        Сводка очереди
+                      </div>
+
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
+                        <Badge text={`Pending: ${visibleEditorialSuggestions.length}`} strong />
+                        {editorialQueueStats.urgent > 0 ? (
+                          <MiniSourceChip text={`требует решения: ${editorialQueueStats.urgent}`} />
+                        ) : null}
+                        {editorialQueueStats.highRisk > 0 ? (
+                          <MiniSourceChip text={`высокий риск: ${editorialQueueStats.highRisk}`} />
+                        ) : null}
+                        {editorialQueueStats.mediumRisk > 0 ? (
+                          <MiniSourceChip text={`средний риск: ${editorialQueueStats.mediumRisk}`} />
+                        ) : null}
+                        {editorialQueueStats.softPatch > 0 ? (
+                          <MiniSourceChip text={`soft patch: ${editorialQueueStats.softPatch}`} />
+                        ) : null}
+                        {locallyResolvedSuggestionCount > 0 ? (
+                          <MiniSourceChip text={`закрыто в этом просмотре: ${locallyResolvedSuggestionCount}`} />
+                        ) : null}
+                        {editorialSuggestions.summary?.suggestion_types
+                          ? Object.entries(editorialSuggestions.summary.suggestion_types).map(
+                              ([kind, count]) => (
+                                <MiniSourceChip
+                                  key={kind}
+                                  text={`${readableSuggestionType(kind)}: ${count}`}
+                                />
+                              ),
+                            )
+                          : null}
+                      </div>
+
+                      {visibleEditorialSuggestions.length > 0 ? (
+                        <p
+                          style={{
+                            margin: "9px 0 0",
+                            color: MUTED,
+                            fontSize: 12,
+                            lineHeight: 1.5,
+                          }}
+                        >
+                          Сначала обработай high-risk и возможные замены, затем soft patch,
+                          потом обычные проверки. Полные причины evaluator спрятаны внутри
+                          каждой карточки, чтобы очередь читалась как рабочий список.
+                        </p>
                       ) : null}
-                      {editorialSuggestions.summary?.suggestion_types
-                        ? Object.entries(editorialSuggestions.summary.suggestion_types).map(
-                            ([kind, count]) => (
-                              <MiniSourceChip
-                                key={kind}
-                                text={`${readableSuggestionType(kind)}: ${count}`}
-                              />
-                            ),
-                          )
-                        : null}
                     </div>
 
                     {visibleEditorialSuggestions.length > 0 ? (
-                      <details>
-                        <summary
-                          style={{
-                            cursor: "pointer",
-                            color: SLATE_DARK,
-                            fontSize: 13,
-                            fontWeight: 900,
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: 8,
-                          }}
-                        >
-                          <span style={{ fontSize: 12 }}>▼</span>
-                          Показать предложения
-                        </summary>
+                      <div style={{ display: "grid", gap: 12 }}>
+                        <EditorialSuggestionSection
+                          section="urgent"
+                          suggestions={editorialQueueGroups.urgent}
+                          queueResolutions={queueResolutions}
+                          queueActionFeedback={queueActionFeedback}
+                          findTargetCard={findSuggestionTargetCard}
+                          onAction={handleEditorialSuggestionAction}
+                          defaultOpen
+                        />
 
-                        <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
-                          {visibleEditorialSuggestions.slice(0, 5).map((suggestion) => {
-                            const candidatePreview = getSuggestionCandidatePreview(suggestion);
-                            const relationship = readableAngleRelationship(
-                              suggestion.angle_relationship,
-                            );
-                            const localResolution = queueResolutions[suggestion.id];
-                            const actionFeedback = queueActionFeedback[suggestion.id];
-                            const targetCard = findSuggestionTargetCard(suggestion);
+                        <EditorialSuggestionSection
+                          section="soft_patch"
+                          suggestions={editorialQueueGroups.soft_patch}
+                          queueResolutions={queueResolutions}
+                          queueActionFeedback={queueActionFeedback}
+                          findTargetCard={findSuggestionTargetCard}
+                          onAction={handleEditorialSuggestionAction}
+                          defaultOpen={editorialQueueGroups.urgent.length === 0}
+                        />
 
-                            return (
-                              <div
-                                key={suggestion.id}
-                                style={{
-                                  border: `1px solid ${LINE_SOFT}`,
-                                  borderRadius: 12,
-                                  background: SLATE_SOFT_2,
-                                  padding: 10,
-                                }}
-                              >
-                                <div
-                                  style={{
-                                    display: "flex",
-                                    justifyContent: "space-between",
-                                    gap: 10,
-                                    alignItems: "flex-start",
-                                    marginBottom: 6,
-                                  }}
-                                >
-                                  <div
-                                    style={{
-                                      fontSize: 13,
-                                      fontWeight: 900,
-                                      color: INK,
-                                      lineHeight: 1.35,
-                                    }}
-                                  >
-                                    {getSuggestionCandidateTitle(suggestion)}
-                                  </div>
+                        <EditorialSuggestionSection
+                          section="review"
+                          suggestions={editorialQueueGroups.review}
+                          queueResolutions={queueResolutions}
+                          queueActionFeedback={queueActionFeedback}
+                          findTargetCard={findSuggestionTargetCard}
+                          onAction={handleEditorialSuggestionAction}
+                        />
 
-                                  {suggestion.score_candidate !== null ? (
-                                    <span
-                                      style={{
-                                        minWidth: 38,
-                                        height: 34,
-                                        borderRadius: 999,
-                                        background: `linear-gradient(180deg, ${SLATE} 0%, ${SLATE_DARK} 100%)`,
-                                        color: "#fff",
-                                        display: "inline-flex",
-                                        alignItems: "center",
-                                        justifyContent: "center",
-                                        fontSize: 13,
-                                        fontWeight: 900,
-                                        flexShrink: 0,
-                                      }}
-                                    >
-                                      {suggestion.score_candidate}
-                                    </span>
-                                  ) : null}
-                                </div>
+                        <details>
+                          <summary
+                            style={{
+                              cursor: "pointer",
+                              color: MUTED,
+                              fontSize: 12,
+                              fontWeight: 900,
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 8,
+                            }}
+                          >
+                            <span style={{ fontSize: 12 }}>▼</span>
+                            Полный pending list: {visibleEditorialSuggestions.length}
+                          </summary>
 
-                                <div
-                                  style={{
-                                    display: "flex",
-                                    flexWrap: "wrap",
-                                    gap: 6,
-                                    marginBottom: candidatePreview || suggestion.reason ? 7 : 0,
-                                  }}
-                                >
-                                  <Badge text={readableSuggestionType(suggestion.suggestion_type)} strong />
-                                  {relationship ? <Badge text={relationship} /> : null}
-                                  {suggestion.score_existing !== null ? (
-                                    <Badge text={`старая: ${suggestion.score_existing}`} />
-                                  ) : null}
-                                  {suggestion.score_delta !== null ? (
-                                    <Badge
-                                      text={`delta: ${
-                                        suggestion.score_delta > 0 ? "+" : ""
-                                      }${suggestion.score_delta}`}
-                                    />
-                                  ) : null}
-                                  {suggestion.risk_level ? (
-                                    <Badge text={`risk: ${suggestion.risk_level}`} />
-                                  ) : null}
-                                  {targetCard ? (
-                                    <Badge text="карточка найдена" />
-                                  ) : null}
-                                  {localResolution === "deferred" ? (
-                                    <Badge text="отложено" strong />
-                                  ) : null}
-                                </div>
-
-                                {candidatePreview ? (
-                                  <p
-                                    style={{
-                                      margin: "0 0 7px",
-                                      color: TEXT,
-                                      fontSize: 12,
-                                      lineHeight: 1.5,
-                                    }}
-                                  >
-                                    {candidatePreview}
-                                  </p>
-                                ) : null}
-
-                                {suggestion.reason ? (
-                                  <p
-                                    style={{
-                                      margin: 0,
-                                      color: MUTED,
-                                      fontSize: 12,
-                                      lineHeight: 1.45,
-                                    }}
-                                  >
-                                    <strong style={{ color: SLATE_DARK }}>Причина: </strong>
-                                    {suggestion.reason}
-                                  </p>
-                                ) : null}
-
-                                <div
-                                  style={{
-                                    display: "flex",
-                                    flexWrap: "wrap",
-                                    gap: 7,
-                                    marginTop: 10,
-                                    paddingTop: 10,
-                                    borderTop: `1px solid ${LINE_SOFT}`,
-                                  }}
-                                >
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      handleEditorialSuggestionAction(suggestion, "accept")
-                                    }
-                                    title={getAcceptRecommendationLabel(suggestion)}
-                                    style={getApplyButtonStyle(false)}
-                                  >
-                                    Принять рекомендацию
-                                  </button>
-
-                                  <button
-                                    type="button"
-                                    disabled={!targetCard}
-                                    onClick={() =>
-                                      handleEditorialSuggestionAction(suggestion, "soft_rewrite")
-                                    }
-                                    style={getRepairButtonStyle(!targetCard)}
-                                  >
-                                    Попросить мягкую правку
-                                  </button>
-
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      handleEditorialSuggestionAction(suggestion, "keep")
-                                    }
-                                    style={getSmallButtonStyle(false)}
-                                  >
-                                    Оставить как есть
-                                  </button>
-
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      handleEditorialSuggestionAction(suggestion, "defer")
-                                    }
-                                    style={getSmallButtonStyle(false)}
-                                  >
-                                    Отложить
-                                  </button>
-                                </div>
-
-                                {actionFeedback ? (
-                                  <div
-                                    style={{
-                                      marginTop: 10,
-                                      padding: 10,
-                                      borderRadius: 12,
-                                      border: `1px solid ${
-                                        actionFeedback.kind === "warning"
-                                          ? "rgba(139, 62, 46, 0.22)"
-                                          : "rgba(95, 120, 144, 0.20)"
-                                      }`,
-                                      background:
-                                        actionFeedback.kind === "warning"
-                                          ? ERROR_BG
-                                          : "rgba(95, 120, 144, 0.08)",
-                                      color: TEXT,
-                                      fontSize: 12,
-                                      lineHeight: 1.45,
-                                    }}
-                                  >
-                                    <div style={{ fontWeight: 900, color: SLATE_DARK, marginBottom: 4 }}>
-                                      {actionFeedback.action === "soft_rewrite" || actionFeedback.action === "accept"
-                                        ? "Действие подготовлено"
-                                        : actionFeedback.action === "keep"
-                                          ? "Оставлено без изменений"
-                                          : "Отложено"}
-                                    </div>
-                                    <div>{actionFeedback.message}</div>
-
-                                    {actionFeedback.instruction ? (
-                                      <details style={{ marginTop: 8 }}>
-                                        <summary
-                                          style={{
-                                            cursor: "pointer",
-                                            color: SLATE_DARK,
-                                            fontWeight: 900,
-                                          }}
-                                        >
-                                          Показать инструкцию для правки
-                                        </summary>
-                                        <pre
-                                          style={{
-                                            whiteSpace: "pre-wrap",
-                                            margin: "8px 0 0",
-                                            padding: 9,
-                                            borderRadius: 10,
-                                            background: "rgba(255, 255, 255, 0.58)",
-                                            border: `1px solid ${LINE_SOFT}`,
-                                            color: MUTED,
-                                            fontFamily:
-                                              'ui-sans-serif, -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif',
-                                            fontSize: 11.5,
-                                            lineHeight: 1.45,
-                                          }}
-                                        >
-                                          {actionFeedback.instruction}
-                                        </pre>
-                                      </details>
-                                    ) : null}
-                                  </div>
-                                ) : null}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </details>
+                          <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
+                            {visibleEditorialSuggestions
+                              .slice()
+                              .sort(sortEditorialSuggestions)
+                              .map((suggestion) => (
+                                <EditorialSuggestionCard
+                                  key={`${suggestion.id}-full`}
+                                  suggestion={suggestion}
+                                  targetCard={findSuggestionTargetCard(suggestion)}
+                                  localResolution={queueResolutions[suggestion.id]}
+                                  actionFeedback={queueActionFeedback[suggestion.id]}
+                                  onAction={handleEditorialSuggestionAction}
+                                />
+                              ))}
+                          </div>
+                        </details>
+                      </div>
                     ) : (
                       <EmptyBox text="Пока нет редакторских предложений по этому стиху." />
                     )}
                   </div>
                 ) : null}
+
               </section>
             ) : null}
 
