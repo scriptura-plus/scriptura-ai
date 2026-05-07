@@ -505,6 +505,8 @@ type RewriteState = {
   instruction: string;
   extraMaterial: string;
   preserveOriginalMeta: boolean;
+  sourceSuggestionId: string | null;
+  sourceSuggestionTitle: string | null;
   loading: boolean;
   applying: boolean;
   applied: boolean;
@@ -878,6 +880,8 @@ function createEmptyRewriteState(previous?: RewriteState): RewriteState {
     instruction: previous?.instruction ?? "",
     extraMaterial: previous?.extraMaterial ?? "",
     preserveOriginalMeta: previous?.preserveOriginalMeta ?? false,
+    sourceSuggestionId: previous?.sourceSuggestionId ?? null,
+    sourceSuggestionTitle: previous?.sourceSuggestionTitle ?? null,
     loading: false,
     applying: false,
     applied: false,
@@ -2320,6 +2324,8 @@ export default function StudioPage() {
         instruction: state.instruction,
         extraMaterial: state.extraMaterial,
         preserveOriginalMeta: state.preserveOriginalMeta,
+        sourceSuggestionId: state.sourceSuggestionId,
+        sourceSuggestionTitle: state.sourceSuggestionTitle,
         loading: true,
         applied: false,
       },
@@ -2360,6 +2366,8 @@ export default function StudioPage() {
           instruction: state.instruction,
           extraMaterial: state.extraMaterial,
           preserveOriginalMeta: state.preserveOriginalMeta,
+          sourceSuggestionId: state.sourceSuggestionId,
+          sourceSuggestionTitle: state.sourceSuggestionTitle,
           loading: false,
           applying: false,
           applied: false,
@@ -2388,6 +2396,8 @@ export default function StudioPage() {
           instruction: state.instruction,
           extraMaterial: state.extraMaterial,
           preserveOriginalMeta: state.preserveOriginalMeta,
+          sourceSuggestionId: state.sourceSuggestionId,
+          sourceSuggestionTitle: state.sourceSuggestionTitle,
           loading: false,
           error:
             error instanceof Error ? error.message : "Не удалось подготовить доработку.",
@@ -2620,6 +2630,8 @@ export default function StudioPage() {
         instruction: prev[card.id]?.instruction ?? "",
         extraMaterial: prev[card.id]?.extraMaterial ?? "",
         preserveOriginalMeta: prev[card.id]?.preserveOriginalMeta ?? preserveOriginalMeta,
+        sourceSuggestionId: prev[card.id]?.sourceSuggestionId ?? state.sourceSuggestionId ?? null,
+        sourceSuggestionTitle: prev[card.id]?.sourceSuggestionTitle ?? state.sourceSuggestionTitle ?? null,
         result: prev[card.id]?.result ?? null,
         applying: true,
       },
@@ -2718,6 +2730,8 @@ export default function StudioPage() {
           instruction: prev[card.id]?.instruction ?? "",
           extraMaterial: prev[card.id]?.extraMaterial ?? "",
           preserveOriginalMeta: prev[card.id]?.preserveOriginalMeta ?? preserveOriginalMeta,
+          sourceSuggestionId: prev[card.id]?.sourceSuggestionId ?? state.sourceSuggestionId ?? null,
+          sourceSuggestionTitle: prev[card.id]?.sourceSuggestionTitle ?? state.sourceSuggestionTitle ?? null,
           loading: false,
           applying: false,
           applied: true,
@@ -2728,12 +2742,14 @@ export default function StudioPage() {
       }));
 
       let queueClosed = false;
-      const relatedSuggestion =
-        preserveOriginalMeta && data.ok ? findPendingSuggestionForCard(card.id) : null;
+      const relatedSuggestionId =
+        preserveOriginalMeta && data.ok
+          ? state.sourceSuggestionId ?? findPendingSuggestionForCard(card.id)?.id ?? null
+          : null;
 
-      if (relatedSuggestion) {
+      if (relatedSuggestionId) {
         queueClosed = await markEditorialSuggestionAppliedAfterPatch({
-          suggestionId: relatedSuggestion.id,
+          suggestionId: relatedSuggestionId,
           cardTitle: card.title,
         });
       }
@@ -2754,6 +2770,8 @@ export default function StudioPage() {
           instruction: prev[card.id]?.instruction ?? "",
           extraMaterial: prev[card.id]?.extraMaterial ?? "",
           preserveOriginalMeta: prev[card.id]?.preserveOriginalMeta ?? preserveOriginalMeta,
+          sourceSuggestionId: prev[card.id]?.sourceSuggestionId ?? state.sourceSuggestionId ?? null,
+          sourceSuggestionTitle: prev[card.id]?.sourceSuggestionTitle ?? state.sourceSuggestionTitle ?? null,
           result: prev[card.id]?.result ?? null,
           applying: false,
           applyError:
@@ -2841,6 +2859,8 @@ export default function StudioPage() {
         instruction,
         extraMaterial: suggestion.source_summary ?? suggestion.reason ?? "",
         preserveOriginalMeta: true,
+        sourceSuggestionId: suggestion.id,
+        sourceSuggestionTitle: getSuggestionCandidateTitle(suggestion),
         result: null,
         applied: false,
         error: "",
