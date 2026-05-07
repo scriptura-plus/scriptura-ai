@@ -4,6 +4,7 @@ import { useState, type CSSProperties } from "react";
 
 type Lang = "ru" | "en" | "es";
 type Provider = "openai" | "claude" | "gemini";
+type MaterialMode = "normal" | "deep_search_report" | "ready_cards_json";
 
 type VerseSummary = {
   reference: string;
@@ -82,9 +83,11 @@ type ManualExtractResponse = {
   reference?: string;
   lang?: Lang;
   provider?: string;
+  material_mode?: MaterialMode;
   verseText?: string;
   verse_text?: string;
   verse_text_source?: "request" | "getVerseText";
+  existing_cards_checked?: number;
   summary?: string;
   candidates?: ExtractedCandidate[];
   rejected?: RejectedIdea[];
@@ -110,6 +113,9 @@ type ProcessCandidateResponse = {
   book_key?: string | null;
   editor_provider?: string;
   editor_model?: string;
+  source_title?: string | null;
+  source_type?: string | null;
+  source_lens?: string | null;
   duplicate?: DuplicatePayload | null;
 };
 
@@ -166,6 +172,20 @@ function buttonStyle(primary = false, disabled = false): CSSProperties {
     opacity: disabled ? 0.62 : 1,
     boxShadow:
       primary && !disabled ? "0 8px 18px rgba(91, 102, 114, 0.16)" : "none",
+  };
+}
+
+function smallPillStyle(active = false): CSSProperties {
+  return {
+    border: `1px solid ${active ? "rgba(111, 123, 136, 0.45)" : LINE}`,
+    borderRadius: 999,
+    background: active ? SLATE_SOFT : CARD_ALT,
+    color: active ? SLATE_DARK : MUTED,
+    padding: "7px 10px",
+    fontSize: 12,
+    fontWeight: 850,
+    cursor: "pointer",
+    fontFamily: "inherit",
   };
 }
 
@@ -259,7 +279,7 @@ function getCandidateSaveMessage(data: ProcessCandidateResponse): string {
       ? ` Оценка: ${data.score_total}.`
       : "";
 
-  const status = data.status ? ` Статус: ${data.status}.` : "";
+  const status = data.status ? ` Статус: ${statusLabel(data.status)}.` : "";
 
   return `Карточка сохранена в RU/EN/ES.${score}${status}`;
 }
@@ -272,6 +292,30 @@ function statusLabel(status?: string | null): string {
   if (status === "rejected") return "отклонена";
   if (status === "rewrite") return "на доработку";
   return status;
+}
+
+function materialModeLabel(mode: MaterialMode): string {
+  if (mode === "deep_search_report") return "Deep Search report";
+  if (mode === "ready_cards_json") return "Готовые карточки JSON";
+  return "Обычный материал";
+}
+
+function materialModeSourceType(mode: MaterialMode): string {
+  if (mode === "deep_search_report") return "external_deep_search";
+  if (mode === "ready_cards_json") return "external_deep_search_cards";
+  return "manual_material";
+}
+
+function materialModeSourceLens(mode: MaterialMode): string {
+  if (mode === "deep_search_report") return "deep_search_report";
+  if (mode === "ready_cards_json") return "ready_cards_json";
+  return "manual_material";
+}
+
+function materialModeSourceTitle(mode: MaterialMode, provider: Provider): string {
+  if (mode === "deep_search_report") return `Deep Search report → ${provider}`;
+  if (mode === "ready_cards_json") return `Ready candidate cards JSON`;
+  return `Материал модератора → ${provider}`;
 }
 
 function readableSourceLabel(source?: string | null): string {
@@ -291,6 +335,8 @@ function readableSourceLabel(source?: string | null): string {
   if (cleaned === "text_findings") return "Текстовые находки";
   if (cleaned === "scripture_links") return "Связи с другими стихами";
   if (cleaned.startsWith("manual_material:")) return "Ручной материал";
+  if (cleaned.startsWith("deep_search_report:")) return "Deep Search report";
+  if (cleaned.startsWith("ready_cards_json:")) return "Готовые JSON-карточки";
   if (cleaned.startsWith("initial_angles:gemini")) return "Первичная генерация Gemini";
   if (cleaned.startsWith("initial_angles:claude")) return "Первичная генерация Claude";
   if (cleaned.startsWith("initial_angles:openai")) return "Первичная генерация OpenAI";
@@ -595,6 +641,7 @@ export function ManualMaterialBuilder({
   const [material, setMaterial] = useState("");
   const [direction, setDirection] = useState("");
   const [provider, setProvider] = useState<Provider>("claude");
+  const [materialMode, setMaterialMode] = useState<MaterialMode>("normal");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [summary, setSummary] = useState("");
@@ -602,6 +649,9 @@ export function ManualMaterialBuilder({
   const [candidates, setCandidates] = useState<ExtractedCandidate[]>([]);
   const [rejected, setRejected] = useState<RejectedIdea[]>([]);
   const [saveStates, setSaveStates] = useState<Record<string, SaveState>>({});
+  const [existingCardsChecked, setExistingCardsChecked] = useState<number | null>(
+    null,
+  );
 
   async function extractManualCandidates() {
     if (!selectedVerse) {
@@ -626,7 +676,16 @@ export function ManualMaterialBuilder({
     setCandidates([]);
     setRejected([]);
     setSaveStates({});
-    onNotice?.("Ищу кандидаты в материале...");
+    setExistingCardsChecked(null);
+
+    const modeVerb =
+      materialMode === "ready_cards_json"
+        ? "распознаю готовые карточки..."
+        : materialMode === "deep_search_report"
+          ? "превращаю Deep Search report в кандидаты..."
+          : "ищу кандидаты в материале...";
+
+    onNotice?.(modeVerb);
 
     try {
       const response = await fetch("/api/admin/studio/extract-cards-from-material", {
@@ -642,6 +701,7 @@ export function ManualMaterialBuilder({
           provider,
           material,
           direction,
+          material_mode: materialMode,
         }),
       });
 
@@ -662,6 +722,12 @@ export function ManualMaterialBuilder({
       setSummary(data.summary ?? "");
       setCandidates(data.candidates ?? []);
       setRejected(data.rejected ?? []);
+      setExistingCardsChecked(
+        typeof data.existing_cards_checked === "number"
+          ? data.existing_cards_checked
+          : null,
+      );
+
       onNotice?.(`Найдено кандидатов: ${data.candidates?.length ?? 0}.`);
     } catch (err) {
       const message =
@@ -712,6 +778,16 @@ export function ManualMaterialBuilder({
 
     onNotice?.(`Оцениваю и сохраняю: ${candidate.title}`);
 
+    const sourceType = materialModeSourceType(materialMode);
+    const sourceLens = materialModeSourceLens(materialMode);
+    const sourceTitle = materialModeSourceTitle(materialMode, provider);
+    const sourceModel =
+      materialMode === "deep_search_report"
+        ? `deep_search_report:${provider}`
+        : materialMode === "ready_cards_json"
+          ? "ready_cards_json"
+          : `manual_material:${provider}`;
+
     try {
       const response = await fetch("/api/admin/process-angle-candidate", {
         method: "POST",
@@ -725,7 +801,10 @@ export function ManualMaterialBuilder({
           lang,
           provider,
           source_provider: provider,
-          source_model: `manual_material:${provider}`,
+          source_model: sourceModel,
+          source_type: sourceType,
+          source_lens: sourceLens,
+          source_title: sourceTitle,
           editor_provider: provider,
           targetFeaturedCount: 12,
           sourceArticle: material,
@@ -781,6 +860,27 @@ export function ManualMaterialBuilder({
 
   if (!selectedVerse) return null;
 
+  const placeholder =
+    materialMode === "ready_cards_json"
+      ? `Вставь сюда JSON с массивом cards или candidates.
+
+Пример:
+{
+  "cards": [
+    {
+      "title": "...",
+      "anchor": "...",
+      "teaser": "...",
+      "why_it_matters": "...",
+      "source_basis": "...",
+      "risk_note": "..."
+    }
+  ]
+}`
+      : materialMode === "deep_search_report"
+        ? "Вставь сюда внешний Deep Search report: результат Gemini / ChatGPT / Claude / другого AI, исследовательскую статью или несколько отчётов подряд..."
+        : "Вставь сюда статью, фрагмент из линзы, свою мысль или заметку модератора...";
+
   return (
     <section
       className="studio-card-enter"
@@ -804,7 +904,7 @@ export function ManualMaterialBuilder({
           marginBottom: 8,
         }}
       >
-        Ручной материал
+        Исследовательский материал
       </div>
 
       <h3
@@ -818,7 +918,7 @@ export function ManualMaterialBuilder({
           color: INK,
         }}
       >
-        Новая карточка из материала
+        Материал для новых углов
       </h3>
 
       <p
@@ -829,9 +929,27 @@ export function ManualMaterialBuilder({
           lineHeight: 1.6,
         }}
       >
-        Вставь найденную мысль, длинную статью, заметку из линзы или свой угол.
-        Система предложит 1–5 кандидатов для текущего выбранного стиха.
+        Сюда можно вставить обычную заметку, статью, внешний Deep Search report
+        или готовый JSON карточек. Основной рабочий режим MVP — Claude-first:
+        Claude извлекает и оценивает кандидаты, затем система сравнивает их с уже
+        сохранёнными углами.
       </p>
+
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
+        {(["normal", "deep_search_report", "ready_cards_json"] as MaterialMode[]).map(
+          (mode) => (
+            <button
+              key={mode}
+              type="button"
+              disabled={loading}
+              onClick={() => setMaterialMode(mode)}
+              style={smallPillStyle(materialMode === mode)}
+            >
+              {materialModeLabel(mode)}
+            </button>
+          ),
+        )}
+      </div>
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
         <select
@@ -849,9 +967,9 @@ export function ManualMaterialBuilder({
             cursor: loading ? "not-allowed" : "pointer",
           }}
         >
-          <option value="claude">Claude</option>
-          <option value="gemini">Gemini</option>
+          <option value="claude">Claude Sonnet 4.6</option>
           <option value="openai">OpenAI / GPT</option>
+          <option value="gemini">Gemini</option>
         </select>
 
         <button
@@ -860,14 +978,24 @@ export function ManualMaterialBuilder({
           onClick={extractManualCandidates}
           style={buttonStyle(true, loading)}
         >
-          {loading ? "Ищу..." : "Найти кандидаты"}
+          {loading
+            ? "Обрабатываю..."
+            : materialMode === "ready_cards_json"
+              ? "Распознать карточки"
+              : "Найти кандидаты"}
         </button>
       </div>
 
       <textarea
         value={direction}
         onChange={(event) => setDirection(event.target.value)}
-        placeholder="Направление необязательно: какой угол важен, что сохранить, чего избегать..."
+        placeholder={
+          materialMode === "deep_search_report"
+            ? "Направление необязательно: какие отчёты важнее, что считать сильным, какие риски учитывать..."
+            : materialMode === "ready_cards_json"
+              ? "Направление необязательно: как оценивать эти готовые карточки, что особенно проверить..."
+              : "Направление необязательно: какой угол важен, что сохранить, чего избегать..."
+        }
         rows={2}
         disabled={loading}
         style={{
@@ -890,8 +1018,8 @@ export function ManualMaterialBuilder({
       <textarea
         value={material}
         onChange={(event) => setMaterial(event.target.value)}
-        placeholder="Вставь сюда статью, фрагмент из линзы, свою мысль или заметку модератора..."
-        rows={6}
+        placeholder={placeholder}
+        rows={materialMode === "ready_cards_json" ? 9 : 8}
         disabled={loading}
         style={{
           width: "100%",
@@ -908,6 +1036,32 @@ export function ManualMaterialBuilder({
           outlineColor: SLATE,
         }}
       />
+
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 8,
+          marginTop: 10,
+          color: MUTED,
+          fontSize: 12,
+          lineHeight: 1.45,
+        }}
+      >
+        <span>
+          Режим: <strong>{materialModeLabel(materialMode)}</strong>
+        </span>
+        <span>·</span>
+        <span>
+          Provider: <strong>{provider}</strong>
+        </span>
+        {existingCardsChecked !== null ? (
+          <>
+            <span>·</span>
+            <span>Проверено существующих карточек: {existingCardsChecked}</span>
+          </>
+        ) : null}
+      </div>
 
       {error ? <MessageBox kind="error" text={error} style={{ marginTop: 10 }} /> : null}
 
@@ -1003,7 +1157,7 @@ export function ManualMaterialBuilder({
                 <div style={{ display: "grid", gap: 7, marginTop: 10 }}>
                   {candidate.strength_reason ? (
                     <div style={{ color: SUCCESS_TEXT, fontSize: 12, lineHeight: 1.45 }}>
-                      <strong>Сила: </strong>
+                      <strong>Сила / источник: </strong>
                       {candidate.strength_reason}
                     </div>
                   ) : null}
