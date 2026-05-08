@@ -893,6 +893,19 @@ Required portfolio target:
 - Include no more than 2 lexical/original-language signals unless the verse genuinely has no other signal types.
 - Include no more than 1 rabbinic/historical-background signal unless the evidence is unusually strong.
 
+MANDATORY NON-LEXICAL DOUBLE CHECK — DO THIS BEFORE OUTPUT:
+After the broad scan, explicitly check these two high-yield questions. They are examples of the type of non-lexical signal we want across verses; do not force them if the verse does not support them, but do not skip the check.
+1. UNSTATED CONTENT / CURRICULUM CHECK:
+   Does the verse tell the reader to learn, follow, seek, ask, believe, or act, while leaving the exact content, mechanism, curriculum, reason, or explanation unstated?
+   If yes, this may be a meaningful absence / coverage_gap signal.
+   For Matthew 11:29 specifically: check whether “learn from me” names the Teacher but leaves the curriculum unstated.
+2. REASON-AS-ARGUMENT CHECK:
+   Does a “because / for / since / ибо / потому что” clause function not as background information, but as the argument that makes the command, promise, or invitation credible?
+   If yes, this may be a structure/rhetoric signal.
+   For Matthew 11:29 specifically: check whether “because I am mild-tempered and lowly in heart” functions as the reason to trust the yoke, not merely as a character description.
+
+If either check produces a real signal, include it unless it is already fully covered by an existing card. If it overlaps with an existing card, mark novelty_status as covered or partially_covered and explain the overlap.
+
 If a lexical signal is interesting but would mostly belong to Word Lens, mark it as research_only or reserve_only unless it also changes the larger reading of the verse.
 If a rabbinic, historical, or intertextual signal is interesting but not verified, keep it as hypothesis or research_only.
 
@@ -932,7 +945,11 @@ WHAT TO LOOK FOR:
    Who is the subject of each action? Does agency shift between nearby clauses or nearby verses? Does one person give while another finds, receives, bears, learns, or responds?
 
 4. Meaningful absence:
-   What would the reader expect the verse to explain, but it does not? Is there missing content, missing mechanism, missing reason, missing subject, missing condition, or missing emotional reaction?
+   What would the reader expect the verse to explain, but it does not? Is there missing content, missing mechanism, missing reason, missing subject, missing condition, missing curriculum, or missing emotional reaction?
+   Special check: if the verse says “learn / seek / follow / ask / believe / act” but does not state the content or mechanism, treat that as a possible meaningful absence signal.
+
+4b. Reason-as-argument:
+   If the verse contains a causal phrase such as “because,” “for,” “ибо,” or “потому что,” ask whether that phrase is doing argumentative work. Is it a reason to accept the invitation, trust the promise, or obey the command, rather than a mere descriptive aside?
 
 5. Context tension:
    If nearby context is visible or already known from the materials, does the target verse explain, modify, sharpen, condition, or complete the surrounding thought?
