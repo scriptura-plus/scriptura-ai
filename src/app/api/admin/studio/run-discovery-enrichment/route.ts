@@ -625,32 +625,38 @@ function normalizeEvaluationFromPayload(value: unknown, row: Record<string, unkn
 
 function normalizeSignalsFromPayload(value: unknown): DiscoverySignal[] {
   if (!Array.isArray(value)) return [];
-  return value
-    .map((item, index) => {
-      if (!isRecord(item)) return null;
-      const title = getString(item.title);
-      const observation = getString(item.observation);
-      const why = getString(item.why_it_may_matter);
-      if (!title || !observation || !why) return null;
 
-      return {
-        signal_type: getString(item.signal_type) ?? `signal_${index + 1}`,
-        title,
-        observation,
-        textual_anchor: getString(item.textual_anchor),
-        why_it_may_matter: why,
-        evidence_level: normalizeEvidenceLevel(item.evidence_level),
-        risk_level: normalizeRiskLevel(item.risk_level),
-        certainty: normalizeCertainty(item.certainty),
-        novelty_status: normalizeNoveltyStatus(item.novelty_status),
-        already_covered_by_card_ids: normalizeStringArray(item.already_covered_by_card_ids),
-        rejected_related_card_ids: normalizeStringArray(item.rejected_related_card_ids),
-        source_refs: [],
-        suggested_next_use: normalizeSuggestedNextUse(item.suggested_next_use),
-        reasoning_note: getString(item.reasoning_note),
-      } satisfies DiscoverySignal;
-    })
-    .filter((item): item is DiscoverySignal => item !== null);
+  const signals: DiscoverySignal[] = [];
+
+  for (let index = 0; index < value.length; index += 1) {
+    const item = value[index];
+    if (!isRecord(item)) continue;
+
+    const title = getString(item.title);
+    const observation = getString(item.observation);
+    const why = getString(item.why_it_may_matter);
+
+    if (!title || !observation || !why) continue;
+
+    signals.push({
+      signal_type: getString(item.signal_type) ?? `signal_${index + 1}`,
+      title,
+      observation,
+      textual_anchor: getString(item.textual_anchor),
+      why_it_may_matter: why,
+      evidence_level: normalizeEvidenceLevel(item.evidence_level),
+      risk_level: normalizeRiskLevel(item.risk_level),
+      certainty: normalizeCertainty(item.certainty),
+      novelty_status: normalizeNoveltyStatus(item.novelty_status),
+      already_covered_by_card_ids: normalizeStringArray(item.already_covered_by_card_ids),
+      rejected_related_card_ids: normalizeStringArray(item.rejected_related_card_ids),
+      source_refs: [],
+      suggested_next_use: normalizeSuggestedNextUse(item.suggested_next_use),
+      reasoning_note: getString(item.reasoning_note),
+    });
+  }
+
+  return signals;
 }
 
 function previewDecisionFromCuratorRow(row: Record<string, unknown>): PreviewDecision | null {
