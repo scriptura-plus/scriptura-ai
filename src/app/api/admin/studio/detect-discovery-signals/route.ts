@@ -707,6 +707,71 @@ Return ONLY valid JSON with this exact shape:
 `.trim();
 }
 
+type JsonParseResult = {
+  parsed: unknown;
+  repaired: boolean;
+  parse_error: string | null;
+  repaired_raw: string | null;
+};
+
+async function parseDiscoveryJsonWithRepair(args: {
+  provider: Provider;
+  lang: Lang;
+  raw: string;
+}): Promise<JsonParseResult> {
+  try {
+    return {
+      parsed: extractJsonObject(args.raw),
+      repaired: false,
+      parse_error: null,
+      repaired_raw: null,
+    };
+  } catch (firstError) {
+    const firstMessage =
+      firstError instanceof Error ? firstError.message : "Initial JSON parse failed";
+
+    const repairPrompt = `
+You are a strict JSON repair utility.
+
+The following AI response was intended to be a JSON object for Scriptura AI Discovery Signals, but it contains a syntax error.
+
+Repair ONLY the JSON syntax.
+Do not add new signals.
+Do not remove meaningful fields unless they are impossible to repair.
+Do not translate or rewrite content.
+Do not add markdown fences.
+Return ONLY one valid JSON object with this shape:
+{
+  "signals": [],
+  "empty_reason": null,
+  "overall_assessment": ""
+}
+
+Broken JSON response:
+${args.raw}
+`.trim();
+
+    const repairedRaw = await runAI(args.provider, repairPrompt, args.lang, true);
+
+    try {
+      return {
+        parsed: extractJsonObject(repairedRaw),
+        repaired: true,
+        parse_error: firstMessage,
+        repaired_raw: repairedRaw,
+      };
+    } catch (secondError) {
+      const secondMessage =
+        secondError instanceof Error ? secondError.message : "Repair JSON parse failed";
+
+      throw new Error(
+        `AI returned invalid JSON. Initial parse error: ${firstMessage}. Repair parse error: ${secondMessage}`,
+      );
+    }
+  }
+}
+
+
 async function loadExistingCards(args: {
   reference: string;
   lang: Lang;
@@ -821,8 +886,8 @@ export async function POST(req: Request) {
     });
 
     const raw = await runAI(provider, prompt, lang, true);
-    const parsed = extractJsonObject(raw);
-    const normalizedResponse = normalizeDetectionResponse(parsed);
+    const parseResult = await parseDiscoveryJsonWithRepair({ provider, lang, raw });
+    const normalizedResponse = normalizeDetectionResponse(parseResult.parsed);
 
     return NextResponse.json({
       ok: true,
@@ -849,10 +914,13 @@ export async function POST(req: Request) {
         research_sources: sourcesResult.error,
         research_notes: notesResult.error,
       },
+      json_repaired: parseResult.repaired,
+      json_parse_error: parseResult.parse_error,
       signals: normalizedResponse.signals,
       empty_reason: normalizedResponse.empty_reason,
       overall_assessment: normalizedResponse.overall_assessment,
       raw_response: includeRaw ? raw : undefined,
+      repaired_raw_response: includeRaw && parseResult.repaired ? parseResult.repaired_raw : undefined,
     });
   } catch (error) {
     console.error("[DISCOVERY_SIGNALS] failed", error);
