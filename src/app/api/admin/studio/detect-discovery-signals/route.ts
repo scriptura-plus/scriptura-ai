@@ -860,37 +860,166 @@ Instructions:
    - or ignore.
 7. If no new signals are found, return signals: [] and explain empty_reason. This is a useful result, not an error.
 
-Return ONLY valid JSON with this exact shape:
-{
-  "signals": [
-    {
-      "signal_type": "lexical | grammar | structure | rhetorical | intertextual | translation | context_tension | coverage_gap | risk_warning | other",
-      "title": "short human-readable title",
-      "observation": "what was noticed",
-      "textual_anchor": "exact word/phrase if available, otherwise null",
-      "why_it_may_matter": "why this could matter for cards or research",
-      "evidence_level": "strong | medium | weak | unknown",
-      "risk_level": "low | medium | high | unknown",
-      "certainty": "firm | cautious | hypothesis | research_only",
-      "novelty_status": "new | partially_covered | covered | duplicate | unclear",
-      "already_covered_by_card_ids": ["card id if known"],
-      "rejected_related_card_ids": ["card id if known"],
-      "source_refs": [
-        {
-          "source_type": "verse_text | existing_card | rejected_card | research_source | research_note | manual_material | context_observation | translation_observation | original_language_observation",
-          "id": "source/card/note id or null",
-          "title": "source title or null",
-          "excerpt": "short excerpt"
-        }
-      ],
-      "suggested_next_use": "craft_candidate | reserve_only | editorial_suggestion | research_only | ignore",
-      "reasoning_note": "short explanation of why it is classified this way"
-    }
-  ],
-  "empty_reason": null,
-  "overall_assessment": "brief assessment of the verse's discovery potential and the main risks"
-}
+Return ONLY this plain text block format.
+Do NOT return JSON.
+Do NOT use markdown fences.
+This route intentionally uses a labeled format because JSON from long signal lists is fragile.
+Use exactly these labels.
+For SOURCE_REFS, use one or more lines in this format:
+source_type | id-or-null | title-or-null | excerpt
+
+OVERALL_ASSESSMENT: brief assessment of the verse's discovery potential and the main risks
+EMPTY_REASON: null
+
+---SIGNAL---
+SIGNAL_TYPE: lexical | grammar | structure | rhetorical | intertextual | translation | context_tension | coverage_gap | risk_warning | other
+TITLE: short human-readable title
+OBSERVATION: what was noticed
+TEXTUAL_ANCHOR: exact word/phrase if available, otherwise null
+WHY_IT_MAY_MATTER: why this could matter for cards or research
+EVIDENCE_LEVEL: strong | medium | weak | unknown
+RISK_LEVEL: low | medium | high | unknown
+CERTAINTY: firm | cautious | hypothesis | research_only
+NOVELTY_STATUS: new | partially_covered | covered | duplicate | unclear
+ALREADY_COVERED_BY_CARD_IDS: comma-separated ids or empty
+REJECTED_RELATED_CARD_IDS: comma-separated ids or empty
+SOURCE_REFS: verse_text | null | Matthew 11:29 | short excerpt
+SUGGESTED_NEXT_USE: craft_candidate | reserve_only | editorial_suggestion | research_only | ignore
+REASONING_NOTE: short explanation of why it is classified this way
+---END_SIGNAL---
+
+Repeat ---SIGNAL--- blocks for each signal.
 `.trim();
+}
+
+
+function cleanLabeledValue(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const cleaned = value.trim();
+  if (!cleaned || cleaned.toLowerCase() === "null" || cleaned === "—" || cleaned === "-") return null;
+  return cleaned;
+}
+
+function parseCommaList(value: string | null | undefined): string[] {
+  const cleaned = cleanLabeledValue(value);
+  if (!cleaned) return [];
+
+  return cleaned
+    .split(/[,;]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function parseSourceRefsText(value: string | null | undefined): SourceRef[] {
+  const cleaned = cleanLabeledValue(value);
+  if (!cleaned) return [];
+
+  return cleaned
+    .split(/\n|;/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const parts = line.split("|").map((part) => part.trim());
+
+      if (parts.length >= 4) {
+        return {
+          source_type: parts[0] || "unknown",
+          id: parts[1] && parts[1].toLowerCase() !== "null" ? parts[1] : null,
+          title: parts[2] && parts[2].toLowerCase() !== "null" ? parts[2] : null,
+          excerpt: parts.slice(3).join(" | ") || null,
+        } satisfies SourceRef;
+      }
+
+      return {
+        source_type: "note",
+        id: null,
+        title: null,
+        excerpt: line,
+      } satisfies SourceRef;
+    });
+}
+
+function parseSignalBlock(block: string, index: number): DiscoverySignal | null {
+  const labels = new Set([
+    "SIGNAL_TYPE",
+    "TITLE",
+    "OBSERVATION",
+    "TEXTUAL_ANCHOR",
+    "WHY_IT_MAY_MATTER",
+    "EVIDENCE_LEVEL",
+    "RISK_LEVEL",
+    "CERTAINTY",
+    "NOVELTY_STATUS",
+    "ALREADY_COVERED_BY_CARD_IDS",
+    "REJECTED_RELATED_CARD_IDS",
+    "SOURCE_REFS",
+    "SUGGESTED_NEXT_USE",
+    "REASONING_NOTE",
+  ]);
+
+  const fields: Record<string, string> = {};
+  let currentKey: string | null = null;
+
+  for (const rawLine of block.split(/\r?\n/)) {
+    const line = rawLine.trimEnd();
+    const match = /^([A-Z_]+)\s*:\s*(.*)$/.exec(line.trim());
+
+    if (match && labels.has(match[1])) {
+      currentKey = match[1];
+      fields[currentKey] = match[2] ?? "";
+      continue;
+    }
+
+    if (currentKey && line.trim()) {
+      fields[currentKey] = `${fields[currentKey]}\n${line.trim()}`.trim();
+    }
+  }
+
+  const title = cleanLabeledValue(fields.TITLE);
+  const observation = cleanLabeledValue(fields.OBSERVATION);
+  const why = cleanLabeledValue(fields.WHY_IT_MAY_MATTER);
+
+  if (!title || !observation || !why) return null;
+
+  return {
+    signal_type: cleanLabeledValue(fields.SIGNAL_TYPE) ?? `signal_${index + 1}`,
+    title,
+    observation,
+    textual_anchor: cleanLabeledValue(fields.TEXTUAL_ANCHOR),
+    why_it_may_matter: why,
+    evidence_level: normalizeEvidenceLevel(cleanLabeledValue(fields.EVIDENCE_LEVEL)),
+    risk_level: normalizeRiskLevel(cleanLabeledValue(fields.RISK_LEVEL)),
+    certainty: normalizeCertainty(cleanLabeledValue(fields.CERTAINTY)),
+    novelty_status: normalizeNoveltyStatus(cleanLabeledValue(fields.NOVELTY_STATUS)),
+    already_covered_by_card_ids: parseCommaList(fields.ALREADY_COVERED_BY_CARD_IDS),
+    rejected_related_card_ids: parseCommaList(fields.REJECTED_RELATED_CARD_IDS),
+    source_refs: parseSourceRefsText(fields.SOURCE_REFS),
+    suggested_next_use: normalizeSuggestedNextUse(cleanLabeledValue(fields.SUGGESTED_NEXT_USE)),
+    reasoning_note: cleanLabeledValue(fields.REASONING_NOTE),
+  };
+}
+
+function parseLabeledSignalResponse(raw: string): {
+  signals: DiscoverySignal[];
+  empty_reason: string | null;
+  overall_assessment: string | null;
+  parsed_from_labeled_blocks: boolean;
+} {
+  const text = stripCodeFence(raw);
+  const overallMatch = /OVERALL_ASSESSMENT\s*:\s*([\s\S]*?)(?=\nEMPTY_REASON\s*:|\n---SIGNAL---|$)/i.exec(text);
+  const emptyMatch = /EMPTY_REASON\s*:\s*([\s\S]*?)(?=\nOVERALL_ASSESSMENT\s*:|\n---SIGNAL---|$)/i.exec(text);
+  const blocks = [...text.matchAll(/---SIGNAL---([\s\S]*?)---END_SIGNAL---/g)].map((match) => match[1]);
+
+  const signals = blocks
+    .map((block, index) => parseSignalBlock(block, index))
+    .filter((signal): signal is DiscoverySignal => signal !== null);
+
+  return {
+    signals,
+    empty_reason: cleanLabeledValue(emptyMatch?.[1]),
+    overall_assessment: cleanLabeledValue(overallMatch?.[1]),
+    parsed_from_labeled_blocks: signals.length > 0 || blocks.length > 0,
+  };
 }
 
 type JsonParseResult = {
@@ -1089,8 +1218,24 @@ export async function POST(req: Request) {
     });
 
     const raw = await runAI(provider, prompt, lang, true);
-    const parseResult = await parseDiscoveryJsonWithRepair({ provider, lang, raw });
-    const normalizedResponse = normalizeDetectionResponse(parseResult.parsed);
+    const labeledResponse = parseLabeledSignalResponse(raw);
+    let parseResult: JsonParseResult | null = null;
+    let normalizedResponse: {
+      signals: DiscoverySignal[];
+      empty_reason: string | null;
+      overall_assessment: string | null;
+    };
+
+    if (labeledResponse.parsed_from_labeled_blocks) {
+      normalizedResponse = {
+        signals: labeledResponse.signals,
+        empty_reason: labeledResponse.empty_reason,
+        overall_assessment: labeledResponse.overall_assessment,
+      };
+    } else {
+      parseResult = await parseDiscoveryJsonWithRepair({ provider, lang, raw });
+      normalizedResponse = normalizeDetectionResponse(parseResult.parsed);
+    }
 
     return NextResponse.json({
       ok: true,
@@ -1117,13 +1262,14 @@ export async function POST(req: Request) {
         research_sources: sourcesResult.error,
         research_notes: notesResult.error,
       },
-      json_repaired: parseResult.repaired,
-      json_parse_error: parseResult.parse_error,
+      output_format: labeledResponse.parsed_from_labeled_blocks ? "labeled_blocks" : "json",
+      json_repaired: parseResult?.repaired ?? false,
+      json_parse_error: parseResult?.parse_error ?? null,
       signals: normalizedResponse.signals,
       empty_reason: normalizedResponse.empty_reason,
       overall_assessment: normalizedResponse.overall_assessment,
       raw_response: includeRaw ? raw : undefined,
-      repaired_raw_response: includeRaw && parseResult.repaired ? parseResult.repaired_raw : undefined,
+      repaired_raw_response: includeRaw && parseResult?.repaired ? parseResult.repaired_raw : undefined,
     });
   } catch (error) {
     console.error("[DISCOVERY_SIGNALS] failed", error);
