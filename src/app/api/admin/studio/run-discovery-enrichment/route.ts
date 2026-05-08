@@ -132,6 +132,14 @@ type ResearchRowsResult = {
   error: string | null;
 };
 
+type StoredDecisionPayload = {
+  source: "discovery_enrichment_v1";
+  candidate: CandidateCard;
+  evaluation: CandidateEvaluation;
+  preview_action: PreviewAction;
+  source_signals: DiscoverySignal[];
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -176,7 +184,7 @@ function isAdminRequest(req: Request): boolean {
 }
 
 function getModelName(provider: string): string {
-  if (provider === "openai") return process.env.OPENAI_MODEL || "gpt-5.5";
+  if (provider === "openai") return process.env.OPENAI_MODEL || "gpt-5.4-mini";
   if (provider === "claude") return process.env.ANTHROPIC_MODEL || "claude";
   if (provider === "gemini") return process.env.GEMINI_MODEL || "gemini";
   return provider;
@@ -185,15 +193,27 @@ function getModelName(provider: string): string {
 function chooseProvider(body: unknown, envName: string, fallback: Provider): Provider {
   if (isRecord(body) && isProvider(body.provider)) return body.provider;
 
-  if (isRecord(body) && envName === "DISCOVERY_EVALUATOR_PROVIDER" && isProvider(body.evaluator_provider)) {
+  if (
+    isRecord(body) &&
+    envName === "DISCOVERY_EVALUATOR_PROVIDER" &&
+    isProvider(body.evaluator_provider)
+  ) {
     return body.evaluator_provider;
   }
 
-  if (isRecord(body) && envName === "DISCOVERY_SIGNAL_PROVIDER" && isProvider(body.signal_provider)) {
+  if (
+    isRecord(body) &&
+    envName === "DISCOVERY_SIGNAL_PROVIDER" &&
+    isProvider(body.signal_provider)
+  ) {
     return body.signal_provider;
   }
 
-  if (isRecord(body) && envName === "DISCOVERY_CRAFTER_PROVIDER" && isProvider(body.crafter_provider)) {
+  if (
+    isRecord(body) &&
+    envName === "DISCOVERY_CRAFTER_PROVIDER" &&
+    isProvider(body.crafter_provider)
+  ) {
     return body.crafter_provider;
   }
 
@@ -295,6 +315,18 @@ function normalizeRelationship(value: unknown): AngleRelationship {
     return value;
   }
   return "uncertain";
+}
+
+function normalizePreviewAction(value: unknown): PreviewAction {
+  if (
+    value === "auto_add_active_preview" ||
+    value === "auto_add_reserve_preview" ||
+    value === "editorial_suggestion_preview" ||
+    value === "auto_reject_preview"
+  ) {
+    return value;
+  }
+  return "editorial_suggestion_preview";
 }
 
 function cleanLabeledValue(value: string | null | undefined): string | null {
@@ -541,6 +573,124 @@ function parseEvaluationResponse(raw: string): CandidateEvaluation[] {
     .filter((decision): decision is CandidateEvaluation => decision !== null);
 }
 
+function normalizeCandidateFromPayload(value: unknown): CandidateCard | null {
+  if (!isRecord(value)) return null;
+  const title = getString(value.title);
+  const teaser = getString(value.teaser);
+  const why = getString(value.why_it_matters);
+  if (!title || !teaser || !why) return null;
+
+  const status = getString(value.recommended_status);
+
+  return {
+    title,
+    anchor: getString(value.anchor),
+    teaser,
+    why_it_matters: why,
+    source_signal_titles: normalizeStringArray(value.source_signal_titles),
+    certainty: normalizeCertainty(value.certainty),
+    estimated_score: getNumber(value.estimated_score),
+    risk_level: normalizeRiskLevel(value.risk_level),
+    recommended_status:
+      status === "active" || status === "reserve" || status === "reject" ? status : "reserve",
+    strength_reason: getString(value.strength_reason),
+    risk: getString(value.risk),
+  };
+}
+
+function normalizeEvaluationFromPayload(value: unknown, row: Record<string, unknown>): CandidateEvaluation | null {
+  const source = isRecord(value) ? value : {};
+  const action = getString(source.recommended_action ?? row.recommended_action);
+
+  const recommended_action =
+    action === "auto_add_active" ||
+    action === "auto_add_reserve" ||
+    action === "editorial_suggestion" ||
+    action === "auto_reject"
+      ? action
+      : "editorial_suggestion";
+
+  return {
+    candidate_index: getNumber(source.candidate_index) ?? 1,
+    score_total: getNumber(source.score_total ?? row.score_total),
+    risk_level: normalizeRiskLevel(source.risk_level ?? row.risk_level),
+    angle_relationship: normalizeRelationship(source.angle_relationship ?? row.angle_relationship),
+    matched_card_id: getString(source.matched_card_id ?? row.matched_card_id),
+    recommended_action,
+    reason: getString(source.reason ?? row.reason ?? row.decision_reason),
+    risk_note: getString(source.risk_note),
+    duplicate_note: getString(source.duplicate_note),
+  };
+}
+
+function normalizeSignalsFromPayload(value: unknown): DiscoverySignal[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item, index) => {
+      if (!isRecord(item)) return null;
+      const title = getString(item.title);
+      const observation = getString(item.observation);
+      const why = getString(item.why_it_may_matter);
+      if (!title || !observation || !why) return null;
+
+      return {
+        signal_type: getString(item.signal_type) ?? `signal_${index + 1}`,
+        title,
+        observation,
+        textual_anchor: getString(item.textual_anchor),
+        why_it_may_matter: why,
+        evidence_level: normalizeEvidenceLevel(item.evidence_level),
+        risk_level: normalizeRiskLevel(item.risk_level),
+        certainty: normalizeCertainty(item.certainty),
+        novelty_status: normalizeNoveltyStatus(item.novelty_status),
+        already_covered_by_card_ids: normalizeStringArray(item.already_covered_by_card_ids),
+        rejected_related_card_ids: normalizeStringArray(item.rejected_related_card_ids),
+        source_refs: [],
+        suggested_next_use: normalizeSuggestedNextUse(item.suggested_next_use),
+        reasoning_note: getString(item.reasoning_note),
+      } satisfies DiscoverySignal;
+    })
+    .filter((item): item is DiscoverySignal => item !== null);
+}
+
+function previewDecisionFromCuratorRow(row: Record<string, unknown>): PreviewDecision | null {
+  const payload = row.candidate_payload;
+  const payloadRecord = isRecord(payload) ? payload : null;
+
+  const candidate = normalizeCandidateFromPayload(
+    payloadRecord && isRecord(payloadRecord.candidate) ? payloadRecord.candidate : payload,
+  );
+
+  if (!candidate) return null;
+
+  const evaluation = normalizeEvaluationFromPayload(
+    payloadRecord && isRecord(payloadRecord.evaluation) ? payloadRecord.evaluation : null,
+    row,
+  );
+
+  if (!evaluation) return null;
+
+  const previewAction = normalizePreviewAction(
+    payloadRecord?.preview_action ?? computePreviewAction(evaluation),
+  );
+
+  return {
+    candidate,
+    evaluation,
+    preview_action: previewAction,
+    would_write_to_database: true,
+    applied_action: null,
+    inserted_card_id: null,
+    inserted_suggestion_id: null,
+    apply_error: null,
+  };
+}
+
+function signalsFromStoredCandidatePayload(payload: unknown): DiscoverySignal[] {
+  if (!isRecord(payload)) return [];
+  return normalizeSignalsFromPayload(payload.source_signals);
+}
+
 async function readResearchRows(args: {
   table: "research_sources" | "research_notes";
   reference: string;
@@ -596,7 +746,7 @@ async function readResearchRows(args: {
       .order("updated_at", { ascending: false })
       .limit(args.limit);
 
-    if (fallback.error) return { rows, error: fallback.error.message };
+    if (fallback.error) return { rows: [], error: fallback.error.message };
 
     return {
       rows: Array.isArray(fallback.data)
@@ -729,22 +879,31 @@ function buildDetectionPrompt(args: {
 
   const existingCardsBlock =
     activeAndReserve.length > 0
-      ? activeAndReserve.map((card, index) => formatCardForPrompt(card, index)).join("\n\n---\n\n")
+      ? activeAndReserve
+          .map((card, index) => formatCardForPrompt(card, index))
+          .join("\n\n---\n\n")
       : "No active/reserve cards found.";
 
   const rejectedBlock =
     rejectedOrHidden.length > 0
-      ? rejectedOrHidden.slice(0, 24).map((card, index) => formatCardForPrompt(card, index)).join("\n\n---\n\n")
+      ? rejectedOrHidden
+          .slice(0, 24)
+          .map((card, index) => formatCardForPrompt(card, index))
+          .join("\n\n---\n\n")
       : "No rejected/hidden cards found.";
 
   const sourcesBlock =
     args.researchSources.length > 0
-      ? args.researchSources.map((row, index) => formatResearchSource(row, index)).join("\n\n---\n\n")
+      ? args.researchSources
+          .map((row, index) => formatResearchSource(row, index))
+          .join("\n\n---\n\n")
       : "No Research Lake sources found.";
 
   const notesBlock =
     args.researchNotes.length > 0
-      ? args.researchNotes.map((row, index) => formatResearchNote(row, index)).join("\n\n---\n\n")
+      ? args.researchNotes
+          .map((row, index) => formatResearchNote(row, index))
+          .join("\n\n---\n\n")
       : "No Research Lake notes found.";
 
   return `
@@ -937,7 +1096,9 @@ function buildCandidatePrompt(args: {
 
   const existingCardsBlock =
     args.existingCards.length > 0
-      ? args.existingCards.map((card, index) => formatCardForPrompt(card, index)).join("\n\n---\n\n")
+      ? args.existingCards
+          .map((card, index) => formatCardForPrompt(card, index))
+          .join("\n\n---\n\n")
       : "No existing cards found.";
 
   return `
@@ -1035,7 +1196,9 @@ function buildEvaluationPrompt(args: {
 
   const existingCardsBlock =
     args.existingCards.length > 0
-      ? args.existingCards.map((card, index) => formatCardForPrompt(card, index)).join("\n\n---\n\n")
+      ? args.existingCards
+          .map((card, index) => formatCardForPrompt(card, index))
+          .join("\n\n---\n\n")
       : "No existing cards found.";
 
   return `
@@ -1140,23 +1303,23 @@ function computePreviewAction(evaluation: CandidateEvaluation): PreviewAction {
 
 function fallbackEvaluation(candidate: CandidateCard, index: number): CandidateEvaluation {
   const score = candidate.estimated_score ?? 70;
-  const relationship: AngleRelationship = candidate.recommended_status === "reject" ? "uncertain" : "uncertain";
+  const relationship: AngleRelationship = "uncertain";
 
   let recommended_action: CandidateEvaluation["recommended_action"] = "editorial_suggestion";
 
   if (score < 74 || candidate.recommended_status === "reject") {
     recommended_action = "auto_reject";
-  } else if (
-    score >= 86 &&
-    candidate.risk_level === "low" &&
-    candidate.certainty === "firm"
-  ) {
+  } else if (score >= 86 && candidate.risk_level === "low" && candidate.certainty === "firm") {
     recommended_action = "auto_add_active";
   } else if (score >= 74 && candidate.risk_level === "low") {
     recommended_action = "auto_add_reserve";
   }
 
-  if (candidate.certainty === "hypothesis" || candidate.risk_level === "medium" || candidate.risk_level === "high") {
+  if (
+    candidate.certainty === "hypothesis" ||
+    candidate.risk_level === "medium" ||
+    candidate.risk_level === "high"
+  ) {
     recommended_action = score < 74 ? "auto_reject" : "editorial_suggestion";
   }
 
@@ -1339,7 +1502,7 @@ async function insertEditorialSuggestion(args: {
     provider: args.crafterProvider,
     model: args.crafterModel,
     evaluator_version: args.evaluatorModel,
-    decision_engine_version: "discovery_enrichment_apply_v1",
+    decision_engine_version: "discovery_enrichment_same_run_apply_v1",
     reviewed_at: null,
     reviewed_by: null,
     review_note: null,
@@ -1459,7 +1622,7 @@ async function insertCuratorRun(args: {
         evaluator_provider: args.evaluatorProvider,
         evaluator_model: args.evaluatorModel,
         mode: args.apply ? "apply" : "preview",
-        status: "completed",
+        status: args.apply ? "completed" : "preview_ready",
         auto_add_active_count: args.counts.inserted_active ?? args.counts.auto_add_active_preview ?? 0,
         auto_add_reserve_count: args.counts.inserted_reserve ?? args.counts.auto_add_reserve_preview ?? 0,
         editorial_suggestion_count:
@@ -1488,11 +1651,24 @@ async function insertCuratorDecision(args: {
   canonical_ref: string | null;
   lang: Lang;
   decision: PreviewDecision;
+  signals: DiscoverySignal[];
 }): Promise<string | null> {
   if (!args.runId) return null;
 
   const client = createAdminClient();
   if (!client) return null;
+
+  const sourceSignals = args.signals.filter((signal) =>
+    args.decision.candidate.source_signal_titles.includes(signal.title),
+  );
+
+  const storedPayload: StoredDecisionPayload = {
+    source: "discovery_enrichment_v1",
+    candidate: args.decision.candidate,
+    evaluation: args.decision.evaluation,
+    preview_action: args.decision.preview_action,
+    source_signals: sourceSignals,
+  };
 
   try {
     const { data, error } = await client
@@ -1502,7 +1678,7 @@ async function insertCuratorDecision(args: {
         reference: args.reference,
         canonical_ref: args.canonical_ref,
         lang: args.lang,
-        candidate_payload: args.decision.candidate,
+        candidate_payload: storedPayload,
         score_total: args.decision.evaluation.score_total,
         risk_level: args.decision.evaluation.risk_level,
         angle_relationship: args.decision.evaluation.angle_relationship,
@@ -1522,6 +1698,58 @@ async function insertCuratorDecision(args: {
     return (data as { id?: string } | null)?.id ?? null;
   } catch {
     return null;
+  }
+}
+
+async function updateCuratorDecisionAfterApply(args: {
+  decisionId: string;
+  decision: PreviewDecision;
+}): Promise<void> {
+  const client = createAdminClient();
+  if (!client) return;
+
+  try {
+    await client
+      .from("curator_decisions")
+      .update({
+        applied_action: args.decision.applied_action ?? "skipped",
+        inserted_card_id: args.decision.inserted_card_id ?? null,
+        inserted_suggestion_id: args.decision.inserted_suggestion_id ?? null,
+        error: args.decision.apply_error ?? null,
+      })
+      .eq("id", args.decisionId);
+  } catch {
+    // Audit update should not hide a successful card/suggestion insert.
+  }
+}
+
+async function updateCuratorRunAfterStoredApply(args: {
+  runId: string;
+  counts: Record<string, number>;
+}): Promise<void> {
+  const client = createAdminClient();
+  if (!client) return;
+
+  const now = new Date().toISOString();
+
+  try {
+    await client
+      .from("curator_runs")
+      .update({
+        mode: "apply",
+        status: "applied",
+        auto_add_active_count: args.counts.inserted_active ?? 0,
+        auto_add_reserve_count: args.counts.inserted_reserve ?? 0,
+        editorial_suggestion_count: args.counts.inserted_editorial_suggestion ?? 0,
+        auto_reject_count: args.counts.rejected_logged ?? 0,
+        error_count: args.counts.failed ?? 0,
+        summary: `Discovery enrichment applied from preview run: ${JSON.stringify(args.counts)}`,
+        completed_at: now,
+        updated_at: now,
+      })
+      .eq("id", args.runId);
+  } catch {
+    // Audit update should not hide successful application.
   }
 }
 
@@ -1629,6 +1857,222 @@ async function applyPreviewDecision(args: {
   return decision;
 }
 
+function countDecisions(decisions: PreviewDecision[]) {
+  return {
+    candidates: decisions.length,
+    auto_add_active_preview: decisions.filter(
+      (decision) => decision.preview_action === "auto_add_active_preview",
+    ).length,
+    auto_add_reserve_preview: decisions.filter(
+      (decision) => decision.preview_action === "auto_add_reserve_preview",
+    ).length,
+    editorial_suggestion_preview: decisions.filter(
+      (decision) => decision.preview_action === "editorial_suggestion_preview",
+    ).length,
+    auto_reject_preview: decisions.filter(
+      (decision) => decision.preview_action === "auto_reject_preview",
+    ).length,
+    inserted_active: decisions.filter((decision) => decision.applied_action === "inserted_active").length,
+    inserted_reserve: decisions.filter((decision) => decision.applied_action === "inserted_reserve").length,
+    inserted_editorial_suggestion: decisions.filter(
+      (decision) => decision.applied_action === "inserted_editorial_suggestion",
+    ).length,
+    rejected_logged: decisions.filter((decision) => decision.applied_action === "rejected_logged").length,
+    failed: decisions.filter((decision) => decision.applied_action === "failed").length,
+  };
+}
+
+async function applyStoredPreviewRun(args: {
+  runId: string;
+  fallbackReference?: string | null;
+  fallbackCanonicalRef?: string | null;
+  fallbackLang?: Lang | null;
+}): Promise<NextResponse> {
+  const client = createAdminClient();
+  if (!client) {
+    return NextResponse.json(
+      { ok: false, error: "Supabase admin client unavailable" },
+      { status: 500 },
+    );
+  }
+
+  const { data: runData, error: runError } = await client
+    .from("curator_runs")
+    .select("*")
+    .eq("id", args.runId)
+    .maybeSingle();
+
+  if (runError || !runData) {
+    return NextResponse.json(
+      { ok: false, error: runError?.message ?? "Preview run not found" },
+      { status: 404 },
+    );
+  }
+
+  const run = runData as Record<string, unknown>;
+  const reference = getString(run.reference) ?? args.fallbackReference ?? null;
+  const canonicalRef = getString(run.canonical_ref) ?? args.fallbackCanonicalRef ?? null;
+  const langFromRun = run.lang;
+  const lang = isLang(langFromRun) ? langFromRun : args.fallbackLang ?? null;
+
+  if (!reference || !lang) {
+    return NextResponse.json(
+      { ok: false, error: "Stored preview run does not include reference/lang" },
+      { status: 400 },
+    );
+  }
+
+  const { data: decisionRows, error: decisionsError } = await client
+    .from("curator_decisions")
+    .select("*")
+    .eq("run_id", args.runId)
+    .order("created_at", { ascending: true });
+
+  if (decisionsError) {
+    return NextResponse.json(
+      { ok: false, error: decisionsError.message },
+      { status: 500 },
+    );
+  }
+
+  const rows = Array.isArray(decisionRows)
+    ? (decisionRows as Record<string, unknown>[])
+    : [];
+
+  if (rows.length === 0) {
+    return NextResponse.json(
+      { ok: false, error: "Preview run has no stored decisions to apply" },
+      { status: 400 },
+    );
+  }
+
+  const normalized = normalizeReference(reference);
+
+  const cardsResult = await getAllStudioCardsForVerse({
+    reference,
+    canonical_ref: canonicalRef,
+    lang,
+    limit: 140,
+  });
+
+  if (!cardsResult.ok) {
+    return NextResponse.json(
+      { ok: false, error: cardsResult.error ?? "Failed to read existing cards" },
+      { status: 500 },
+    );
+  }
+
+  const crafterProvider = isProvider(run.generator_provider) ? run.generator_provider : "claude";
+  const evaluatorProvider = isProvider(run.evaluator_provider) ? run.evaluator_provider : "openai";
+  const crafterModel = getString(run.generator_model) ?? getModelName(crafterProvider);
+  const evaluatorModel = getString(run.evaluator_model) ?? getModelName(evaluatorProvider);
+
+  const appliedDecisions: PreviewDecision[] = [];
+
+  for (const row of rows) {
+    const rowId = getString(row.id);
+    const existingAppliedAction = getString(row.applied_action);
+    const previewDecision = previewDecisionFromCuratorRow(row);
+
+    if (!previewDecision) {
+      const failed: PreviewDecision = {
+        candidate: {
+          title: "Unparseable stored decision",
+          anchor: null,
+          teaser: "Stored preview decision could not be parsed.",
+          why_it_matters: "This row was skipped because it could not be safely applied.",
+          source_signal_titles: [],
+          certainty: "research_only",
+          estimated_score: null,
+          risk_level: "unknown",
+          recommended_status: "reject",
+          strength_reason: null,
+          risk: "Could not parse stored candidate payload.",
+        },
+        evaluation: {
+          candidate_index: appliedDecisions.length + 1,
+          score_total: null,
+          risk_level: "unknown",
+          angle_relationship: "uncertain",
+          matched_card_id: null,
+          recommended_action: "auto_reject",
+          reason: "Stored decision could not be parsed.",
+          risk_note: null,
+          duplicate_note: null,
+        },
+        preview_action: "auto_reject_preview",
+        would_write_to_database: true,
+        applied_action: "failed",
+        inserted_card_id: null,
+        inserted_suggestion_id: null,
+        apply_error: "Could not parse stored decision payload.",
+      };
+
+      appliedDecisions.push(failed);
+      if (rowId) await updateCuratorDecisionAfterApply({ decisionId: rowId, decision: failed });
+      continue;
+    }
+
+    if (existingAppliedAction && existingAppliedAction !== "report_only") {
+      const skipped: PreviewDecision = {
+        ...previewDecision,
+        applied_action: "skipped",
+        apply_error: `Decision already has applied_action=${existingAppliedAction}`,
+      };
+
+      appliedDecisions.push(skipped);
+      continue;
+    }
+
+    const signals = signalsFromStoredCandidatePayload(row.candidate_payload);
+
+    const applied = await applyPreviewDecision({
+      decision: previewDecision,
+      reference,
+      canonical_ref: canonicalRef,
+      normalized,
+      lang,
+      existingCards: cardsResult.cards,
+      signals,
+      crafterProvider,
+      crafterModel,
+      evaluatorProvider,
+      evaluatorModel,
+    });
+
+    appliedDecisions.push(applied);
+    if (rowId) await updateCuratorDecisionAfterApply({ decisionId: rowId, decision: applied });
+  }
+
+  const counts = countDecisions(appliedDecisions);
+  await updateCuratorRunAfterStoredApply({ runId: args.runId, counts });
+
+  return NextResponse.json({
+    ok: true,
+    mode: "apply_stored_preview_run",
+    changed_database: true,
+    would_write_to_database: true,
+    applied_from_curator_run_id: args.runId,
+    curator_run_id: args.runId,
+    reference,
+    canonical_ref: canonicalRef,
+    book_key: normalized.book_key ?? null,
+    lang,
+    providers: {
+      crafter_provider: crafterProvider,
+      crafter_model: crafterModel,
+      evaluator_provider: evaluatorProvider,
+      evaluator_model: evaluatorModel,
+    },
+    existing_card_count: cardsResult.cards.length,
+    active_or_reserve_count: cardsResult.cards.filter(
+      (card) => card.status === "featured" || card.status === "reserve",
+    ).length,
+    counts,
+    decisions: appliedDecisions,
+  });
+}
+
 export async function POST(req: Request) {
   try {
     if (!isAdminRequest(req)) {
@@ -1636,12 +2080,24 @@ export async function POST(req: Request) {
     }
 
     const body: unknown = await req.json();
-
     const shouldApply = isRecord(body) ? getBoolean(body.apply) === true : false;
+    const previewRunId = isRecord(body)
+      ? getString(body.preview_run_id ?? body.previewRunId ?? body.curator_run_id ?? body.curatorRunId)
+      : null;
 
     const reference = isRecord(body) ? getString(body.reference) : null;
     const lang = isRecord(body) && isLang(body.lang) ? body.lang : null;
     const normalizedFromBody = isRecord(body) ? getString(body.canonical_ref) : null;
+
+    if (shouldApply && previewRunId) {
+      return applyStoredPreviewRun({
+        runId: previewRunId,
+        fallbackReference: reference,
+        fallbackCanonicalRef: normalizedFromBody,
+        fallbackLang: lang,
+      });
+    }
+
     const verseText = isRecord(body) ? getString(body.verseText ?? body.verse_text) : null;
     const manualMaterial = isRecord(body)
       ? getString(body.manual_material ?? body.manualMaterial)
@@ -1832,26 +2288,7 @@ export async function POST(req: Request) {
     const counts = {
       signals: signalResult.signals.length,
       craftable_signals: craftableSignals.length,
-      candidates: candidates.length,
-      auto_add_active_preview: decisions.filter(
-        (decision) => decision.preview_action === "auto_add_active_preview",
-      ).length,
-      auto_add_reserve_preview: decisions.filter(
-        (decision) => decision.preview_action === "auto_add_reserve_preview",
-      ).length,
-      editorial_suggestion_preview: decisions.filter(
-        (decision) => decision.preview_action === "editorial_suggestion_preview",
-      ).length,
-      auto_reject_preview: decisions.filter(
-        (decision) => decision.preview_action === "auto_reject_preview",
-      ).length,
-      inserted_active: decisions.filter((decision) => decision.applied_action === "inserted_active").length,
-      inserted_reserve: decisions.filter((decision) => decision.applied_action === "inserted_reserve").length,
-      inserted_editorial_suggestion: decisions.filter(
-        (decision) => decision.applied_action === "inserted_editorial_suggestion",
-      ).length,
-      rejected_logged: decisions.filter((decision) => decision.applied_action === "rejected_logged").length,
-      failed: decisions.filter((decision) => decision.applied_action === "failed").length,
+      ...countDecisions(decisions),
     };
 
     const curatorRunId = await insertCuratorRun({
@@ -1868,26 +2305,29 @@ export async function POST(req: Request) {
       counts,
     });
 
-    if (shouldApply) {
-      await Promise.all(
-        decisions.map((decision) =>
-          insertCuratorDecision({
-            runId: curatorRunId,
-            reference,
-            canonical_ref: canonicalRef,
-            lang,
-            decision,
-          }),
-        ),
-      );
-    }
+    await Promise.all(
+      decisions.map((decision) =>
+        insertCuratorDecision({
+          runId: curatorRunId,
+          reference,
+          canonical_ref: canonicalRef,
+          lang,
+          decision,
+          signals: signalResult.signals,
+        }),
+      ),
+    );
 
     return NextResponse.json({
       ok: true,
-      mode: shouldApply ? "apply" : "preview_only",
+      mode: shouldApply ? "apply_legacy_recomputed" : "preview_only",
       changed_database: shouldApply,
       would_write_to_database: shouldApply,
       curator_run_id: curatorRunId,
+      apply_requires_same_run_id: true,
+      apply_note: shouldApply && !previewRunId
+        ? "Legacy apply recomputed the run because no preview_run_id/curator_run_id was supplied. Update Studio UI to pass curator_run_id from preview."
+        : null,
       reference,
       canonical_ref: canonicalRef,
       book_key: normalized.book_key ?? null,
