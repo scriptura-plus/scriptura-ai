@@ -372,6 +372,60 @@ type AutoModeratorReportResponse = {
   };
 };
 
+type DiscoverySignalSourceRef = {
+  source_type: string;
+  id: string | null;
+  title?: string | null;
+  excerpt: string | null;
+};
+
+type DiscoverySignal = {
+  signal_type: string;
+  title: string;
+  observation: string;
+  textual_anchor: string | null;
+  why_it_may_matter: string;
+  evidence_level: "strong" | "medium" | "weak" | "unknown" | string;
+  risk_level: "low" | "medium" | "high" | "unknown" | string;
+  certainty: "firm" | "cautious" | "hypothesis" | "research_only" | string;
+  novelty_status: "new" | "partially_covered" | "covered" | "duplicate" | "unclear" | string;
+  already_covered_by_card_ids: string[];
+  rejected_related_card_ids: string[];
+  source_refs: DiscoverySignalSourceRef[];
+  suggested_next_use:
+    | "craft_candidate"
+    | "reserve_only"
+    | "editorial_suggestion"
+    | "research_only"
+    | "ignore"
+    | string;
+  reasoning_note: string | null;
+};
+
+type DiscoverySignalsResponse = {
+  ok?: boolean;
+  error?: string;
+  mode?: "preview_only" | string;
+  changed_database?: boolean;
+  reference?: string;
+  canonical_ref?: string | null;
+  book_key?: string | null;
+  lang?: Lang;
+  provider?: string;
+  model?: string;
+  material_selection_mode?: string;
+  source_count?: number;
+  note_count?: number;
+  existing_card_count?: number;
+  active_or_reserve_count?: number;
+  rejected_or_hidden_count?: number;
+  read_errors?: Record<string, string | null>;
+  signals?: DiscoverySignal[];
+  empty_reason?: string | null;
+  overall_assessment?: string;
+  raw_response?: string;
+};
+
 type ReEvaluation = {
   score_total?: number;
   placement?: string;
@@ -963,6 +1017,52 @@ function readableRiskLevel(level: "low" | "medium" | "high" | "unknown" | string
   if (level === "medium") return "средний риск";
   if (level === "high") return "высокий риск";
   return "риск неизвестен";
+}
+
+function readableSignalType(type: string): string {
+  if (type === "lexical") return "лексика";
+  if (type === "grammar") return "грамматика";
+  if (type === "structure") return "структура";
+  if (type === "translation_divergence") return "перевод";
+  if (type === "context_tension") return "контекст";
+  if (type === "intertextual") return "межтекст";
+  if (type === "historical_background") return "история";
+  if (type === "rhetorical") return "риторика";
+  if (type === "coverage_gap") return "слепая зона";
+  return type || "сигнал";
+}
+
+function readableSignalCertainty(certainty: string | null | undefined): string {
+  if (certainty === "firm") return "firm / уверенно";
+  if (certainty === "cautious") return "cautious / осторожно";
+  if (certainty === "hypothesis") return "hypothesis / гипотеза";
+  if (certainty === "research_only") return "research only";
+  return "уверенность не указана";
+}
+
+function readableSignalEvidence(level: string | null | undefined): string {
+  if (level === "strong") return "опора сильная";
+  if (level === "medium") return "опора средняя";
+  if (level === "weak") return "опора слабая";
+  return "опора не указана";
+}
+
+function readableSignalNovelty(status: string | null | undefined): string {
+  if (status === "new") return "новое";
+  if (status === "partially_covered") return "частично покрыто";
+  if (status === "covered") return "покрыто";
+  if (status === "duplicate") return "дубль";
+  if (status === "unclear") return "неясно";
+  return status || "новизна не указана";
+}
+
+function readableSignalNextUse(value: string | null | undefined): string {
+  if (value === "craft_candidate") return "можно делать карточку";
+  if (value === "reserve_only") return "скорее в запас";
+  if (value === "editorial_suggestion") return "в очередь редактора";
+  if (value === "research_only") return "только исследование";
+  if (value === "ignore") return "не использовать";
+  return value || "следующий шаг не указан";
 }
 
 function readableRunAction(action: RunAutoCuratorDecision["recommended_action"]): string {
@@ -1860,6 +1960,11 @@ export default function StudioPage() {
   const [runningAutoModeratorReport, setRunningAutoModeratorReport] = useState(false);
   const [applyingAutoModeratorRouting, setApplyingAutoModeratorRouting] = useState(false);
   const [autoModeratorReportError, setAutoModeratorReportError] = useState("");
+  const [discoverySignalVerseText, setDiscoverySignalVerseText] = useState("");
+  const [discoverySignalsResult, setDiscoverySignalsResult] =
+    useState<DiscoverySignalsResponse | null>(null);
+  const [runningDiscoverySignals, setRunningDiscoverySignals] = useState(false);
+  const [discoverySignalsError, setDiscoverySignalsError] = useState("");
 
   const selectedVerse = useMemo(() => {
     return verses.find((verse) => verse.reference === selectedReference) ?? null;
@@ -2006,6 +2111,9 @@ export default function StudioPage() {
     setRunAutoCuratorError("");
     setAutoModeratorReport(null);
     setAutoModeratorReportError("");
+    setDiscoverySignalVerseText("");
+    setDiscoverySignalsResult(null);
+    setDiscoverySignalsError("");
     setNotice(`Открываю ${displayReference(verse)}...`);
 
     try {
@@ -2047,6 +2155,8 @@ export default function StudioPage() {
       setRunAutoCuratorError("");
       setAutoModeratorReport(null);
       setAutoModeratorReportError("");
+      setDiscoverySignalsResult(null);
+      setDiscoverySignalsError("");
       setCardsError(
         error instanceof Error ? error.message : "Не удалось загрузить карточки.",
       );
@@ -2144,6 +2254,63 @@ export default function StudioPage() {
       );
     } finally {
       setLoadingEditorialSuggestions(false);
+    }
+  }
+
+  async function runDiscoverySignalsPreview() {
+    if (!selectedVerse) {
+      setCardsError("Сначала выбери стих.");
+      return;
+    }
+
+    if (!adminSecret.trim()) {
+      setCardsError("Вставь Admin Secret.");
+      return;
+    }
+
+    setDiscoverySignalsResult(null);
+    setDiscoverySignalsError("");
+    setRunningDiscoverySignals(true);
+    setNotice("Discovery Signals ищет исследовательские зацепки...");
+
+    try {
+      const response = await fetch("/api/admin/studio/detect-discovery-signals", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-secret": adminSecret,
+        },
+        body: JSON.stringify({
+          reference: selectedVerse.reference,
+          canonical_ref: selectedVerse.canonical_ref,
+          lang,
+          verseText: discoverySignalVerseText.trim() || undefined,
+          material_selection_mode: "recent",
+          maxSources: 10,
+          maxNotes: 18,
+          maxSignals: 12,
+          include_raw: false,
+        }),
+      });
+
+      const data = (await response.json()) as DiscoverySignalsResponse;
+
+      if (!response.ok || data.ok === false) {
+        throw new Error(data.error || "Не удалось найти исследовательские сигналы.");
+      }
+
+      setDiscoverySignalsResult(data);
+      setNotice(`Discovery Signals готов: сигналов — ${data.signals?.length ?? 0}.`);
+    } catch (error) {
+      setDiscoverySignalsResult(null);
+      setDiscoverySignalsError(
+        error instanceof Error
+          ? error.message
+          : "Не удалось найти исследовательские сигналы.",
+      );
+      setNotice("");
+    } finally {
+      setRunningDiscoverySignals(false);
     }
   }
 
@@ -4156,6 +4323,309 @@ export default function StudioPage() {
                 researchMemory.summary.sources_count === 0 &&
                 researchMemory.summary.notes_count === 0 ? (
                   <EmptyBox text="В Озере пока нет материалов по этому стиху." />
+                ) : null}
+              </section>
+            ) : null}
+
+            {selectedVerse ? (
+              <section
+                className="studio-card-enter"
+                style={{
+                  border: `1px solid ${LINE_SOFT}`,
+                  borderRadius: 18,
+                  padding: 14,
+                  background: `linear-gradient(180deg, ${CARD} 0%, ${SLATE_SOFT_2} 100%)`,
+                  marginBottom: 14,
+                  boxShadow: "0 1px 2px rgba(42, 31, 22, 0.04)",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 900,
+                    letterSpacing: "0.16em",
+                    textTransform: "uppercase",
+                    color: WARM_ACCENT,
+                    marginBottom: 8,
+                  }}
+                >
+                  Discovery Signals — тест
+                </div>
+
+                <h3
+                  style={{
+                    margin: "0 0 8px",
+                    fontSize: 18,
+                    lineHeight: 1.18,
+                    letterSpacing: "-0.02em",
+                    fontFamily:
+                      'ui-serif, Georgia, "Iowan Old Style", "Times New Roman", serif',
+                    color: INK,
+                  }}
+                >
+                  Исследовательские сигналы
+                </h3>
+
+                <p
+                  style={{
+                    margin: "0 0 12px",
+                    color: MUTED,
+                    fontSize: 13,
+                    lineHeight: 1.6,
+                  }}
+                >
+                  Это временная проверка нового route-only слоя. Он читает Озеро,
+                  существующие карточки и optional текст стиха, затем возвращает карту
+                  зацепок: firm / cautious / hypothesis / research only. Ничего не
+                  сохраняется, карточки не создаются.
+                </p>
+
+                <textarea
+                  value={discoverySignalVerseText}
+                  onChange={(event) => setDiscoverySignalVerseText(event.target.value)}
+                  placeholder="Optional: вставь текст стиха для более точного теста. Для Матфея 11:29 можно вставить: Возьмите на себя моё ярмо..."
+                  rows={3}
+                  style={{
+                    width: "100%",
+                    boxSizing: "border-box",
+                    border: `1px solid ${LINE}`,
+                    borderRadius: 14,
+                    padding: "11px 12px",
+                    background: CARD,
+                    color: INK,
+                    fontSize: 13,
+                    lineHeight: 1.5,
+                    fontFamily: "inherit",
+                    resize: "vertical",
+                    outlineColor: SLATE,
+                    marginBottom: 10,
+                  }}
+                />
+
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+                  <button
+                    type="button"
+                    disabled={runningDiscoverySignals || loadingCards}
+                    onClick={() => runDiscoverySignalsPreview()}
+                    style={getRepairButtonStyle(runningDiscoverySignals || loadingCards)}
+                  >
+                    {runningDiscoverySignals ? "Ищу сигналы..." : "Найти сигналы"}
+                  </button>
+
+                  {discoverySignalsResult ? (
+                    <button
+                      type="button"
+                      disabled={runningDiscoverySignals}
+                      onClick={() => {
+                        setDiscoverySignalsResult(null);
+                        setDiscoverySignalsError("");
+                      }}
+                      style={getSmallButtonStyle(runningDiscoverySignals)}
+                    >
+                      Очистить результат
+                    </button>
+                  ) : null}
+                </div>
+
+                {discoverySignalsError ? (
+                  <MessageBox kind="error" text={discoverySignalsError} />
+                ) : null}
+
+                {discoverySignalsResult ? (
+                  <div style={{ display: "grid", gap: 12 }}>
+                    <div
+                      style={{
+                        border: `1px solid ${LINE_SOFT}`,
+                        borderRadius: 14,
+                        background: SLATE_SOFT,
+                        padding: 11,
+                      }}
+                    >
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginBottom: 9 }}>
+                        <Badge text={`mode: ${discoverySignalsResult.mode ?? "preview"}`} strong />
+                        <Badge text={`provider: ${discoverySignalsResult.provider ?? "—"}`} />
+                        <Badge text={`model: ${discoverySignalsResult.model ?? "—"}`} />
+                        <Badge text={`sources: ${discoverySignalsResult.source_count ?? 0}`} />
+                        <Badge text={`notes: ${discoverySignalsResult.note_count ?? 0}`} />
+                        <Badge text={`cards: ${discoverySignalsResult.existing_card_count ?? 0}`} />
+                        <Badge text={`signals: ${discoverySignalsResult.signals?.length ?? 0}`} strong />
+                        <Badge
+                          text={
+                            discoverySignalsResult.changed_database === false
+                              ? "DB: no writes"
+                              : "DB: unknown"
+                          }
+                        />
+                      </div>
+
+                      {discoverySignalsResult.overall_assessment ? (
+                        <p
+                          style={{
+                            margin: "0 0 8px",
+                            color: TEXT,
+                            fontSize: 13,
+                            lineHeight: 1.55,
+                          }}
+                        >
+                          {discoverySignalsResult.overall_assessment}
+                        </p>
+                      ) : null}
+
+                      {discoverySignalsResult.empty_reason ? (
+                        <MessageBox
+                          kind="success"
+                          text={`Пустой результат: ${discoverySignalsResult.empty_reason}`}
+                        />
+                      ) : null}
+                    </div>
+
+                    {discoverySignalsResult.signals && discoverySignalsResult.signals.length > 0 ? (
+                      <div style={{ display: "grid", gap: 9 }}>
+                        {discoverySignalsResult.signals.map((signal, index) => (
+                          <div
+                            key={`${signal.title}-${index}`}
+                            style={{
+                              border: `1px solid ${LINE_SOFT}`,
+                              borderRadius: 14,
+                              background:
+                                signal.certainty === "hypothesis" || signal.risk_level === "high"
+                                  ? WARNING_BG
+                                  : signal.certainty === "research_only"
+                                    ? SLATE_SOFT_2
+                                    : CARD,
+                              padding: 11,
+                            }}
+                          >
+                            <div
+                              style={{
+                                display: "flex",
+                                justifyContent: "space-between",
+                                gap: 10,
+                                alignItems: "flex-start",
+                                marginBottom: 7,
+                              }}
+                            >
+                              <div
+                                style={{
+                                  fontSize: 13.5,
+                                  fontWeight: 950,
+                                  color: INK,
+                                  lineHeight: 1.32,
+                                }}
+                              >
+                                {index + 1}. {signal.title}
+                              </div>
+
+                              <Badge text={readableSignalType(signal.signal_type)} strong />
+                            </div>
+
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+                              <Badge text={readableSignalCertainty(signal.certainty)} strong />
+                              <Badge text={readableSignalEvidence(signal.evidence_level)} />
+                              <Badge text={readableRiskLevel(signal.risk_level)} />
+                              <Badge text={readableSignalNovelty(signal.novelty_status)} />
+                              <Badge text={readableSignalNextUse(signal.suggested_next_use)} strong />
+                            </div>
+
+                            {signal.textual_anchor ? (
+                              <p
+                                style={{
+                                  margin: "0 0 7px",
+                                  color: WARM_ACCENT,
+                                  fontSize: 12,
+                                  lineHeight: 1.45,
+                                  fontStyle: "italic",
+                                }}
+                              >
+                                “{signal.textual_anchor}”
+                              </p>
+                            ) : null}
+
+                            <p
+                              style={{
+                                margin: "0 0 7px",
+                                color: TEXT,
+                                fontSize: 12.5,
+                                lineHeight: 1.55,
+                              }}
+                            >
+                              {signal.observation}
+                            </p>
+
+                            <p
+                              style={{
+                                margin: signal.reasoning_note || signal.source_refs?.length ? "0 0 7px" : 0,
+                                color: MUTED,
+                                fontSize: 12,
+                                lineHeight: 1.5,
+                              }}
+                            >
+                              <strong style={{ color: SLATE_DARK }}>Почему может быть важно: </strong>
+                              {signal.why_it_may_matter}
+                            </p>
+
+                            {signal.reasoning_note ? (
+                              <p
+                                style={{
+                                  margin: signal.source_refs?.length ? "0 0 7px" : 0,
+                                  color: MUTED_2,
+                                  fontSize: 12,
+                                  lineHeight: 1.45,
+                                }}
+                              >
+                                <strong>Reasoning: </strong>
+                                {signal.reasoning_note}
+                              </p>
+                            ) : null}
+
+                            {signal.source_refs && signal.source_refs.length > 0 ? (
+                              <details>
+                                <summary
+                                  style={{
+                                    cursor: "pointer",
+                                    color: SLATE_DARK,
+                                    fontSize: 12,
+                                    fontWeight: 900,
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: 7,
+                                  }}
+                                >
+                                  <span style={{ fontSize: 11 }}>▼</span>
+                                  Source refs: {signal.source_refs.length}
+                                </summary>
+
+                                <div style={{ display: "grid", gap: 6, marginTop: 8 }}>
+                                  {signal.source_refs.slice(0, 4).map((ref, refIndex) => (
+                                    <div
+                                      key={`${signal.title}-ref-${refIndex}`}
+                                      style={{
+                                        border: `1px solid ${LINE_SOFT}`,
+                                        borderRadius: 10,
+                                        background: "rgba(255,255,255,0.56)",
+                                        padding: 8,
+                                        color: MUTED,
+                                        fontSize: 11.5,
+                                        lineHeight: 1.45,
+                                      }}
+                                    >
+                                      <strong style={{ color: SLATE_DARK }}>
+                                        {ref.source_type}
+                                        {ref.title ? ` / ${ref.title}` : ""}
+                                      </strong>
+                                      {ref.excerpt ? ` — ${ref.excerpt}` : ""}
+                                    </div>
+                                  ))}
+                                </div>
+                              </details>
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <EmptyBox text="Discovery Signals не нашёл новых сигналов с текущим материалом." />
+                    )}
+                  </div>
                 ) : null}
               </section>
             ) : null}
