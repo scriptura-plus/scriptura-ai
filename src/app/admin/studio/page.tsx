@@ -426,6 +426,97 @@ type DiscoverySignalsResponse = {
   raw_response?: string;
 };
 
+
+type DiscoveryEnrichmentCandidate = {
+  title: string;
+  anchor: string | null;
+  teaser: string;
+  why_it_matters: string | null;
+  source_signal_titles: string[];
+  certainty: "firm" | "cautious" | "hypothesis" | "research_only" | string;
+  estimated_score: number | null;
+  risk_level: "low" | "medium" | "high" | "unknown" | string;
+  recommended_status: "active" | "reserve" | "reject" | string;
+  strength_reason: string | null;
+  risk: string | null;
+};
+
+type DiscoveryEnrichmentEvaluation = {
+  candidate_index: number;
+  score_total: number | null;
+  risk_level: "low" | "medium" | "high" | "unknown" | string;
+  angle_relationship:
+    | "distinct_angle"
+    | "safe_sibling_angle"
+    | "sibling_angle"
+    | "stronger_version"
+    | "duplicate"
+    | "uncertain"
+    | string;
+  matched_card_id: string | null;
+  recommended_action:
+    | "auto_add_active"
+    | "auto_add_reserve"
+    | "editorial_suggestion"
+    | "auto_reject"
+    | string;
+  reason: string | null;
+  risk_note: string | null;
+  duplicate_note: string | null;
+};
+
+type DiscoveryEnrichmentDecision = {
+  candidate: DiscoveryEnrichmentCandidate;
+  evaluation: DiscoveryEnrichmentEvaluation;
+  preview_action:
+    | "auto_add_active_preview"
+    | "auto_add_reserve_preview"
+    | "editorial_suggestion_preview"
+    | "auto_reject_preview"
+    | string;
+  would_write_to_database: false;
+};
+
+type DiscoveryEnrichmentResponse = {
+  ok?: boolean;
+  error?: string;
+  mode?: "preview_only" | string;
+  changed_database?: boolean;
+  would_write_to_database?: boolean;
+  reference?: string;
+  canonical_ref?: string | null;
+  book_key?: string | null;
+  lang?: Lang;
+  material_selection_mode?: string;
+  providers?: {
+    signal_provider?: string;
+    signal_model?: string;
+    crafter_provider?: string;
+    crafter_model?: string;
+    evaluator_provider?: string;
+    evaluator_model?: string;
+  };
+  source_count?: number;
+  note_count?: number;
+  existing_card_count?: number;
+  active_or_reserve_count?: number;
+  read_errors?: Record<string, string | null>;
+  counts?: {
+    signals?: number;
+    craftable_signals?: number;
+    candidates?: number;
+    auto_add_active_preview?: number;
+    auto_add_reserve_preview?: number;
+    editorial_suggestion_preview?: number;
+    auto_reject_preview?: number;
+  };
+  signals?: DiscoverySignal[];
+  empty_reason?: string | null;
+  overall_assessment?: string | null;
+  candidates?: DiscoveryEnrichmentCandidate[];
+  decisions?: DiscoveryEnrichmentDecision[];
+};
+
 type ReEvaluation = {
   score_total?: number;
   placement?: string;
@@ -1063,6 +1154,39 @@ function readableSignalNextUse(value: string | null | undefined): string {
   if (value === "research_only") return "только исследование";
   if (value === "ignore") return "не использовать";
   return value || "следующий шаг не указан";
+}
+
+
+function readableEnrichmentPreviewAction(action: string | null | undefined): string {
+  if (action === "auto_add_active_preview") return "preview: в активные";
+  if (action === "auto_add_reserve_preview") return "preview: в запас";
+  if (action === "editorial_suggestion_preview") return "preview: в очередь";
+  if (action === "auto_reject_preview") return "preview: reject";
+  return action || "preview: неизвестно";
+}
+
+function readableEnrichmentRecommendedAction(action: string | null | undefined): string {
+  if (action === "auto_add_active") return "рекомендация: активные";
+  if (action === "auto_add_reserve") return "рекомендация: запас";
+  if (action === "editorial_suggestion") return "рекомендация: очередь";
+  if (action === "auto_reject") return "рекомендация: reject";
+  return action || "рекомендация неизвестна";
+}
+
+function getEnrichmentActionBackground(action: string | null | undefined): string {
+  if (action === "auto_add_active_preview") {
+    return `linear-gradient(180deg, ${SUCCESS_TEXT} 0%, #3f5730 100%)`;
+  }
+
+  if (action === "auto_add_reserve_preview") {
+    return `linear-gradient(180deg, ${WARM_ACCENT} 0%, #7f674c 100%)`;
+  }
+
+  if (action === "editorial_suggestion_preview") {
+    return `linear-gradient(180deg, ${SLATE} 0%, ${SLATE_DARK} 100%)`;
+  }
+
+  return `linear-gradient(180deg, ${MUTED_2} 0%, ${MUTED} 100%)`;
 }
 
 function readableRunAction(action: RunAutoCuratorDecision["recommended_action"]): string {
@@ -1965,6 +2089,10 @@ export default function StudioPage() {
     useState<DiscoverySignalsResponse | null>(null);
   const [runningDiscoverySignals, setRunningDiscoverySignals] = useState(false);
   const [discoverySignalsError, setDiscoverySignalsError] = useState("");
+  const [discoveryEnrichmentResult, setDiscoveryEnrichmentResult] =
+    useState<DiscoveryEnrichmentResponse | null>(null);
+  const [runningDiscoveryEnrichment, setRunningDiscoveryEnrichment] = useState(false);
+  const [discoveryEnrichmentError, setDiscoveryEnrichmentError] = useState("");
 
   const selectedVerse = useMemo(() => {
     return verses.find((verse) => verse.reference === selectedReference) ?? null;
@@ -2114,6 +2242,8 @@ export default function StudioPage() {
     setDiscoverySignalVerseText("");
     setDiscoverySignalsResult(null);
     setDiscoverySignalsError("");
+    setDiscoveryEnrichmentResult(null);
+    setDiscoveryEnrichmentError("");
     setNotice(`Открываю ${displayReference(verse)}...`);
 
     try {
@@ -2157,6 +2287,8 @@ export default function StudioPage() {
       setAutoModeratorReportError("");
       setDiscoverySignalsResult(null);
       setDiscoverySignalsError("");
+      setDiscoveryEnrichmentResult(null);
+      setDiscoveryEnrichmentError("");
       setCardsError(
         error instanceof Error ? error.message : "Не удалось загрузить карточки.",
       );
@@ -2311,6 +2443,67 @@ export default function StudioPage() {
       setNotice("");
     } finally {
       setRunningDiscoverySignals(false);
+    }
+  }
+
+  async function runDiscoveryEnrichmentPreview() {
+    if (!selectedVerse) {
+      setCardsError("Сначала выбери стих.");
+      return;
+    }
+
+    if (!adminSecret.trim()) {
+      setCardsError("Вставь Admin Secret.");
+      return;
+    }
+
+    setDiscoveryEnrichmentResult(null);
+    setDiscoveryEnrichmentError("");
+    setRunningDiscoveryEnrichment(true);
+    setNotice("Discovery Enrichment строит preview: сигналы → карточки → evaluator...");
+
+    try {
+      const response = await fetch("/api/admin/studio/run-discovery-enrichment", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-secret": adminSecret,
+        },
+        body: JSON.stringify({
+          reference: selectedVerse.reference,
+          canonical_ref: selectedVerse.canonical_ref,
+          lang,
+          verseText: discoverySignalVerseText.trim() || undefined,
+          material_selection_mode: "recent",
+          maxSources: 10,
+          maxNotes: 18,
+          maxSignals: 8,
+          maxCandidates: 5,
+          include_raw: false,
+          apply: false,
+        }),
+      });
+
+      const data = (await response.json()) as DiscoveryEnrichmentResponse;
+
+      if (!response.ok || data.ok === false) {
+        throw new Error(data.error || "Не удалось запустить Discovery Enrichment preview.");
+      }
+
+      setDiscoveryEnrichmentResult(data);
+      setNotice(
+        `Discovery Enrichment готов: сигналов — ${data.counts?.signals ?? data.signals?.length ?? 0}, кандидатов — ${data.counts?.candidates ?? data.candidates?.length ?? 0}.`,
+      );
+    } catch (error) {
+      setDiscoveryEnrichmentResult(null);
+      setDiscoveryEnrichmentError(
+        error instanceof Error
+          ? error.message
+          : "Не удалось запустить Discovery Enrichment preview.",
+      );
+      setNotice("");
+    } finally {
+      setRunningDiscoveryEnrichment(false);
     }
   }
 
@@ -4624,6 +4817,366 @@ export default function StudioPage() {
                       </div>
                     ) : (
                       <EmptyBox text="Discovery Signals не нашёл новых сигналов с текущим материалом." />
+                    )}
+                  </div>
+                ) : null}
+              </section>
+            ) : null}
+
+            {selectedVerse ? (
+              <section
+                className="studio-card-enter"
+                style={{
+                  border: `1px solid ${LINE_SOFT}`,
+                  borderRadius: 18,
+                  padding: 14,
+                  background: `linear-gradient(180deg, ${CARD} 0%, ${WARNING_BG} 100%)`,
+                  marginBottom: 14,
+                  boxShadow: "0 1px 2px rgba(42, 31, 22, 0.04)",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 900,
+                    letterSpacing: "0.16em",
+                    textTransform: "uppercase",
+                    color: WARM_ACCENT,
+                    marginBottom: 8,
+                  }}
+                >
+                  Discovery Enrichment — preview
+                </div>
+
+                <h3
+                  style={{
+                    margin: "0 0 8px",
+                    fontSize: 18,
+                    lineHeight: 1.18,
+                    letterSpacing: "-0.02em",
+                    fontFamily:
+                      'ui-serif, Georgia, "Iowan Old Style", "Times New Roman", serif',
+                    color: INK,
+                  }}
+                >
+                  Сигналы → кандидаты → evaluator
+                </h3>
+
+                <p
+                  style={{
+                    margin: "0 0 12px",
+                    color: MUTED,
+                    fontSize: 13,
+                    lineHeight: 1.6,
+                  }}
+                >
+                  Это безопасный preview нового enrichment-контура. Он сам ищет
+                  сигналы, делает из них candidate cards и прогоняет evaluator, но
+                  ничего не сохраняет: active/reserve, очередь и база не меняются.
+                </p>
+
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+                  <button
+                    type="button"
+                    disabled={runningDiscoveryEnrichment || loadingCards}
+                    onClick={() => runDiscoveryEnrichmentPreview()}
+                    style={getRepairButtonStyle(runningDiscoveryEnrichment || loadingCards)}
+                  >
+                    {runningDiscoveryEnrichment
+                      ? "Строю preview..."
+                      : "Запустить enrichment preview"}
+                  </button>
+
+                  {discoveryEnrichmentResult ? (
+                    <button
+                      type="button"
+                      disabled={runningDiscoveryEnrichment}
+                      onClick={() => {
+                        setDiscoveryEnrichmentResult(null);
+                        setDiscoveryEnrichmentError("");
+                      }}
+                      style={getSmallButtonStyle(runningDiscoveryEnrichment)}
+                    >
+                      Очистить enrichment
+                    </button>
+                  ) : null}
+                </div>
+
+                {discoveryEnrichmentError ? (
+                  <MessageBox kind="error" text={discoveryEnrichmentError} />
+                ) : null}
+
+                {discoveryEnrichmentResult ? (
+                  <div style={{ display: "grid", gap: 12 }}>
+                    <div
+                      style={{
+                        border: `1px solid ${LINE_SOFT}`,
+                        borderRadius: 14,
+                        background: SLATE_SOFT,
+                        padding: 11,
+                      }}
+                    >
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginBottom: 9 }}>
+                        <Badge text={`mode: ${discoveryEnrichmentResult.mode ?? "preview"}`} strong />
+                        <Badge
+                          text={`signals: ${discoveryEnrichmentResult.counts?.signals ?? discoveryEnrichmentResult.signals?.length ?? 0}`}
+                          strong
+                        />
+                        <Badge
+                          text={`craftable: ${discoveryEnrichmentResult.counts?.craftable_signals ?? 0}`}
+                        />
+                        <Badge
+                          text={`candidates: ${discoveryEnrichmentResult.counts?.candidates ?? discoveryEnrichmentResult.candidates?.length ?? 0}`}
+                          strong
+                        />
+                        <Badge
+                          text={`active preview: ${discoveryEnrichmentResult.counts?.auto_add_active_preview ?? 0}`}
+                          strong
+                        />
+                        <Badge
+                          text={`reserve preview: ${discoveryEnrichmentResult.counts?.auto_add_reserve_preview ?? 0}`}
+                        />
+                        <Badge
+                          text={`queue preview: ${discoveryEnrichmentResult.counts?.editorial_suggestion_preview ?? 0}`}
+                        />
+                        <Badge
+                          text={`reject preview: ${discoveryEnrichmentResult.counts?.auto_reject_preview ?? 0}`}
+                        />
+                        <Badge
+                          text={
+                            discoveryEnrichmentResult.changed_database === false
+                              ? "DB: no writes"
+                              : "DB: unknown"
+                          }
+                        />
+                      </div>
+
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
+                        <MiniSourceChip
+                          text={`Signal: ${discoveryEnrichmentResult.providers?.signal_model ?? "—"}`}
+                        />
+                        <MiniSourceChip
+                          text={`Craft: ${discoveryEnrichmentResult.providers?.crafter_model ?? "—"}`}
+                        />
+                        <MiniSourceChip
+                          text={`Evaluator: ${discoveryEnrichmentResult.providers?.evaluator_model ?? "—"}`}
+                        />
+                        <MiniSourceChip text={`sources: ${discoveryEnrichmentResult.source_count ?? 0}`} />
+                        <MiniSourceChip text={`notes: ${discoveryEnrichmentResult.note_count ?? 0}`} />
+                        <MiniSourceChip text={`cards: ${discoveryEnrichmentResult.existing_card_count ?? 0}`} />
+                      </div>
+
+                      {discoveryEnrichmentResult.overall_assessment ? (
+                        <p
+                          style={{
+                            margin: "10px 0 0",
+                            color: TEXT,
+                            fontSize: 13,
+                            lineHeight: 1.55,
+                          }}
+                        >
+                          {discoveryEnrichmentResult.overall_assessment}
+                        </p>
+                      ) : null}
+                    </div>
+
+                    {discoveryEnrichmentResult.decisions && discoveryEnrichmentResult.decisions.length > 0 ? (
+                      <div style={{ display: "grid", gap: 9 }}>
+                        {discoveryEnrichmentResult.decisions.map((decision, index) => (
+                          <div
+                            key={`${decision.candidate.title}-${index}`}
+                            style={{
+                              border: `1px solid ${LINE_SOFT}`,
+                              borderRadius: 14,
+                              background:
+                                decision.preview_action === "editorial_suggestion_preview"
+                                  ? SLATE_SOFT_2
+                                  : decision.preview_action === "auto_reject_preview"
+                                    ? ERROR_BG
+                                    : CARD,
+                              padding: 11,
+                            }}
+                          >
+                            <div
+                              style={{
+                                display: "flex",
+                                justifyContent: "space-between",
+                                gap: 10,
+                                alignItems: "flex-start",
+                                marginBottom: 7,
+                              }}
+                            >
+                              <div
+                                style={{
+                                  fontSize: 13.5,
+                                  fontWeight: 950,
+                                  color: INK,
+                                  lineHeight: 1.32,
+                                }}
+                              >
+                                {index + 1}. {decision.candidate.title}
+                              </div>
+
+                              <span
+                                style={{
+                                  minWidth: 38,
+                                  height: 34,
+                                  borderRadius: 999,
+                                  background: getEnrichmentActionBackground(decision.preview_action),
+                                  color: "#fff",
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  fontSize: 13,
+                                  fontWeight: 900,
+                                  flexShrink: 0,
+                                }}
+                              >
+                                {decision.evaluation.score_total ?? decision.candidate.estimated_score ?? "—"}
+                              </span>
+                            </div>
+
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+                              <Badge text={readableEnrichmentPreviewAction(decision.preview_action)} strong />
+                              <Badge
+                                text={readableEnrichmentRecommendedAction(
+                                  decision.evaluation.recommended_action,
+                                )}
+                              />
+                              <Badge
+                                text={readableAngleRelationship(decision.evaluation.angle_relationship) ?? "угол: —"}
+                              />
+                              <Badge text={readableRiskLevel(decision.evaluation.risk_level)} />
+                              <Badge text={readableSignalCertainty(decision.candidate.certainty)} />
+                              {decision.evaluation.matched_card_id ? (
+                                <Badge text={`matched: ${decision.evaluation.matched_card_id.slice(0, 8)}`} />
+                              ) : null}
+                              {decision.candidate.source_signal_titles?.length ? (
+                                <Badge text={`signals: ${decision.candidate.source_signal_titles.length}`} />
+                              ) : null}
+                            </div>
+
+                            {decision.candidate.anchor ? (
+                              <p
+                                style={{
+                                  margin: "0 0 7px",
+                                  color: WARM_ACCENT,
+                                  fontSize: 12,
+                                  lineHeight: 1.45,
+                                  fontStyle: "italic",
+                                }}
+                              >
+                                “{decision.candidate.anchor}”
+                              </p>
+                            ) : null}
+
+                            <p
+                              style={{
+                                margin: "0 0 7px",
+                                color: TEXT,
+                                fontSize: 12.5,
+                                lineHeight: 1.55,
+                              }}
+                            >
+                              {decision.candidate.teaser}
+                            </p>
+
+                            {decision.candidate.why_it_matters ? (
+                              <p
+                                style={{
+                                  margin: "0 0 7px",
+                                  color: MUTED,
+                                  fontSize: 12,
+                                  lineHeight: 1.5,
+                                }}
+                              >
+                                <strong style={{ color: SLATE_DARK }}>Почему важно: </strong>
+                                {decision.candidate.why_it_matters}
+                              </p>
+                            ) : null}
+
+                            {decision.candidate.strength_reason ? (
+                              <p
+                                style={{
+                                  margin: "0 0 7px",
+                                  color: MUTED,
+                                  fontSize: 12,
+                                  lineHeight: 1.45,
+                                }}
+                              >
+                                <strong style={{ color: SLATE_DARK }}>Почему кандидат сильный: </strong>
+                                {decision.candidate.strength_reason}
+                              </p>
+                            ) : null}
+
+                            <p
+                              style={{
+                                margin: "0 0 7px",
+                                color: MUTED,
+                                fontSize: 12,
+                                lineHeight: 1.45,
+                              }}
+                            >
+                              <strong style={{ color: SLATE_DARK }}>Evaluator: </strong>
+                              {decision.evaluation.reason ?? "Причина не указана."}
+                            </p>
+
+                            {decision.evaluation.risk_note || decision.candidate.risk ? (
+                              <p
+                                style={{
+                                  margin: "0 0 7px",
+                                  color: WARNING_TEXT,
+                                  fontSize: 12,
+                                  lineHeight: 1.45,
+                                }}
+                              >
+                                <strong>Риск: </strong>
+                                {decision.evaluation.risk_note ?? decision.candidate.risk}
+                              </p>
+                            ) : null}
+
+                            {decision.evaluation.duplicate_note ? (
+                              <p
+                                style={{
+                                  margin: "0 0 7px",
+                                  color: MUTED_2,
+                                  fontSize: 12,
+                                  lineHeight: 1.45,
+                                }}
+                              >
+                                <strong>Дубль / близость: </strong>
+                                {decision.evaluation.duplicate_note}
+                              </p>
+                            ) : null}
+
+                            {decision.candidate.source_signal_titles?.length ? (
+                              <details>
+                                <summary
+                                  style={{
+                                    cursor: "pointer",
+                                    color: SLATE_DARK,
+                                    fontSize: 12,
+                                    fontWeight: 900,
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: 7,
+                                  }}
+                                >
+                                  <span style={{ fontSize: 11 }}>▼</span>
+                                  Source signals: {decision.candidate.source_signal_titles.length}
+                                </summary>
+                                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+                                  {decision.candidate.source_signal_titles.map((title) => (
+                                    <MiniSourceChip key={title} text={title} />
+                                  ))}
+                                </div>
+                              </details>
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <EmptyBox text="Discovery Enrichment не создал кандидатов из текущих сигналов." />
                     )}
                   </div>
                 ) : null}
