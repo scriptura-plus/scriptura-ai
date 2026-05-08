@@ -474,7 +474,19 @@ type DiscoveryEnrichmentDecision = {
     | "editorial_suggestion_preview"
     | "auto_reject_preview"
     | string;
-  would_write_to_database: false;
+  would_write_to_database: boolean;
+  applied_action?:
+    | "inserted_active"
+    | "inserted_reserve"
+    | "inserted_editorial_suggestion"
+    | "rejected_logged"
+    | "skipped"
+    | "failed"
+    | string
+    | null;
+  inserted_card_id?: string | null;
+  inserted_suggestion_id?: string | null;
+  apply_error?: string | null;
 };
 
 type DiscoveryEnrichmentResponse = {
@@ -509,6 +521,11 @@ type DiscoveryEnrichmentResponse = {
     auto_add_reserve_preview?: number;
     editorial_suggestion_preview?: number;
     auto_reject_preview?: number;
+    inserted_active?: number;
+    inserted_reserve?: number;
+    inserted_editorial_suggestion?: number;
+    rejected_logged?: number;
+    failed?: number;
   };
   signals?: DiscoverySignal[];
   empty_reason?: string | null;
@@ -2500,6 +2517,67 @@ export default function StudioPage() {
         error instanceof Error
           ? error.message
           : "Не удалось запустить Discovery Enrichment preview.",
+      );
+      setNotice("");
+    } finally {
+      setRunningDiscoveryEnrichment(false);
+    }
+  }
+
+  async function applyDiscoveryEnrichment() {
+    if (!selectedVerse) {
+      setCardsError("Сначала выбери стих.");
+      return;
+    }
+
+    if (!adminSecret.trim()) {
+      setCardsError("Вставь Admin Secret.");
+      return;
+    }
+
+    setDiscoveryEnrichmentError("");
+    setRunningDiscoveryEnrichment(true);
+    setNotice("Discovery Enrichment применяет безопасные решения: active / reserve / queue / reject log...");
+
+    try {
+      const response = await fetch("/api/admin/studio/run-discovery-enrichment", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-secret": adminSecret,
+        },
+        body: JSON.stringify({
+          reference: selectedVerse.reference,
+          canonical_ref: selectedVerse.canonical_ref,
+          lang,
+          verseText: discoverySignalVerseText.trim() || undefined,
+          material_selection_mode: "recent",
+          maxSources: 10,
+          maxNotes: 18,
+          maxSignals: 8,
+          maxCandidates: 5,
+          include_raw: false,
+          apply: true,
+        }),
+      });
+
+      const data = (await response.json()) as DiscoveryEnrichmentResponse;
+
+      if (!response.ok || data.ok === false) {
+        throw new Error(data.error || "Не удалось применить Discovery Enrichment.");
+      }
+
+      await loadCards(selectedVerse, adminSecret);
+      await loadRecentVerses(days, adminSecret);
+      setDiscoveryEnrichmentResult(data);
+      setNotice(
+        `Discovery Enrichment применён: active — ${data.counts?.inserted_active ?? 0}, reserve — ${data.counts?.inserted_reserve ?? 0}, queue — ${data.counts?.inserted_editorial_suggestion ?? 0}, reject log — ${data.counts?.rejected_logged ?? 0}.`,
+      );
+    } catch (error) {
+      setDiscoveryEnrichmentError(
+        error instanceof Error
+          ? error.message
+          : "Не удалось применить Discovery Enrichment.",
       );
       setNotice("");
     } finally {
@@ -4887,6 +4965,17 @@ export default function StudioPage() {
                       : "Запустить enrichment preview"}
                   </button>
 
+                  <button
+                    type="button"
+                    disabled={runningDiscoveryEnrichment || loadingCards}
+                    onClick={() => applyDiscoveryEnrichment()}
+                    style={getApplyButtonStyle(runningDiscoveryEnrichment || loadingCards)}
+                  >
+                    {runningDiscoveryEnrichment
+                      ? "Работаю..."
+                      : "Применить enrichment"}
+                  </button>
+
                   {discoveryEnrichmentResult ? (
                     <button
                       type="button"
@@ -4942,11 +5031,28 @@ export default function StudioPage() {
                         <Badge
                           text={`reject preview: ${discoveryEnrichmentResult.counts?.auto_reject_preview ?? 0}`}
                         />
+                        {discoveryEnrichmentResult.changed_database ? (
+                          <>
+                            <Badge
+                              text={`inserted active: ${discoveryEnrichmentResult.counts?.inserted_active ?? 0}`}
+                              strong
+                            />
+                            <Badge
+                              text={`inserted reserve: ${discoveryEnrichmentResult.counts?.inserted_reserve ?? 0}`}
+                            />
+                            <Badge
+                              text={`queue created: ${discoveryEnrichmentResult.counts?.inserted_editorial_suggestion ?? 0}`}
+                            />
+                            <Badge
+                              text={`reject logged: ${discoveryEnrichmentResult.counts?.rejected_logged ?? 0}`}
+                            />
+                          </>
+                        ) : null}
                         <Badge
                           text={
-                            discoveryEnrichmentResult.changed_database === false
-                              ? "DB: no writes"
-                              : "DB: unknown"
+                            discoveryEnrichmentResult.changed_database
+                              ? "DB: applied"
+                              : "DB: no writes"
                           }
                         />
                       </div>
@@ -5038,6 +5144,15 @@ export default function StudioPage() {
 
                             <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
                               <Badge text={readableEnrichmentPreviewAction(decision.preview_action)} strong />
+                              {decision.applied_action ? (
+                                <Badge text={`applied: ${decision.applied_action}`} strong />
+                              ) : null}
+                              {decision.inserted_card_id ? (
+                                <Badge text={`card: ${decision.inserted_card_id.slice(0, 8)}`} />
+                              ) : null}
+                              {decision.inserted_suggestion_id ? (
+                                <Badge text={`queue: ${decision.inserted_suggestion_id.slice(0, 8)}`} />
+                              ) : null}
                               <Badge
                                 text={readableEnrichmentRecommendedAction(
                                   decision.evaluation.recommended_action,
@@ -5132,6 +5247,20 @@ export default function StudioPage() {
                               >
                                 <strong>Риск: </strong>
                                 {decision.evaluation.risk_note ?? decision.candidate.risk}
+                              </p>
+                            ) : null}
+
+                            {decision.apply_error ? (
+                              <p
+                                style={{
+                                  margin: "0 0 7px",
+                                  color: ERROR_TEXT,
+                                  fontSize: 12,
+                                  lineHeight: 1.45,
+                                }}
+                              >
+                                <strong>Apply error: </strong>
+                                {decision.apply_error}
                               </p>
                             ) : null}
 
