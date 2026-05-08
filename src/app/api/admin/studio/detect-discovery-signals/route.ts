@@ -3,10 +3,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { runAI } from "@/lib/ai/runAI";
 import { isProvider, type Provider } from "@/lib/ai/providers";
 import { normalizeReference } from "@/lib/bible/normalizeReference";
-import {
-  getAngleCards,
-  type AngleCardRow,
-} from "@/lib/cache/angleCards";
+import { getAngleCards, type AngleCardRow } from "@/lib/cache/angleCards";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -91,7 +88,9 @@ function isLang(value: unknown): value is Lang {
   return value === "ru" || value === "en" || value === "es";
 }
 
-function isMaterialSelectionMode(value: unknown): value is MaterialSelectionMode {
+function isMaterialSelectionMode(
+  value: unknown,
+): value is MaterialSelectionMode {
   return (
     value === "recent" ||
     value === "all" ||
@@ -155,7 +154,12 @@ function getSupabaseAdmin(): SupabaseClient | null {
   });
 }
 
-function clampInt(value: unknown, fallback: number, min: number, max: number): number {
+function clampInt(
+  value: unknown,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
   const raw = getNumber(value);
   if (raw === null) return fallback;
   return Math.max(min, Math.min(max, Math.round(raw)));
@@ -192,11 +196,11 @@ function lightlyRepairJsonSyntax(text: string): string {
   // inside quoted strings is not affected.
   repaired = repaired
     .replace(/}\s*\n\s*{/g, "},\n{")
-    .replace(/}\s*\n\s*"/g, "},\n\"")
-    .replace(/]\s*\n\s*"/g, "],\n\"")
-    .replace(/"\s*\n\s*"(?=[A-Za-z_А-Яа-яёЁ-]+"\s*:)/g, "\",\n\"")
-    .replace(/(true|false|null)\s*\n\s*"/g, "$1,\n\"")
-    .replace(/(-?\d+(?:\.\d+)?)\s*\n\s*"/g, "$1,\n\"")
+    .replace(/}\s*\n\s*"/g, '},\n"')
+    .replace(/]\s*\n\s*"/g, '],\n"')
+    .replace(/"\s*\n\s*"(?=[A-Za-z_А-Яа-яёЁ-]+"\s*:)/g, '",\n"')
+    .replace(/(true|false|null)\s*\n\s*"/g, '$1,\n"')
+    .replace(/(-?\d+(?:\.\d+)?)\s*\n\s*"/g, '$1,\n"')
     .replace(/,\s*([}\]])/g, "$1");
 
   return repaired;
@@ -218,7 +222,10 @@ function extractJsonObject(text: string): unknown {
   }
 }
 
-function extractJsonStringField(text: string, fieldName: string): string | null {
+function extractJsonStringField(
+  text: string,
+  fieldName: string,
+): string | null {
   const pattern = new RegExp(`"${fieldName}"\\s*:\\s*"`, "g");
   const match = pattern.exec(text);
   if (!match) return null;
@@ -255,7 +262,10 @@ function extractJsonStringField(text: string, fieldName: string): string | null 
   return null;
 }
 
-function extractJsonNullableStringField(text: string, fieldName: string): string | null {
+function extractJsonNullableStringField(
+  text: string,
+  fieldName: string,
+): string | null {
   const nullPattern = new RegExp(`"${fieldName}"\\s*:\\s*null`);
   if (nullPattern.test(text)) return null;
   return extractJsonStringField(text, fieldName);
@@ -394,7 +404,11 @@ function stringifyPreview(value: unknown, max = 900): string | null {
   }
 }
 
-function firstText(row: Record<string, unknown>, keys: string[], max = 1100): string | null {
+function firstText(
+  row: Record<string, unknown>,
+  keys: string[],
+  max = 1100,
+): string | null {
   for (const key of keys) {
     const value = row[key];
     const text = stringifyPreview(value, max);
@@ -405,7 +419,8 @@ function firstText(row: Record<string, unknown>, keys: string[], max = 1100): st
 }
 
 function normalizeEvidenceLevel(value: unknown): EvidenceLevel {
-  if (value === "strong" || value === "medium" || value === "weak") return value;
+  if (value === "strong" || value === "medium" || value === "weak")
+    return value;
   return "unknown";
 }
 
@@ -491,7 +506,10 @@ function normalizeSourceRefs(value: unknown): SourceRef[] {
   return refs;
 }
 
-function normalizeSignal(value: unknown, index: number): DiscoverySignal | null {
+function normalizeSignal(
+  value: unknown,
+  index: number,
+): DiscoverySignal | null {
   if (!isRecord(value)) return null;
 
   const title = getString(value.title ?? value["заголовок"]);
@@ -507,16 +525,23 @@ function normalizeSignal(value: unknown, index: number): DiscoverySignal | null 
 
   return {
     signal_type:
-      getString(value.signal_type ?? value.type ?? value["тип"]) ?? `signal_${index + 1}`,
+      getString(value.signal_type ?? value.type ?? value["тип"]) ??
+      `signal_${index + 1}`,
     title,
     observation,
     textual_anchor:
-      getString(value.textual_anchor ?? value.anchor ?? value["текстовая_опора"]) ?? null,
+      getString(
+        value.textual_anchor ?? value.anchor ?? value["текстовая_опора"],
+      ) ?? null,
     why_it_may_matter: why,
-    evidence_level: normalizeEvidenceLevel(value.evidence_level ?? value["уровень_опоры"]),
+    evidence_level: normalizeEvidenceLevel(
+      value.evidence_level ?? value["уровень_опоры"],
+    ),
     risk_level: normalizeRiskLevel(value.risk_level ?? value["уровень_риска"]),
     certainty: normalizeCertainty(value.certainty ?? value["уверенность"]),
-    novelty_status: normalizeNoveltyStatus(value.novelty_status ?? value["новизна"]),
+    novelty_status: normalizeNoveltyStatus(
+      value.novelty_status ?? value["новизна"],
+    ),
     already_covered_by_card_ids: normalizeStringArray(
       value.already_covered_by_card_ids ?? value.covered_by_card_ids,
     ),
@@ -528,7 +553,8 @@ function normalizeSignal(value: unknown, index: number): DiscoverySignal | null 
       value.suggested_next_use ?? value.next_use,
     ),
     reasoning_note:
-      getString(value.reasoning_note ?? value.reason ?? value["пояснение"]) ?? null,
+      getString(value.reasoning_note ?? value.reason ?? value["пояснение"]) ??
+      null,
   };
 }
 
@@ -571,7 +597,10 @@ async function readResearchRows(args: {
   if (args.mode === "manual_only") return { rows: [], error: null };
 
   try {
-    let query = args.supabase.from(args.table).select("*").eq("lang", args.lang);
+    let query = args.supabase
+      .from(args.table)
+      .select("*")
+      .eq("lang", args.lang);
 
     if (args.mode === "selected_sources" && args.selectedIds.length > 0) {
       query = query.in("id", args.selectedIds);
@@ -601,7 +630,11 @@ async function readResearchRows(args: {
 
     const rows = Array.isArray(data) ? (data as Record<string, unknown>[]) : [];
 
-    if (rows.length > 0 || !args.canonical_ref || args.mode === "selected_sources") {
+    if (
+      rows.length > 0 ||
+      !args.canonical_ref ||
+      args.mode === "selected_sources"
+    ) {
       return { rows, error: null };
     }
 
@@ -629,9 +662,7 @@ async function readResearchRows(args: {
     return {
       rows: [],
       error:
-        error instanceof Error
-          ? error.message
-          : `Failed to read ${args.table}`,
+        error instanceof Error ? error.message : `Failed to read ${args.table}`,
     };
   }
 }
@@ -655,15 +686,22 @@ function formatCardForPrompt(card: AngleCardRow, index: number): string {
     `title: ${card.title}`,
     card.anchor ? `anchor: ${card.anchor}` : null,
     `teaser: ${truncate(card.teaser, 650)}`,
-    card.why_it_matters ? `why_it_matters: ${truncate(card.why_it_matters, 420)}` : null,
-    card.angle_summary ? `angle_summary: ${truncate(card.angle_summary, 360)}` : null,
+    card.why_it_matters
+      ? `why_it_matters: ${truncate(card.why_it_matters, 420)}`
+      : null,
+    card.angle_summary
+      ? `angle_summary: ${truncate(card.angle_summary, 360)}`
+      : null,
     card.coverage_type ? `coverage_type: ${card.coverage_type}` : null,
   ].filter(Boolean);
 
   return parts.join("\n");
 }
 
-function formatResearchSource(row: Record<string, unknown>, index: number): string {
+function formatResearchSource(
+  row: Record<string, unknown>,
+  index: number,
+): string {
   const id = getString(row.id) ?? `source_${index + 1}`;
   const title = getString(row.title) ?? "Untitled source";
   const kind = getString(row.source_kind) ?? "unknown";
@@ -697,9 +735,13 @@ function formatResearchSource(row: Record<string, unknown>, index: number): stri
     .join("\n");
 }
 
-function formatResearchNote(row: Record<string, unknown>, index: number): string {
+function formatResearchNote(
+  row: Record<string, unknown>,
+  index: number,
+): string {
   const id = getString(row.id) ?? `note_${index + 1}`;
-  const title = getString(row.title) ?? getString(row.kicker) ?? "Untitled note";
+  const title =
+    getString(row.title) ?? getString(row.kicker) ?? "Untitled note";
   const noteKind = getString(row.note_kind) ?? "unknown";
   const lens = getString(row.lens_id);
   const candidateStatus = getString(row.candidate_status);
@@ -794,19 +836,27 @@ You are Scriptura AI's Discovery Signal Detector.
 
 Your task is NOT to write cards.
 Your task is NOT to write public commentary.
+Your task is NOT to behave like Word Lens.
 Your task is to map research signals that may later become cards, reserve ideas, editorial suggestions, or research-only notes.
 
+CORE DISTINCTION:
+Auto Curator asks: "What cards can be made from this material?"
+Discovery Signals asks: "What clues, tensions, absences, structures, risks, and possible leads exist here, even if they are not cards yet?"
+
 A discovery signal is a precise research lead:
-- a textual surprise,
-- a lexical or structural detail,
+- a structure or sequence that changes the logic of the verse,
+- a rhetorical pressure point,
+- a paradox or expectation reversal,
 - a meaningful absence,
+- an agency shift,
+- a contextual tension,
 - a translation tension,
 - an intertextual echo,
-- an agency/logic shift,
-- a rhetoric/argument move,
+- a lexical detail,
+- a risk warning,
 - or a risky but interesting hypothesis.
 
-Important product philosophy:
+IMPORTANT PRODUCT PHILOSOPHY:
 Scriptura AI is an editorial-research product. It may preserve hypotheses and tentative lines of thought, but it must label them clearly.
 Do not kill every risky idea. Instead classify it:
 - firm: directly visible in the text and low risk.
@@ -817,6 +867,34 @@ Do not kill every risky idea. Instead classify it:
 Never present hypotheses as facts.
 Never overclaim original-language, intertextual, historical, or rabbinic background.
 Do not create cards here.
+
+CRITICAL PORTFOLIO RULE — DO NOT MAKE A SECOND WORD LENS:
+The first technical test showed a failure mode: the detector can over-focus on Greek forms, lexical claims, or rabbinic background.
+Avoid that.
+This signal pass must be broad.
+
+Before producing output, silently scan the verse in this order:
+1. STRUCTURE / SEQUENCE — how the clauses are arranged; what comes before/after what.
+2. RHETORIC / PARADOX — where the wording reverses expectation or creates tension.
+3. AGENCY / LOGIC — who acts, receives, initiates, finds, gives, bears, learns, or responds.
+4. MEANINGFUL ABSENCE / COVERAGE GAP — what the verse does not say that a reader might expect.
+5. CONTEXT TENSION — how the previous/next verse changes the target verse.
+6. TRANSLATION / RENDERING — where wording choices change perception.
+7. LEXICAL / ORIGINAL LANGUAGE — only after the above, and only when the word-level detail is truly useful.
+8. INTERTEXTUAL / HISTORICAL BACKGROUND — only if it creates a real research lead, not decoration.
+
+Required portfolio target:
+- Return ${Math.min(args.maxSignals, 8)} to ${args.maxSignals} signals if the material supports it.
+- Include at least 1 structure signal if any structure is visible.
+- Include at least 1 rhetorical/paradox signal if any tension is visible.
+- Include at least 1 agency/logic signal if agent roles differ or shift.
+- Include at least 1 meaningful absence or coverage_gap signal if the verse omits an expected explanation, subject, reason, or content.
+- Include at least 1 context_tension signal if nearby context is available from the verse, cards, or materials.
+- Include no more than 2 lexical/original-language signals unless the verse genuinely has no other signal types.
+- Include no more than 1 rabbinic/historical-background signal unless the evidence is unusually strong.
+
+If a lexical signal is interesting but would mostly belong to Word Lens, mark it as research_only or reserve_only unless it also changes the larger reading of the verse.
+If a rabbinic, historical, or intertextual signal is interesting but not verified, keep it as hypothesis or research_only.
 
 VERSE:
 reference: ${args.reference}
@@ -843,22 +921,58 @@ ${notesBlock}
 MANUAL MATERIAL:
 ${formatManualMaterial(args.manualMaterial)}
 
+WHAT TO LOOK FOR:
+1. Structure / sequence:
+   Does the verse move through steps? command → reason → result? question → answer? image → explanation? promise → condition?
+
+2. Rhetoric / paradox:
+   Does the verse sound like one thing but function as another? Does comfort come through pressure, rest through burden, command through invitation, or relief through obligation?
+
+3. Agency / logic:
+   Who is the subject of each action? Does agency shift between nearby clauses or nearby verses? Does one person give while another finds, receives, bears, learns, or responds?
+
+4. Meaningful absence:
+   What would the reader expect the verse to explain, but it does not? Is there missing content, missing mechanism, missing reason, missing subject, missing condition, or missing emotional reaction?
+
+5. Context tension:
+   If nearby context is visible or already known from the materials, does the target verse explain, modify, sharpen, condition, or complete the surrounding thought?
+
+6. Translation / rendering:
+   Does a familiar translation flatten a key image, object, agency, or target of the promise? Keep this as a signal, not as a translation-card.
+
+7. Lexical / original-language:
+   Only include a word-level signal when it affects the whole reading. Do not fill the output with Greek/Hebrew vocabulary. Do not use original-language forms for decoration.
+
+8. Intertextual / historical / rabbinic:
+   Preserve promising leads, but classify them honestly as cautious/hypothesis/research_only unless the evidence is strong.
+
 Instructions:
 1. Find up to ${args.maxSignals} strong discovery signals.
-2. Prefer signals that can make the verse feel newly seen to a serious Bible reader.
-3. Compare every signal with existing active/reserve cards:
+2. Prefer non-lexical signals first: structure, rhetoric, paradox, agency, meaningful absence, context, translation.
+3. Prefer signals that can make the verse feel newly seen to a serious Bible reader.
+4. Compare every signal with existing active/reserve cards:
    - mark "covered" or "partially_covered" when it overlaps.
    - include already_covered_by_card_ids when possible.
-4. Compare every signal with rejected/hidden cards:
+   - if an existing card already covers the signal, the signal may still be useful as "covered" or "partially_covered" for audit, but do not call it new.
+5. Compare every signal with rejected/hidden cards:
    - if a signal repeats a rejected idea, either avoid it or mark rejected_related_card_ids.
-5. Keep useful risky signals, but label risk and certainty honestly.
-6. Include signals that should become:
+6. Keep useful risky signals, but label risk and certainty honestly.
+7. Include signals that should become:
    - craft_candidate,
    - reserve_only,
    - editorial_suggestion,
    - research_only,
    - or ignore.
-7. If no new signals are found, return signals: [] and explain empty_reason. This is a useful result, not an error.
+8. If no new signals are found, return no signal blocks and explain EMPTY_REASON. This is useful, not an error.
+
+QUALITY CHECK BEFORE OUTPUT:
+Ask yourself:
+- Did I produce a portfolio, or did I drift into Word Lens?
+- Are there at least three non-lexical signals?
+- Did I include structure/rhetoric/agency/absence when available?
+- Did I mark existing-card overlap honestly?
+- Did I preserve hypotheses without pretending they are facts?
+- Did I avoid overconfident claims about Greek, Hebrew, rabbinic background, or intertextual echoes?
 
 Return ONLY this plain text block format.
 Do NOT return JSON.
@@ -868,7 +982,7 @@ Use exactly these labels.
 For SOURCE_REFS, use one or more lines in this format:
 source_type | id-or-null | title-or-null | excerpt
 
-OVERALL_ASSESSMENT: brief assessment of the verse's discovery potential and the main risks
+OVERALL_ASSESSMENT: brief assessment of the verse's discovery potential, portfolio balance, and the main risks
 EMPTY_REASON: null
 
 ---SIGNAL---
@@ -883,7 +997,7 @@ CERTAINTY: firm | cautious | hypothesis | research_only
 NOVELTY_STATUS: new | partially_covered | covered | duplicate | unclear
 ALREADY_COVERED_BY_CARD_IDS: comma-separated ids or empty
 REJECTED_RELATED_CARD_IDS: comma-separated ids or empty
-SOURCE_REFS: verse_text | null | Matthew 11:29 | short excerpt
+SOURCE_REFS: verse_text | null | ${args.reference} | short excerpt
 SUGGESTED_NEXT_USE: craft_candidate | reserve_only | editorial_suggestion | research_only | ignore
 REASONING_NOTE: short explanation of why it is classified this way
 ---END_SIGNAL---
@@ -892,11 +1006,16 @@ Repeat ---SIGNAL--- blocks for each signal.
 `.trim();
 }
 
-
 function cleanLabeledValue(value: string | null | undefined): string | null {
   if (!value) return null;
   const cleaned = value.trim();
-  if (!cleaned || cleaned.toLowerCase() === "null" || cleaned === "—" || cleaned === "-") return null;
+  if (
+    !cleaned ||
+    cleaned.toLowerCase() === "null" ||
+    cleaned === "—" ||
+    cleaned === "-"
+  )
+    return null;
   return cleaned;
 }
 
@@ -925,7 +1044,8 @@ function parseSourceRefsText(value: string | null | undefined): SourceRef[] {
         return {
           source_type: parts[0] || "unknown",
           id: parts[1] && parts[1].toLowerCase() !== "null" ? parts[1] : null,
-          title: parts[2] && parts[2].toLowerCase() !== "null" ? parts[2] : null,
+          title:
+            parts[2] && parts[2].toLowerCase() !== "null" ? parts[2] : null,
           excerpt: parts.slice(3).join(" | ") || null,
         } satisfies SourceRef;
       }
@@ -939,7 +1059,10 @@ function parseSourceRefsText(value: string | null | undefined): SourceRef[] {
     });
 }
 
-function parseSignalBlock(block: string, index: number): DiscoverySignal | null {
+function parseSignalBlock(
+  block: string,
+  index: number,
+): DiscoverySignal | null {
   const labels = new Set([
     "SIGNAL_TYPE",
     "TITLE",
@@ -987,14 +1110,22 @@ function parseSignalBlock(block: string, index: number): DiscoverySignal | null 
     observation,
     textual_anchor: cleanLabeledValue(fields.TEXTUAL_ANCHOR),
     why_it_may_matter: why,
-    evidence_level: normalizeEvidenceLevel(cleanLabeledValue(fields.EVIDENCE_LEVEL)),
+    evidence_level: normalizeEvidenceLevel(
+      cleanLabeledValue(fields.EVIDENCE_LEVEL),
+    ),
     risk_level: normalizeRiskLevel(cleanLabeledValue(fields.RISK_LEVEL)),
     certainty: normalizeCertainty(cleanLabeledValue(fields.CERTAINTY)),
-    novelty_status: normalizeNoveltyStatus(cleanLabeledValue(fields.NOVELTY_STATUS)),
-    already_covered_by_card_ids: parseCommaList(fields.ALREADY_COVERED_BY_CARD_IDS),
+    novelty_status: normalizeNoveltyStatus(
+      cleanLabeledValue(fields.NOVELTY_STATUS),
+    ),
+    already_covered_by_card_ids: parseCommaList(
+      fields.ALREADY_COVERED_BY_CARD_IDS,
+    ),
     rejected_related_card_ids: parseCommaList(fields.REJECTED_RELATED_CARD_IDS),
     source_refs: parseSourceRefsText(fields.SOURCE_REFS),
-    suggested_next_use: normalizeSuggestedNextUse(cleanLabeledValue(fields.SUGGESTED_NEXT_USE)),
+    suggested_next_use: normalizeSuggestedNextUse(
+      cleanLabeledValue(fields.SUGGESTED_NEXT_USE),
+    ),
     reasoning_note: cleanLabeledValue(fields.REASONING_NOTE),
   };
 }
@@ -1006,9 +1137,17 @@ function parseLabeledSignalResponse(raw: string): {
   parsed_from_labeled_blocks: boolean;
 } {
   const text = stripCodeFence(raw);
-  const overallMatch = /OVERALL_ASSESSMENT\s*:\s*([\s\S]*?)(?=\nEMPTY_REASON\s*:|\n---SIGNAL---|$)/i.exec(text);
-  const emptyMatch = /EMPTY_REASON\s*:\s*([\s\S]*?)(?=\nOVERALL_ASSESSMENT\s*:|\n---SIGNAL---|$)/i.exec(text);
-  const blocks = [...text.matchAll(/---SIGNAL---([\s\S]*?)---END_SIGNAL---/g)].map((match) => match[1]);
+  const overallMatch =
+    /OVERALL_ASSESSMENT\s*:\s*([\s\S]*?)(?=\nEMPTY_REASON\s*:|\n---SIGNAL---|$)/i.exec(
+      text,
+    );
+  const emptyMatch =
+    /EMPTY_REASON\s*:\s*([\s\S]*?)(?=\nOVERALL_ASSESSMENT\s*:|\n---SIGNAL---|$)/i.exec(
+      text,
+    );
+  const blocks = [
+    ...text.matchAll(/---SIGNAL---([\s\S]*?)---END_SIGNAL---/g),
+  ].map((match) => match[1]);
 
   const signals = blocks
     .map((block, index) => parseSignalBlock(block, index))
@@ -1043,7 +1182,9 @@ async function parseDiscoveryJsonWithRepair(args: {
     };
   } catch (firstError) {
     const firstMessage =
-      firstError instanceof Error ? firstError.message : "Initial JSON parse failed";
+      firstError instanceof Error
+        ? firstError.message
+        : "Initial JSON parse failed";
 
     const salvaged = salvageDiscoverySignalJson(args.raw);
     if (salvaged) {
@@ -1073,7 +1214,12 @@ Broken JSON response:
 ${args.raw}
 `.trim();
 
-    const repairedRaw = await runAI(args.provider, repairPrompt, args.lang, true);
+    const repairedRaw = await runAI(
+      args.provider,
+      repairPrompt,
+      args.lang,
+      true,
+    );
 
     try {
       return {
@@ -1094,7 +1240,9 @@ ${args.raw}
       }
 
       const secondMessage =
-        secondError instanceof Error ? secondError.message : "Repair JSON parse failed";
+        secondError instanceof Error
+          ? secondError.message
+          : "Repair JSON parse failed";
 
       throw new Error(
         `AI returned invalid JSON. Initial parse error: ${firstMessage}. Repair parse error: ${secondMessage}`,
@@ -1102,7 +1250,6 @@ ${args.raw}
     }
   }
 }
-
 
 async function loadExistingCards(args: {
   reference: string;
@@ -1144,18 +1291,32 @@ export async function POST(req: Request) {
     const provider = chooseSignalProvider(body);
     const normalizedFromBody = getString(body?.canonical_ref);
     const verseText = getString(body?.verseText ?? body?.verse_text);
-    const manualMaterial = getString(body?.manual_material ?? body?.manualMaterial);
+    const manualMaterial = getString(
+      body?.manual_material ?? body?.manualMaterial,
+    );
     const includeRaw = getBoolean(body?.include_raw) ?? false;
 
-    const materialSelectionMode = isMaterialSelectionMode(body?.material_selection_mode)
+    const materialSelectionMode = isMaterialSelectionMode(
+      body?.material_selection_mode,
+    )
       ? body.material_selection_mode
       : isMaterialSelectionMode(body?.materialSelectionMode)
         ? body.materialSelectionMode
         : "recent";
 
-    const maxSources = clampInt(body?.maxSources ?? body?.max_sources, 10, 0, 30);
+    const maxSources = clampInt(
+      body?.maxSources ?? body?.max_sources,
+      10,
+      0,
+      30,
+    );
     const maxNotes = clampInt(body?.maxNotes ?? body?.max_notes, 18, 0, 50);
-    const maxSignals = clampInt(body?.maxSignals ?? body?.max_signals, 10, 1, 16);
+    const maxSignals = clampInt(
+      body?.maxSignals ?? body?.max_signals,
+      10,
+      1,
+      16,
+    );
 
     const selectedSourceIds = Array.isArray(body?.selected_source_ids)
       ? normalizeStringArray(body.selected_source_ids)
@@ -1262,14 +1423,19 @@ export async function POST(req: Request) {
         research_sources: sourcesResult.error,
         research_notes: notesResult.error,
       },
-      output_format: labeledResponse.parsed_from_labeled_blocks ? "labeled_blocks" : "json",
+      output_format: labeledResponse.parsed_from_labeled_blocks
+        ? "labeled_blocks"
+        : "json",
       json_repaired: parseResult?.repaired ?? false,
       json_parse_error: parseResult?.parse_error ?? null,
       signals: normalizedResponse.signals,
       empty_reason: normalizedResponse.empty_reason,
       overall_assessment: normalizedResponse.overall_assessment,
       raw_response: includeRaw ? raw : undefined,
-      repaired_raw_response: includeRaw && parseResult?.repaired ? parseResult.repaired_raw : undefined,
+      repaired_raw_response:
+        includeRaw && parseResult?.repaired
+          ? parseResult.repaired_raw
+          : undefined,
     });
   } catch (error) {
     console.error("[DISCOVERY_SIGNALS] failed", error);
