@@ -171,20 +171,50 @@ function stripCodeFence(text: string): string {
     .trim();
 }
 
-function extractJsonObject(text: string): unknown {
+function extractJsonCandidate(text: string): string {
   const stripped = stripCodeFence(text);
+  const start = stripped.indexOf("{");
+  const end = stripped.lastIndexOf("}");
+
+  if (start !== -1 && end !== -1 && end > start) {
+    return stripped.slice(start, end + 1).trim();
+  }
+
+  return stripped;
+}
+
+function lightlyRepairJsonSyntax(text: string): string {
+  let repaired = extractJsonCandidate(text);
+
+  // Claude sometimes returns almost-valid JSON with one missing comma between
+  // adjacent array items or object properties. These replacements are intentionally
+  // conservative: they only act across real line breaks, so normal Russian prose
+  // inside quoted strings is not affected.
+  repaired = repaired
+    .replace(/}\s*\n\s*{/g, "},\n{")
+    .replace(/}\s*\n\s*"/g, "},\n\"")
+    .replace(/]\s*\n\s*"/g, "],\n\"")
+    .replace(/"\s*\n\s*"(?=[A-Za-z_А-Яа-яёЁ-]+"\s*:)/g, "\",\n\"")
+    .replace(/(true|false|null)\s*\n\s*"/g, "$1,\n\"")
+    .replace(/(-?\d+(?:\.\d+)?)\s*\n\s*"/g, "$1,\n\"")
+    .replace(/,\s*([}\]])/g, "$1");
+
+  return repaired;
+}
+
+function extractJsonObject(text: string): unknown {
+  const candidate = extractJsonCandidate(text);
 
   try {
-    return JSON.parse(stripped);
-  } catch {
-    const start = stripped.indexOf("{");
-    const end = stripped.lastIndexOf("}");
+    return JSON.parse(candidate);
+  } catch (firstError) {
+    const repaired = lightlyRepairJsonSyntax(candidate);
 
-    if (start !== -1 && end !== -1 && end > start) {
-      return JSON.parse(stripped.slice(start, end + 1));
+    try {
+      return JSON.parse(repaired);
+    } catch {
+      throw firstError;
     }
-
-    throw new Error("AI returned non-JSON response");
   }
 }
 
@@ -740,12 +770,9 @@ Do not add new signals.
 Do not remove meaningful fields unless they are impossible to repair.
 Do not translate or rewrite content.
 Do not add markdown fences.
-Return ONLY one valid JSON object with this shape:
-{
-  "signals": [],
-  "empty_reason": null,
-  "overall_assessment": ""
-}
+Return ONLY one valid JSON object. No markdown. No explanation.
+Use this top-level shape and preserve all meaningful signal content:
+{"signals":[],"empty_reason":null,"overall_assessment":""}
 
 Broken JSON response:
 ${args.raw}
