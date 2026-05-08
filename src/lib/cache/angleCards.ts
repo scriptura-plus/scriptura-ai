@@ -379,6 +379,169 @@ export async function getAngleCardsByCanonicalRef(args: {
   };
 }
 
+type StudioSummarySeed = {
+  reference: string;
+  book: string;
+  chapter: number;
+  verse: number;
+  lang: AngleCardLang;
+  canonical_ref: string | null;
+  book_key: string | null;
+  last_activity_at: string;
+};
+
+function getCardActivityAt(card: Pick<AngleCardRow, "created_at" | "updated_at">): string {
+  return card.updated_at || card.created_at;
+}
+
+function summarizeStudioVerseCards(args: {
+  seed: StudioSummarySeed;
+  cards: AngleCardRow[];
+}): StudioVerseSummary {
+  const sources = new Set<string>();
+  let bestScore: number | null = null;
+
+  const summary: StudioVerseSummary = {
+    reference: args.seed.reference,
+    book: args.seed.book,
+    chapter: args.seed.chapter,
+    verse: args.seed.verse,
+    lang: args.seed.lang,
+    canonical_ref: args.seed.canonical_ref,
+    book_key: args.seed.book_key,
+    total_count: args.cards.length,
+    featured_count: 0,
+    reserve_count: 0,
+    hidden_count: 0,
+    rejected_count: 0,
+    best_score: null,
+    sources: [],
+    last_activity_at: args.seed.last_activity_at,
+  };
+
+  for (const card of args.cards) {
+    if (card.status === "featured") summary.featured_count += 1;
+    if (card.status === "reserve") summary.reserve_count += 1;
+    if (card.status === "hidden") summary.hidden_count += 1;
+    if (card.status === "rejected") summary.rejected_count += 1;
+
+    if (card.canonical_ref && !summary.canonical_ref) {
+      summary.canonical_ref = card.canonical_ref;
+    }
+
+    if (card.book_key && !summary.book_key) {
+      summary.book_key = card.book_key;
+    }
+
+    if (typeof card.score_total === "number") {
+      const effectiveScore = getEffectiveScore(card);
+      if (bestScore === null || effectiveScore > bestScore) {
+        bestScore = effectiveScore;
+      }
+    }
+
+    const source =
+      card.source_model?.replace("article_extractor_v1:", "") ||
+      card.source_type ||
+      "unknown";
+
+    if (source) sources.add(source);
+
+    const activityAt = getCardActivityAt(card);
+    if (activityAt > summary.last_activity_at) {
+      summary.last_activity_at = activityAt;
+    }
+  }
+
+  summary.best_score = bestScore;
+  summary.sources = Array.from(sources);
+
+  return summary;
+}
+
+async function loadAllStudioCardsForSummary(args: {
+  reference: string;
+  canonical_ref: string | null;
+  lang: AngleCardLang;
+}): Promise<{
+  cards: AngleCardRow[];
+  error: string | null;
+}> {
+  const client = createAdminClient();
+
+  if (!client) {
+    return {
+      cards: [],
+      error: "Supabase admin client unavailable",
+    };
+  }
+
+  const statuses: AngleCardStatus[] = [
+    "featured",
+    "reserve",
+    "rewrite",
+    "hidden",
+    "rejected",
+  ];
+
+  let query = client
+    .from("angle_cards")
+    .select("*")
+    .eq("lang", args.lang)
+    .in("status", statuses)
+    .limit(1000);
+
+  if (args.canonical_ref) {
+    query = query.eq("canonical_ref", args.canonical_ref);
+  } else {
+    query = query.eq("reference", args.reference);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    return {
+      cards: [],
+      error: error.message,
+    };
+  }
+
+  const cards = ((data ?? []) as AngleCardRow[]).filter((card) => {
+    if (args.canonical_ref) {
+      return card.canonical_ref === args.canonical_ref;
+    }
+
+    return card.reference === args.reference;
+  });
+
+  if (cards.length > 0 || !args.canonical_ref) {
+    return {
+      cards,
+      error: null,
+    };
+  }
+
+  const fallback = await client
+    .from("angle_cards")
+    .select("*")
+    .eq("reference", args.reference)
+    .eq("lang", args.lang)
+    .in("status", statuses)
+    .limit(1000);
+
+  if (fallback.error) {
+    return {
+      cards,
+      error: fallback.error.message,
+    };
+  }
+
+  return {
+    cards: (fallback.data ?? []) as AngleCardRow[],
+    error: null,
+  };
+}
+
 export async function getStudioVerseSummaries(args: {
   lang: AngleCardLang;
   days?: number;
@@ -404,11 +567,11 @@ export async function getStudioVerseSummaries(args: {
   const { data, error } = await client
     .from("angle_cards")
     .select(
-      "reference, book, chapter, verse, lang, canonical_ref, book_key, status, score_total, moderator_boost, source_model, source_type, created_at, updated_at",
+      "reference, book, chapter, verse, lang, canonical_ref, book_key, created_at, updated_at",
     )
     .eq("lang", args.lang)
-    .gte("created_at", since)
-    .order("created_at", { ascending: false })
+    .gte("updated_at", since)
+    .order("updated_at", { ascending: false })
     .limit(500);
 
   if (error) {
@@ -419,7 +582,7 @@ export async function getStudioVerseSummaries(args: {
     };
   }
 
-  const grouped = new Map<string, StudioVerseSummary>();
+  const seeds = new Map<string, StudioSummarySeed>();
 
   for (const row of data ?? []) {
     const card = row as {
@@ -430,28 +593,17 @@ export async function getStudioVerseSummaries(args: {
       lang: AngleCardLang;
       canonical_ref: string | null;
       book_key: string | null;
-      status: AngleCardStatus;
-      score_total: number | null;
-      moderator_boost: number | null;
-      source_model: string | null;
-      source_type: string | null;
       created_at: string;
       updated_at: string;
     };
 
-    const effectiveScore = (card.score_total ?? 0) + (card.moderator_boost ?? 0);
-
     const groupKey = card.canonical_ref || card.reference;
     const key = `${card.lang}::${groupKey}`;
-    const existing = grouped.get(key);
-
-    const source =
-      card.source_model?.replace("article_extractor_v1:", "") ||
-      card.source_type ||
-      "unknown";
+    const activityAt = card.updated_at || card.created_at;
+    const existing = seeds.get(key);
 
     if (!existing) {
-      grouped.set(key, {
+      seeds.set(key, {
         reference: card.reference,
         book: card.book,
         chapter: card.chapter,
@@ -459,24 +611,10 @@ export async function getStudioVerseSummaries(args: {
         lang: card.lang,
         canonical_ref: card.canonical_ref,
         book_key: card.book_key,
-        total_count: 1,
-        featured_count: card.status === "featured" ? 1 : 0,
-        reserve_count: card.status === "reserve" ? 1 : 0,
-        hidden_count: card.status === "hidden" ? 1 : 0,
-        rejected_count: card.status === "rejected" ? 1 : 0,
-        best_score: typeof card.score_total === "number" ? effectiveScore : null,
-        sources: source ? [source] : [],
-        last_activity_at: card.created_at,
+        last_activity_at: activityAt,
       });
       continue;
     }
-
-    existing.total_count += 1;
-
-    if (card.status === "featured") existing.featured_count += 1;
-    if (card.status === "reserve") existing.reserve_count += 1;
-    if (card.status === "hidden") existing.hidden_count += 1;
-    if (card.status === "rejected") existing.rejected_count += 1;
 
     if (!existing.canonical_ref && card.canonical_ref) {
       existing.canonical_ref = card.canonical_ref;
@@ -486,29 +624,49 @@ export async function getStudioVerseSummaries(args: {
       existing.book_key = card.book_key;
     }
 
-    if (
-      typeof card.score_total === "number" &&
-      (existing.best_score === null || effectiveScore > existing.best_score)
-    ) {
-      existing.best_score = effectiveScore;
-    }
-
-    if (source && !existing.sources.includes(source)) {
-      existing.sources.push(source);
-    }
-
-    if (card.created_at > existing.last_activity_at) {
-      existing.last_activity_at = card.created_at;
+    if (activityAt > existing.last_activity_at) {
+      existing.reference = card.reference;
+      existing.book = card.book;
+      existing.chapter = card.chapter;
+      existing.verse = card.verse;
+      existing.last_activity_at = activityAt;
     }
   }
 
-  const verses = Array.from(grouped.values())
+  const sortedSeeds = Array.from(seeds.values())
     .sort((a, b) => b.last_activity_at.localeCompare(a.last_activity_at))
     .slice(0, args.limit ?? 50);
 
+  const summaries: StudioVerseSummary[] = [];
+
+  for (const seed of sortedSeeds) {
+    const result = await loadAllStudioCardsForSummary({
+      reference: seed.reference,
+      canonical_ref: seed.canonical_ref,
+      lang: seed.lang,
+    });
+
+    if (result.error) {
+      return {
+        ok: false,
+        verses: [],
+        error: result.error,
+      };
+    }
+
+    summaries.push(
+      summarizeStudioVerseCards({
+        seed,
+        cards: result.cards,
+      }),
+    );
+  }
+
   return {
     ok: true,
-    verses,
+    verses: summaries.sort((a, b) =>
+      b.last_activity_at.localeCompare(a.last_activity_at),
+    ),
     error: null,
   };
 }
