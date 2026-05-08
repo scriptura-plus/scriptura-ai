@@ -282,25 +282,27 @@ function normalizeStringArray(value: unknown): string[] {
 function normalizeSourceRefs(value: unknown): SourceRef[] {
   if (!Array.isArray(value)) return [];
 
-  return value
-    .map((item) => {
-      if (!isRecord(item)) return null;
+  const refs: SourceRef[] = [];
 
-      const sourceType = getString(item.source_type) ?? "unknown";
-      const id = getString(item.id);
-      const title = getString(item.title);
-      const excerpt = getString(item.excerpt);
+  for (const item of value) {
+    if (!isRecord(item)) continue;
 
-      if (!excerpt && !title && !id) return null;
+    const sourceType = getString(item.source_type) ?? "unknown";
+    const id = getString(item.id);
+    const title = getString(item.title);
+    const excerpt = getString(item.excerpt);
 
-      return {
-        source_type: sourceType,
-        id,
-        title,
-        excerpt,
-      };
-    })
-    .filter((item): item is SourceRef => item !== null);
+    if (!excerpt && !title && !id) continue;
+
+    refs.push({
+      source_type: sourceType,
+      id,
+      title,
+      excerpt,
+    });
+  }
+
+  return refs;
 }
 
 function normalizeSignal(value: unknown, index: number): DiscoverySignal | null {
