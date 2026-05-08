@@ -495,6 +495,7 @@ type DiscoveryEnrichmentResponse = {
   mode?: "preview_only" | string;
   changed_database?: boolean;
   would_write_to_database?: boolean;
+  curator_run_id?: string | null;
   reference?: string;
   canonical_ref?: string | null;
   book_key?: string | null;
@@ -2509,7 +2510,7 @@ export default function StudioPage() {
 
       setDiscoveryEnrichmentResult(data);
       setNotice(
-        `Discovery Enrichment готов: сигналов — ${data.counts?.signals ?? data.signals?.length ?? 0}, кандидатов — ${data.counts?.candidates ?? data.candidates?.length ?? 0}.`,
+        `Discovery Enrichment preview готов: сигналов — ${data.counts?.signals ?? data.signals?.length ?? 0}, кандидатов — ${data.counts?.candidates ?? data.candidates?.length ?? 0}, run — ${data.curator_run_id ?? "нет"}.`,
       );
     } catch (error) {
       setDiscoveryEnrichmentResult(null);
@@ -2532,6 +2533,15 @@ export default function StudioPage() {
 
     if (!adminSecret.trim()) {
       setCardsError("Вставь Admin Secret.");
+      return;
+    }
+
+    const previewRunId = discoveryEnrichmentResult?.curator_run_id ?? null;
+
+    if (!previewRunId) {
+      setDiscoveryEnrichmentError(
+        "Сначала запусти enrichment preview. Apply теперь применяет именно сохранённый preview-run, а не пересчитывает результат заново.",
+      );
       return;
     }
 
@@ -2558,6 +2568,8 @@ export default function StudioPage() {
           maxCandidates: 5,
           include_raw: false,
           apply: true,
+          preview_run_id: previewRunId,
+          curator_run_id: previewRunId,
         }),
       });
 
@@ -4948,9 +4960,9 @@ export default function StudioPage() {
                     lineHeight: 1.6,
                   }}
                 >
-                  Это безопасный preview нового enrichment-контура. Он сам ищет
-                  сигналы, делает из них candidate cards и прогоняет evaluator, но
-                  ничего не сохраняет: active/reserve, очередь и база не меняются.
+                  Preview сохраняет run и решения в audit, но не создаёт карточки.
+                  Кнопка применения использует именно этот сохранённый run: active/reserve,
+                  очередь и reject-log применяются без повторного пересчёта.
                 </p>
 
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
@@ -4967,13 +4979,23 @@ export default function StudioPage() {
 
                   <button
                     type="button"
-                    disabled={runningDiscoveryEnrichment || loadingCards}
+                    disabled={
+                      runningDiscoveryEnrichment ||
+                      loadingCards ||
+                      !discoveryEnrichmentResult?.curator_run_id
+                    }
                     onClick={() => applyDiscoveryEnrichment()}
-                    style={getApplyButtonStyle(runningDiscoveryEnrichment || loadingCards)}
+                    style={getApplyButtonStyle(
+                      runningDiscoveryEnrichment ||
+                        loadingCards ||
+                        !discoveryEnrichmentResult?.curator_run_id,
+                    )}
                   >
                     {runningDiscoveryEnrichment
                       ? "Работаю..."
-                      : "Применить enrichment"}
+                      : discoveryEnrichmentResult?.curator_run_id
+                        ? "Применить этот preview-run"
+                        : "Сначала preview"}
                   </button>
 
                   {discoveryEnrichmentResult ? (
@@ -4990,6 +5012,20 @@ export default function StudioPage() {
                     </button>
                   ) : null}
                 </div>
+
+                {discoveryEnrichmentResult?.curator_run_id ? (
+                  <div
+                    style={{
+                      margin: "-4px 0 12px",
+                      fontSize: 12,
+                      color: MUTED,
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    Preview-run сохранён: {discoveryEnrichmentResult.curator_run_id}.
+                    Apply применит именно эти решения без нового AI-пересчёта.
+                  </div>
+                ) : null}
 
                 {discoveryEnrichmentError ? (
                   <MessageBox kind="error" text={discoveryEnrichmentError} />
