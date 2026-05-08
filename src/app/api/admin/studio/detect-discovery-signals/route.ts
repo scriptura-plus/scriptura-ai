@@ -218,6 +218,162 @@ function extractJsonObject(text: string): unknown {
   }
 }
 
+function extractJsonStringField(text: string, fieldName: string): string | null {
+  const pattern = new RegExp(`"${fieldName}"\\s*:\\s*"`, "g");
+  const match = pattern.exec(text);
+  if (!match) return null;
+
+  let result = "";
+  let escaped = false;
+
+  for (let index = pattern.lastIndex; index < text.length; index += 1) {
+    const char = text[index];
+
+    if (escaped) {
+      result += char;
+      escaped = false;
+      continue;
+    }
+
+    if (char === "\\") {
+      result += char;
+      escaped = true;
+      continue;
+    }
+
+    if (char === '"') {
+      try {
+        return JSON.parse(`"${result}"`) as string;
+      } catch {
+        return result;
+      }
+    }
+
+    result += char;
+  }
+
+  return null;
+}
+
+function extractJsonNullableStringField(text: string, fieldName: string): string | null {
+  const nullPattern = new RegExp(`"${fieldName}"\\s*:\\s*null`);
+  if (nullPattern.test(text)) return null;
+  return extractJsonStringField(text, fieldName);
+}
+
+function findMatchingArrayEnd(text: string, startIndex: number): number {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = startIndex; index < text.length; index += 1) {
+    const char = text[index];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (char === "[") {
+      depth += 1;
+    } else if (char === "]") {
+      depth -= 1;
+      if (depth === 0) return index;
+    }
+  }
+
+  return -1;
+}
+
+function splitTopLevelJsonObjects(text: string): string[] {
+  const objects: string[] = [];
+  let start = -1;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (char === "{") {
+      if (depth === 0) start = index;
+      depth += 1;
+      continue;
+    }
+
+    if (char === "}") {
+      depth -= 1;
+      if (depth === 0 && start !== -1) {
+        objects.push(text.slice(start, index + 1));
+        start = -1;
+      }
+    }
+  }
+
+  return objects;
+}
+
+function salvageDiscoverySignalJson(text: string): unknown | null {
+  const candidate = extractJsonCandidate(text);
+  const signalsKeyIndex = candidate.indexOf('"signals"');
+  if (signalsKeyIndex === -1) return null;
+
+  const arrayStart = candidate.indexOf("[", signalsKeyIndex);
+  if (arrayStart === -1) return null;
+
+  const arrayEnd = findMatchingArrayEnd(candidate, arrayStart);
+  if (arrayEnd === -1) return null;
+
+  const arrayBody = candidate.slice(arrayStart + 1, arrayEnd);
+  const objectTexts = splitTopLevelJsonObjects(arrayBody);
+  const signals: unknown[] = [];
+
+  for (const objectText of objectTexts) {
+    const repairedObject = lightlyRepairJsonSyntax(objectText);
+    try {
+      signals.push(JSON.parse(repairedObject));
+    } catch {
+      // Keep the salvage path best-effort. One malformed signal should not hide
+      // all other usable signals from Studio.
+    }
+  }
+
+  if (signals.length === 0 && objectTexts.length > 0) return null;
+
+  return {
+    signals,
+    empty_reason: extractJsonNullableStringField(candidate, "empty_reason"),
+    overall_assessment: extractJsonStringField(candidate, "overall_assessment"),
+  };
+}
+
 function truncate(value: string, max = 900): string {
   const cleaned = value.replace(/\s+/g, " ").trim();
   if (cleaned.length <= max) return cleaned;
@@ -760,6 +916,16 @@ async function parseDiscoveryJsonWithRepair(args: {
     const firstMessage =
       firstError instanceof Error ? firstError.message : "Initial JSON parse failed";
 
+    const salvaged = salvageDiscoverySignalJson(args.raw);
+    if (salvaged) {
+      return {
+        parsed: salvaged,
+        repaired: true,
+        parse_error: firstMessage,
+        repaired_raw: "salvaged_locally_from_broken_json",
+      };
+    }
+
     const repairPrompt = `
 You are a strict JSON repair utility.
 
@@ -788,6 +954,16 @@ ${args.raw}
         repaired_raw: repairedRaw,
       };
     } catch (secondError) {
+      const repairedSalvaged = salvageDiscoverySignalJson(repairedRaw);
+      if (repairedSalvaged) {
+        return {
+          parsed: repairedSalvaged,
+          repaired: true,
+          parse_error: firstMessage,
+          repaired_raw: "salvaged_locally_from_ai_repair",
+        };
+      }
+
       const secondMessage =
         secondError instanceof Error ? secondError.message : "Repair JSON parse failed";
 
