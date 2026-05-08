@@ -5,6 +5,8 @@ import { normalizeReference } from "@/lib/bible/normalizeReference";
 import { createAdminClient } from "@/lib/supabase/server";
 import {
   getAllStudioCardsForVerse,
+  saveAngleCard,
+  type AngleCardCoverageType,
   type AngleCardRow,
 } from "@/lib/cache/angleCards";
 
@@ -51,6 +53,14 @@ type PreviewAction =
   | "auto_add_reserve_preview"
   | "editorial_suggestion_preview"
   | "auto_reject_preview";
+
+type AppliedAction =
+  | "inserted_active"
+  | "inserted_reserve"
+  | "inserted_editorial_suggestion"
+  | "rejected_logged"
+  | "skipped"
+  | "failed";
 
 type SourceRef = {
   source_type: string;
@@ -110,7 +120,11 @@ type PreviewDecision = {
   candidate: CandidateCard;
   evaluation: CandidateEvaluation;
   preview_action: PreviewAction;
-  would_write_to_database: false;
+  would_write_to_database: boolean;
+  applied_action?: AppliedAction | null;
+  inserted_card_id?: string | null;
+  inserted_suggestion_id?: string | null;
+  apply_error?: string | null;
 };
 
 type ResearchRowsResult = {
@@ -1089,9 +1103,38 @@ DUPLICATE_NOTE: duplicate/same-angle explanation or null
 }
 
 function computePreviewAction(evaluation: CandidateEvaluation): PreviewAction {
-  if (evaluation.recommended_action === "auto_add_active") return "auto_add_active_preview";
-  if (evaluation.recommended_action === "auto_add_reserve") return "auto_add_reserve_preview";
-  if (evaluation.recommended_action === "auto_reject") return "auto_reject_preview";
+  const score = evaluation.score_total ?? 0;
+
+  if (
+    evaluation.angle_relationship === "duplicate" ||
+    evaluation.recommended_action === "auto_reject" ||
+    score < 74
+  ) {
+    return "auto_reject_preview";
+  }
+
+  if (
+    evaluation.recommended_action === "auto_add_active" &&
+    score >= 86 &&
+    evaluation.risk_level === "low" &&
+    evaluation.angle_relationship === "distinct_angle" &&
+    !evaluation.matched_card_id
+  ) {
+    return "auto_add_active_preview";
+  }
+
+  if (
+    evaluation.recommended_action === "auto_add_reserve" &&
+    score >= 74 &&
+    score <= 85 &&
+    (evaluation.risk_level === "low" || evaluation.risk_level === "unknown") &&
+    (evaluation.angle_relationship === "distinct_angle" ||
+      evaluation.angle_relationship === "safe_sibling_angle") &&
+    !evaluation.matched_card_id
+  ) {
+    return "auto_add_reserve_preview";
+  }
+
   return "editorial_suggestion_preview";
 }
 
@@ -1138,6 +1181,454 @@ function normalizeStringArray(value: unknown): string[] {
     .filter((item): item is string => Boolean(item));
 }
 
+function deriveVerseMeta(args: {
+  reference: string;
+  canonical_ref: string | null;
+  normalized: ReturnType<typeof normalizeReference>;
+  existingCards: AngleCardRow[];
+}): {
+  reference: string;
+  canonical_ref: string | null;
+  book_key: string | null;
+  book: string;
+  chapter: number;
+  verse: number;
+} | null {
+  const firstCard = args.existingCards[0];
+
+  if (firstCard) {
+    return {
+      reference: firstCard.reference || args.reference,
+      canonical_ref: firstCard.canonical_ref ?? args.canonical_ref,
+      book_key: firstCard.book_key ?? args.normalized.book_key ?? null,
+      book: firstCard.book,
+      chapter: firstCard.chapter,
+      verse: firstCard.verse,
+    };
+  }
+
+  const match = /^(.*?)[\s.]+(\d+)\s*[:.]\s*(\d+)\s*$/.exec(args.reference.trim());
+  if (!match) return null;
+
+  return {
+    reference: args.reference,
+    canonical_ref: args.canonical_ref,
+    book_key: args.normalized.book_key ?? null,
+    book: match[1].trim(),
+    chapter: Number(match[2]),
+    verse: Number(match[3]),
+  };
+}
+
+function inferCoverageTypeFromSignals(
+  candidate: CandidateCard,
+  signals: DiscoverySignal[],
+): AngleCardCoverageType {
+  const titles = new Set(candidate.source_signal_titles.map((title) => title.toLowerCase()));
+  const relatedSignals = signals.filter((signal) => titles.has(signal.title.toLowerCase()));
+  const typeText = relatedSignals.map((signal) => signal.signal_type).join(" ").toLowerCase();
+
+  if (/translation/.test(typeText)) return "translation";
+  if (/grammar/.test(typeText)) return "grammatical";
+  if (/structure/.test(typeText)) return "structural";
+  if (/rhetoric|paradox/.test(typeText)) return "rhetorical";
+  if (/context|agency|coverage_gap/.test(typeText)) return "contextual";
+  if (/historical/.test(typeText)) return "historical";
+  if (/lexical/.test(typeText)) return "lexical";
+
+  return "conceptual";
+}
+
+function buildAngleSummary(candidate: CandidateCard, evaluation: CandidateEvaluation): string {
+  return truncate(
+    [
+      candidate.strength_reason,
+      evaluation.reason,
+      candidate.source_signal_titles.length > 0
+        ? `Signals: ${candidate.source_signal_titles.join(", ")}`
+        : null,
+    ]
+      .filter(Boolean)
+      .join(" "),
+    900,
+  );
+}
+
+function getSuggestionType(evaluation: CandidateEvaluation): string {
+  if (evaluation.angle_relationship === "stronger_version") return "replacement";
+  if (evaluation.angle_relationship === "duplicate" || evaluation.angle_relationship === "uncertain") {
+    return "duplicate_uncertain";
+  }
+  if (evaluation.risk_level === "high" || evaluation.risk_level === "medium") return "risk_review";
+  if (evaluation.recommended_action === "auto_add_reserve") return "promote_candidate";
+  return "needs_review";
+}
+
+function getMatchedCardScore(cards: AngleCardRow[], matchedCardId: string | null): number | null {
+  if (!matchedCardId) return null;
+  const card = cards.find((item) => item.id === matchedCardId);
+  if (!card || typeof card.score_total !== "number") return null;
+  return card.score_total + (card.moderator_boost ?? 0);
+}
+
+async function insertEditorialSuggestion(args: {
+  reference: string;
+  canonical_ref: string | null;
+  normalized: ReturnType<typeof normalizeReference>;
+  lang: Lang;
+  candidate: CandidateCard;
+  evaluation: CandidateEvaluation;
+  existingCards: AngleCardRow[];
+  signals: DiscoverySignal[];
+  crafterProvider: Provider;
+  crafterModel: string;
+  evaluatorProvider: Provider;
+  evaluatorModel: string;
+}): Promise<{ id: string | null; error: string | null }> {
+  const client = createAdminClient();
+  if (!client) return { id: null, error: "Supabase admin client unavailable" };
+
+  const meta = deriveVerseMeta({
+    reference: args.reference,
+    canonical_ref: args.canonical_ref,
+    normalized: args.normalized,
+    existingCards: args.existingCards,
+  });
+
+  if (!meta) return { id: null, error: "Could not derive verse metadata for suggestion" };
+
+  const scoreCandidate = args.evaluation.score_total;
+  const scoreExisting = getMatchedCardScore(args.existingCards, args.evaluation.matched_card_id);
+
+  const payload = {
+    reference: meta.reference,
+    canonical_ref: meta.canonical_ref,
+    book_key: meta.book_key,
+    book: meta.book,
+    chapter: meta.chapter,
+    verse: meta.verse,
+    lang: args.lang,
+    suggestion_type: getSuggestionType(args.evaluation),
+    status: "pending",
+    existing_card_id: args.evaluation.matched_card_id,
+    candidate_card_id: null,
+    candidate_payload: {
+      source: "discovery_enrichment_v1",
+      candidate: args.candidate,
+      evaluation: args.evaluation,
+      source_signals: args.signals.filter((signal) =>
+        args.candidate.source_signal_titles.includes(signal.title),
+      ),
+    },
+    score_existing: scoreExisting,
+    score_candidate: scoreCandidate,
+    score_delta:
+      typeof scoreCandidate === "number" && typeof scoreExisting === "number"
+        ? scoreCandidate - scoreExisting
+        : null,
+    angle_relationship: args.evaluation.angle_relationship,
+    relationship_confidence: null,
+    same_angle_summary: args.evaluation.duplicate_note,
+    matched_card_id: args.evaluation.matched_card_id,
+    reason: args.evaluation.reason,
+    risk: args.evaluation.risk_note ?? args.candidate.risk,
+    risk_level: args.evaluation.risk_level,
+    source_summary: args.candidate.source_signal_titles.join(", ") || null,
+    source_id: null,
+    note_id: null,
+    provider: args.crafterProvider,
+    model: args.crafterModel,
+    evaluator_version: args.evaluatorModel,
+    decision_engine_version: "discovery_enrichment_apply_v1",
+    reviewed_at: null,
+    reviewed_by: null,
+    review_note: null,
+    moderator_decision: null,
+  };
+
+  const { data, error } = await client
+    .from("editorial_suggestions")
+    .insert(payload)
+    .select("id")
+    .single();
+
+  if (error) return { id: null, error: error.message };
+  return { id: (data as { id?: string } | null)?.id ?? null, error: null };
+}
+
+async function insertAngleCardFromDecision(args: {
+  reference: string;
+  canonical_ref: string | null;
+  normalized: ReturnType<typeof normalizeReference>;
+  lang: Lang;
+  status: "featured" | "reserve";
+  candidate: CandidateCard;
+  evaluation: CandidateEvaluation;
+  existingCards: AngleCardRow[];
+  signals: DiscoverySignal[];
+  crafterProvider: Provider;
+  crafterModel: string;
+  evaluatorProvider: Provider;
+  evaluatorModel: string;
+}): Promise<{ id: string | null; error: string | null }> {
+  const meta = deriveVerseMeta({
+    reference: args.reference,
+    canonical_ref: args.canonical_ref,
+    normalized: args.normalized,
+    existingCards: args.existingCards,
+  });
+
+  if (!meta) return { id: null, error: "Could not derive verse metadata for card insert" };
+
+  const saved = await saveAngleCard({
+    reference: meta.reference,
+    book: meta.book,
+    chapter: meta.chapter,
+    verse: meta.verse,
+    lang: args.lang,
+    canonical_ref: meta.canonical_ref,
+    book_key: meta.book_key,
+    title: args.candidate.title,
+    anchor: args.candidate.anchor,
+    teaser: args.candidate.teaser,
+    why_it_matters: args.candidate.why_it_matters,
+    angle_summary: buildAngleSummary(args.candidate, args.evaluation),
+    coverage_type: inferCoverageTypeFromSignals(args.candidate, args.signals),
+    score_total: args.evaluation.score_total,
+    scores: null,
+    evaluation: {
+      source: "discovery_enrichment_v1",
+      candidate_certainty: args.candidate.certainty,
+      candidate_estimated_score: args.candidate.estimated_score,
+      evaluator: args.evaluation,
+      source_signal_titles: args.candidate.source_signal_titles,
+    },
+    battle: {
+      angle_relationship: args.evaluation.angle_relationship,
+      matched_card_id: args.evaluation.matched_card_id,
+      duplicate_note: args.evaluation.duplicate_note,
+    },
+    status: args.status,
+    rank: args.status === "featured" ? 999 : null,
+    is_locked: false,
+    source_type: "discovery_enrichment",
+    source_provider: args.crafterProvider,
+    source_model: `discovery_enrichment:${args.crafterModel}`,
+    editor_provider: args.evaluatorProvider,
+    editor_model: args.evaluatorModel,
+    original_card: {
+      candidate: args.candidate,
+      source_signals: args.signals.filter((signal) =>
+        args.candidate.source_signal_titles.includes(signal.title),
+      ),
+    },
+    prompt_version: "discovery_enrichment_v1",
+  });
+
+  return { id: saved.id, error: saved.error };
+}
+
+async function insertCuratorRun(args: {
+  reference: string;
+  canonical_ref: string | null;
+  lang: Lang;
+  signalProvider: Provider;
+  signalModel: string;
+  crafterProvider: Provider;
+  crafterModel: string;
+  evaluatorProvider: Provider;
+  evaluatorModel: string;
+  apply: boolean;
+  counts: Record<string, number>;
+}): Promise<string | null> {
+  const client = createAdminClient();
+  if (!client) return null;
+
+  const now = new Date().toISOString();
+
+  try {
+    const { data, error } = await client
+      .from("curator_runs")
+      .insert({
+        reference: args.reference,
+        canonical_ref: args.canonical_ref,
+        lang: args.lang,
+        source_mode: "discovery_enrichment",
+        generator_provider: args.crafterProvider,
+        generator_model: args.crafterModel,
+        evaluator_provider: args.evaluatorProvider,
+        evaluator_model: args.evaluatorModel,
+        mode: args.apply ? "apply" : "preview",
+        status: "completed",
+        auto_add_active_count: args.counts.inserted_active ?? args.counts.auto_add_active_preview ?? 0,
+        auto_add_reserve_count: args.counts.inserted_reserve ?? args.counts.auto_add_reserve_preview ?? 0,
+        editorial_suggestion_count:
+          args.counts.inserted_editorial_suggestion ?? args.counts.editorial_suggestion_preview ?? 0,
+        auto_reject_count: args.counts.rejected_logged ?? args.counts.auto_reject_preview ?? 0,
+        error_count: args.counts.failed ?? 0,
+        summary: `Discovery enrichment ${args.apply ? "apply" : "preview"}: ${JSON.stringify(args.counts)}`,
+        started_at: now,
+        completed_at: now,
+        created_at: now,
+        updated_at: now,
+      })
+      .select("id")
+      .single();
+
+    if (error) return null;
+    return (data as { id?: string } | null)?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function insertCuratorDecision(args: {
+  runId: string | null;
+  reference: string;
+  canonical_ref: string | null;
+  lang: Lang;
+  decision: PreviewDecision;
+}): Promise<string | null> {
+  if (!args.runId) return null;
+
+  const client = createAdminClient();
+  if (!client) return null;
+
+  try {
+    const { data, error } = await client
+      .from("curator_decisions")
+      .insert({
+        run_id: args.runId,
+        reference: args.reference,
+        canonical_ref: args.canonical_ref,
+        lang: args.lang,
+        candidate_payload: args.decision.candidate,
+        score_total: args.decision.evaluation.score_total,
+        risk_level: args.decision.evaluation.risk_level,
+        angle_relationship: args.decision.evaluation.angle_relationship,
+        matched_card_id: args.decision.evaluation.matched_card_id,
+        recommended_action: args.decision.evaluation.recommended_action,
+        applied_action: args.decision.applied_action ?? "report_only",
+        inserted_card_id: args.decision.inserted_card_id ?? null,
+        inserted_suggestion_id: args.decision.inserted_suggestion_id ?? null,
+        reason: args.decision.evaluation.reason,
+        decision_reason: args.decision.evaluation.reason,
+        error: args.decision.apply_error ?? null,
+      })
+      .select("id")
+      .single();
+
+    if (error) return null;
+    return (data as { id?: string } | null)?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function applyPreviewDecision(args: {
+  decision: PreviewDecision;
+  reference: string;
+  canonical_ref: string | null;
+  normalized: ReturnType<typeof normalizeReference>;
+  lang: Lang;
+  existingCards: AngleCardRow[];
+  signals: DiscoverySignal[];
+  crafterProvider: Provider;
+  crafterModel: string;
+  evaluatorProvider: Provider;
+  evaluatorModel: string;
+}): Promise<PreviewDecision> {
+  const decision: PreviewDecision = {
+    ...args.decision,
+    would_write_to_database: true,
+    applied_action: "skipped",
+    inserted_card_id: null,
+    inserted_suggestion_id: null,
+    apply_error: null,
+  };
+
+  if (decision.preview_action === "auto_add_active_preview") {
+    const inserted = await insertAngleCardFromDecision({
+      reference: args.reference,
+      canonical_ref: args.canonical_ref,
+      normalized: args.normalized,
+      lang: args.lang,
+      status: "featured",
+      candidate: decision.candidate,
+      evaluation: decision.evaluation,
+      existingCards: args.existingCards,
+      signals: args.signals,
+      crafterProvider: args.crafterProvider,
+      crafterModel: args.crafterModel,
+      evaluatorProvider: args.evaluatorProvider,
+      evaluatorModel: args.evaluatorModel,
+    });
+
+    if (inserted.error) {
+      return { ...decision, applied_action: "failed", apply_error: inserted.error };
+    }
+
+    return { ...decision, applied_action: "inserted_active", inserted_card_id: inserted.id };
+  }
+
+  if (decision.preview_action === "auto_add_reserve_preview") {
+    const inserted = await insertAngleCardFromDecision({
+      reference: args.reference,
+      canonical_ref: args.canonical_ref,
+      normalized: args.normalized,
+      lang: args.lang,
+      status: "reserve",
+      candidate: decision.candidate,
+      evaluation: decision.evaluation,
+      existingCards: args.existingCards,
+      signals: args.signals,
+      crafterProvider: args.crafterProvider,
+      crafterModel: args.crafterModel,
+      evaluatorProvider: args.evaluatorProvider,
+      evaluatorModel: args.evaluatorModel,
+    });
+
+    if (inserted.error) {
+      return { ...decision, applied_action: "failed", apply_error: inserted.error };
+    }
+
+    return { ...decision, applied_action: "inserted_reserve", inserted_card_id: inserted.id };
+  }
+
+  if (decision.preview_action === "editorial_suggestion_preview") {
+    const inserted = await insertEditorialSuggestion({
+      reference: args.reference,
+      canonical_ref: args.canonical_ref,
+      normalized: args.normalized,
+      lang: args.lang,
+      candidate: decision.candidate,
+      evaluation: decision.evaluation,
+      existingCards: args.existingCards,
+      signals: args.signals,
+      crafterProvider: args.crafterProvider,
+      crafterModel: args.crafterModel,
+      evaluatorProvider: args.evaluatorProvider,
+      evaluatorModel: args.evaluatorModel,
+    });
+
+    if (inserted.error) {
+      return { ...decision, applied_action: "failed", apply_error: inserted.error };
+    }
+
+    return {
+      ...decision,
+      applied_action: "inserted_editorial_suggestion",
+      inserted_suggestion_id: inserted.id,
+    };
+  }
+
+  if (decision.preview_action === "auto_reject_preview") {
+    return { ...decision, applied_action: "rejected_logged" };
+  }
+
+  return decision;
+}
+
 export async function POST(req: Request) {
   try {
     if (!isAdminRequest(req)) {
@@ -1146,15 +1637,7 @@ export async function POST(req: Request) {
 
     const body: unknown = await req.json();
 
-    if (isRecord(body) && getBoolean(body.apply) === true) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: "run-discovery-enrichment is preview-only in v1. apply=true is not supported yet.",
-        },
-        { status: 400 },
-      );
-    }
+    const shouldApply = isRecord(body) ? getBoolean(body.apply) === true : false;
 
     const reference = isRecord(body) ? getString(body.reference) : null;
     const lang = isRecord(body) && isLang(body.lang) ? body.lang : null;
@@ -1309,7 +1792,7 @@ export async function POST(req: Request) {
       evaluations = parseEvaluationResponse(evaluationRaw);
     }
 
-    const decisions: PreviewDecision[] = candidates.map((candidate, index) => {
+    const previewDecisions: PreviewDecision[] = candidates.map((candidate, index) => {
       const evaluation =
         evaluations.find((item) => item.candidate_index === index + 1) ??
         fallbackEvaluation(candidate, index);
@@ -1318,9 +1801,33 @@ export async function POST(req: Request) {
         candidate,
         evaluation,
         preview_action: computePreviewAction(evaluation),
-        would_write_to_database: false,
+        would_write_to_database: shouldApply,
+        applied_action: null,
+        inserted_card_id: null,
+        inserted_suggestion_id: null,
+        apply_error: null,
       };
     });
+
+    const decisions = shouldApply
+      ? await Promise.all(
+          previewDecisions.map((decision) =>
+            applyPreviewDecision({
+              decision,
+              reference,
+              canonical_ref: canonicalRef,
+              normalized,
+              lang,
+              existingCards: cardsResult.cards,
+              signals: signalResult.signals,
+              crafterProvider,
+              crafterModel: getModelName(crafterProvider),
+              evaluatorProvider,
+              evaluatorModel: getModelName(evaluatorProvider),
+            }),
+          ),
+        )
+      : previewDecisions;
 
     const counts = {
       signals: signalResult.signals.length,
@@ -1338,13 +1845,49 @@ export async function POST(req: Request) {
       auto_reject_preview: decisions.filter(
         (decision) => decision.preview_action === "auto_reject_preview",
       ).length,
+      inserted_active: decisions.filter((decision) => decision.applied_action === "inserted_active").length,
+      inserted_reserve: decisions.filter((decision) => decision.applied_action === "inserted_reserve").length,
+      inserted_editorial_suggestion: decisions.filter(
+        (decision) => decision.applied_action === "inserted_editorial_suggestion",
+      ).length,
+      rejected_logged: decisions.filter((decision) => decision.applied_action === "rejected_logged").length,
+      failed: decisions.filter((decision) => decision.applied_action === "failed").length,
     };
+
+    const curatorRunId = await insertCuratorRun({
+      reference,
+      canonical_ref: canonicalRef,
+      lang,
+      signalProvider,
+      signalModel: getModelName(signalProvider),
+      crafterProvider,
+      crafterModel: getModelName(crafterProvider),
+      evaluatorProvider,
+      evaluatorModel: getModelName(evaluatorProvider),
+      apply: shouldApply,
+      counts,
+    });
+
+    if (shouldApply) {
+      await Promise.all(
+        decisions.map((decision) =>
+          insertCuratorDecision({
+            runId: curatorRunId,
+            reference,
+            canonical_ref: canonicalRef,
+            lang,
+            decision,
+          }),
+        ),
+      );
+    }
 
     return NextResponse.json({
       ok: true,
-      mode: "preview_only",
-      changed_database: false,
-      would_write_to_database: false,
+      mode: shouldApply ? "apply" : "preview_only",
+      changed_database: shouldApply,
+      would_write_to_database: shouldApply,
+      curator_run_id: curatorRunId,
       reference,
       canonical_ref: canonicalRef,
       book_key: normalized.book_key ?? null,
