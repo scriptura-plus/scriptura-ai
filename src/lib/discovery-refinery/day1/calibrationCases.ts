@@ -193,12 +193,12 @@ export const DAY1_CALIBRATION_CASES: Day1CalibrationCase[] = [
   },
 
   {
-    case_id: "case_02_reason_connector_overlap_needs_patch",
-    label: "Partial overlap — 'ибо' as reason connector",
+    case_id: "case_02_reason_connector_new_angle",
+    label: "New angle — 'ибо' as reason connector",
     purpose:
-      "This is a real rhetorical signal, but it overlaps with the existing/nearby idea that Jesus' stated character becomes a basis for trust. The correct Day-1 behavior is conservative: partial_overlap plus needs_patch, not automatic approval.",
+      "The signal is text-grounded and can reasonably be treated as a new rhetorical angle: the connector 'ибо' turns Jesus' self-description into the stated reason for trusting the command.",
     signal: makeSignal({
-      seed: "reason_connector_overlap_needs_patch",
+      seed: "reason_connector_new_angle",
       anchorQuote: "ибо",
       anchorWords: ["ибо"],
       phenomenon: "reason_connector_as_argument",
@@ -215,20 +215,20 @@ export const DAY1_CALIBRATION_CASES: Day1CalibrationCase[] = [
     }),
     expected: {
       hash_match_before_judge: false,
-      same_angle_verdict: "partial_overlap",
-      verifier_overall: "needs_patch",
+      same_angle_verdict: "new_angle",
+      verifier_overall: "pass",
       verifier_pretty_but_empty: false,
       verifier_risk_flags: {},
     },
   },
 
   {
-    case_id: "case_03_partial_overlap_same_anchor_new_move",
-    label: "Partial overlap — same anchor, different move",
+    case_id: "case_03_stronger_version_same_anchor_new_move",
+    label: "Stronger version — same anchor, sharper rhetorical move",
     purpose:
-      "Shares the anchor 'кроток' with an existing lexical card, but moves from lexical meaning to rhetorical function. It should remain partial_overlap, but the verifier may pass the signal intrinsically because the observation is text-grounded.",
+      "Shares the anchor 'кроток' with an existing lexical card, but reframes it as a rhetorical credential. If the judge sees this as a stronger version, replacement is an acceptable Day-1 decision.",
     signal: makeSignal({
-      seed: "partial_overlap_meek_character_argument",
+      seed: "stronger_version_meek_character_argument",
       anchorQuote: "кроток",
       anchorWords: ["кроток"],
       phenomenon: "speaker_character_as_argument",
@@ -245,7 +245,7 @@ export const DAY1_CALIBRATION_CASES: Day1CalibrationCase[] = [
     }),
     expected: {
       hash_match_before_judge: false,
-      same_angle_verdict: "partial_overlap",
+      same_angle_verdict: "stronger_version",
       verifier_overall: "pass",
       verifier_pretty_but_empty: false,
       verifier_risk_flags: {},
