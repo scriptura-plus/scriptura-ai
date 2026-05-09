@@ -5,34 +5,44 @@ import { useMemo, useState } from "react";
 type Action =
   | "calibration"
   | "detector_preview"
+  | "day15_fixture_preview"
   | "day15_multi_verse_preview";
+
+type QueueItem = {
+  queue_item_id?: string;
+  tier?: string;
+  suggested_action?: string;
+  signal?: {
+    reader_surprise_sentence?: {
+      ru?: string | null;
+    };
+    evidence_level?: string;
+  };
+  verdicts?: {
+    same_angle?: {
+      verdict?: string;
+      judge_confidence?: string;
+    };
+    verifier?: {
+      overall?: string;
+      pretty_but_empty?: boolean;
+    };
+  };
+};
 
 type ApiResult = {
   ok?: boolean;
   mode?: string;
   reference?: string;
+  fixture_id?: string;
+  canonical_ref?: string;
+  passage_id?: string;
+  genre?: string;
+  expected_richness?: string;
+  diagnostic_reason?: string;
+  expected_behavior_note?: string;
   detector_signal_count?: number;
-  queue?: Array<{
-    queue_item_id?: string;
-    tier?: string;
-    suggested_action?: string;
-    signal?: {
-      reader_surprise_sentence?: {
-        ru?: string | null;
-      };
-      evidence_level?: string;
-    };
-    verdicts?: {
-      same_angle?: {
-        verdict?: string;
-        judge_confidence?: string;
-      };
-      verifier?: {
-        overall?: string;
-        pretty_but_empty?: boolean;
-      };
-    };
-  }>;
+  queue?: QueueItem[];
   calibration?: Array<{
     case_id: string;
     label: string;
@@ -42,6 +52,8 @@ type ApiResult = {
       verifier_overall?: string | null;
     };
   }>;
+  action_counts?: Record<string, number>;
+  tier_counts?: Record<string, number>;
   aggregate?: Record<string, number>;
   verses?: Array<{
     fixture_id: string;
@@ -51,37 +63,48 @@ type ApiResult = {
     detector_signal_count: number;
     action_counts: Record<string, number>;
     tier_counts: Record<string, number>;
-    queue: Array<{
-      queue_item_id?: string;
-      tier?: string;
-      suggested_action?: string;
-      signal?: {
-        reader_surprise_sentence?: {
-          ru?: string | null;
-        };
-        evidence_level?: string;
-      };
-      verdicts?: {
-        same_angle?: {
-          verdict?: string;
-          judge_confidence?: string;
-        };
-        verifier?: {
-          overall?: string;
-        };
-      };
-    }>;
+    queue: QueueItem[];
     errors?: string[];
   }>;
   errors?: string[];
   meta?: {
     action?: string;
+    fixtureId?: string;
     purpose?: string;
     boundary?: string;
     next?: string;
+    warning?: string;
   };
   error?: string;
 };
+
+const DAY15_FIXTURES = [
+  {
+    id: "matthew_11_29",
+    label: "Matthew 11:29",
+    note: "rich · existing cards",
+  },
+  {
+    id: "isaiah_58_2",
+    label: "Isaiah 58:2",
+    note: "rich · prophetic",
+  },
+  {
+    id: "first_timothy_4_12",
+    label: "1 Timothy 4:12",
+    note: "medium · instruction",
+  },
+  {
+    id: "genesis_22_8",
+    label: "Genesis 22:8",
+    note: "medium · narrative",
+  },
+  {
+    id: "genesis_5_20",
+    label: "Genesis 5:20",
+    note: "low · genealogy",
+  },
+];
 
 function getStatusLabel(result: ApiResult | null): string {
   if (!result) return "No run yet";
@@ -120,16 +143,69 @@ function formatJson(value: unknown): string {
   return JSON.stringify(value, null, 2);
 }
 
+function actionBadgeClass(action?: string): string {
+  if (action === "approve_reserve" || action === "approve_active") {
+    return "good";
+  }
+
+  if (
+    action === "rewrite" ||
+    action === "replace_existing" ||
+    action === "mark_for_external_research"
+  ) {
+    return "warn";
+  }
+
+  if (action === "discard") return "bad";
+
+  return "";
+}
+
+function QueuePreview({ queue }: { queue: QueueItem[] }) {
+  if (queue.length === 0) {
+    return <p className="empty">No queue items.</p>;
+  }
+
+  return (
+    <>
+      {queue.map((item, index) => (
+        <div className="queue-row" key={item.queue_item_id ?? index}>
+          <div className="row-top">
+            <div>
+              <div className="row-title">
+                {index + 1}. {item.suggested_action ?? "—"}
+              </div>
+              <div className="row-meta">
+                Tier: {item.tier ?? "—"} · Judge:{" "}
+                {item.verdicts?.same_angle?.verdict ?? "—"} · Verifier:{" "}
+                {item.verdicts?.verifier?.overall ?? "—"}
+              </div>
+            </div>
+            <span className={`badge ${actionBadgeClass(item.suggested_action)}`}>
+              {item.signal?.evidence_level ?? "—"}
+            </span>
+          </div>
+          <div className="quote">
+            {item.signal?.reader_surprise_sentence?.ru ?? "—"}
+          </div>
+        </div>
+      ))}
+    </>
+  );
+}
+
 export default function Day1DiscoveryRefineryPage() {
   const [adminSecret, setAdminSecret] = useState("");
   const [result, setResult] = useState<ApiResult | null>(null);
-  const [loadingAction, setLoadingAction] = useState<Action | null>(null);
+  const [loadingKey, setLoadingKey] = useState<string | null>(null);
 
   const statusLabel = useMemo(() => getStatusLabel(result), [result]);
   const statusClass = useMemo(() => getStatusClass(result), [result]);
 
-  async function runAction(action: Action) {
-    setLoadingAction(action);
+  async function runAction(action: Action, fixtureId?: string) {
+    const key = fixtureId ? `${action}:${fixtureId}` : action;
+
+    setLoadingKey(key);
     setResult(null);
 
     try {
@@ -141,6 +217,7 @@ export default function Day1DiscoveryRefineryPage() {
         },
         body: JSON.stringify({
           action,
+          fixtureId,
           detectorProvider: "claude",
           judgeProvider: "openai",
           verifierProvider: "openai",
@@ -166,12 +243,16 @@ export default function Day1DiscoveryRefineryPage() {
         error: error instanceof Error ? error.message : String(error),
       });
     } finally {
-      setLoadingAction(null);
+      setLoadingKey(null);
     }
   }
 
-  const isLoading = loadingAction !== null;
+  const isLoading = loadingKey !== null;
   const canRun = adminSecret.trim().length > 0 && !isLoading;
+
+  const isSinglePreview =
+    result?.mode === "detector_preview" ||
+    result?.mode === "day15_fixture_preview";
 
   return (
     <main className="day1-page">
@@ -215,7 +296,7 @@ export default function Day1DiscoveryRefineryPage() {
         }
 
         .subtitle {
-          max-width: 820px;
+          max-width: 860px;
           color: #5a4a37;
           font-size: 16px;
           line-height: 1.55;
@@ -234,7 +315,7 @@ export default function Day1DiscoveryRefineryPage() {
         .controls {
           display: grid;
           grid-template-columns: 1fr;
-          gap: 12px;
+          gap: 14px;
         }
 
         .secret-row {
@@ -265,10 +346,23 @@ export default function Day1DiscoveryRefineryPage() {
           box-shadow: 0 0 0 4px rgba(62, 97, 131, 0.1);
         }
 
-        .button-row {
+        .button-row,
+        .fixture-grid {
           display: flex;
           flex-wrap: wrap;
           gap: 10px;
+        }
+
+        .fixture-section {
+          border-top: 1px solid rgba(100, 78, 48, 0.14);
+          padding-top: 14px;
+        }
+
+        .section-label {
+          font-size: 13px;
+          font-weight: 850;
+          color: #5a4a37;
+          margin-bottom: 8px;
         }
 
         button {
@@ -305,12 +399,32 @@ export default function Day1DiscoveryRefineryPage() {
           background: #6f4720;
         }
 
+        .fixture-button {
+          display: grid;
+          gap: 2px;
+          text-align: left;
+          border-radius: 16px;
+          padding: 11px 13px;
+          min-width: 170px;
+        }
+
+        .fixture-button span:first-child {
+          font-size: 14px;
+          font-weight: 850;
+        }
+
+        .fixture-button span:last-child {
+          font-size: 11px;
+          font-weight: 650;
+          opacity: 0.82;
+        }
+
         .status-line {
           display: flex;
           flex-wrap: wrap;
           gap: 10px;
           align-items: center;
-          margin-top: 12px;
+          margin-top: 2px;
         }
 
         .status-pill {
@@ -380,6 +494,7 @@ export default function Day1DiscoveryRefineryPage() {
           padding: 11px;
           font-size: 14px;
           line-height: 1.45;
+          white-space: pre-wrap;
         }
 
         .case-row,
@@ -461,6 +576,16 @@ export default function Day1DiscoveryRefineryPage() {
           font-size: 14px;
           line-height: 1.5;
         }
+
+        .warning {
+          border: 1px solid rgba(155, 48, 48, 0.18);
+          background: rgba(155, 48, 48, 0.07);
+          color: #6d2a1f;
+          border-radius: 14px;
+          padding: 10px 12px;
+          font-size: 13px;
+          line-height: 1.45;
+        }
       `}</style>
 
       <div className="shell">
@@ -469,8 +594,8 @@ export default function Day1DiscoveryRefineryPage() {
           <h1>Day-1 / Day-1.5 Console</h1>
           <p className="subtitle">
             Diagnostic preview only. No Supabase writes, no Studio moderation,
-            no Card Crafter. Use this console to test calibration, Matthew 11:29
-            detector preview, and the mixed-genre multi-verse preview.
+            no Card Crafter. Use single-fixture preview for Day-1.5 to avoid
+            Vercel timeout.
           </p>
         </section>
 
@@ -493,7 +618,7 @@ export default function Day1DiscoveryRefineryPage() {
               onClick={() => runAction("calibration")}
               type="button"
             >
-              {loadingAction === "calibration"
+              {loadingKey === "calibration"
                 ? "Running Calibration…"
                 : "Run Calibration"}
             </button>
@@ -504,7 +629,7 @@ export default function Day1DiscoveryRefineryPage() {
               onClick={() => runAction("detector_preview")}
               type="button"
             >
-              {loadingAction === "detector_preview"
+              {loadingKey === "detector_preview"
                 ? "Running Detector Preview…"
                 : "Run Detector Preview"}
             </button>
@@ -514,17 +639,49 @@ export default function Day1DiscoveryRefineryPage() {
               disabled={!canRun}
               onClick={() => runAction("day15_multi_verse_preview")}
               type="button"
+              title="Can timeout. Prefer the single fixture buttons below."
             >
-              {loadingAction === "day15_multi_verse_preview"
-                ? "Running Multi-Verse Preview…"
-                : "Run Multi-Verse Preview"}
+              {loadingKey === "day15_multi_verse_preview"
+                ? "Running Full Batch…"
+                : "Full Batch — may timeout"}
             </button>
+          </div>
+
+          <div className="fixture-section">
+            <div className="section-label">
+              Safe Day-1.5 Preview — run one fixture at a time
+            </div>
+            <div className="fixture-grid">
+              {DAY15_FIXTURES.map((fixture) => {
+                const key = `day15_fixture_preview:${fixture.id}`;
+
+                return (
+                  <button
+                    className="fixture-button"
+                    disabled={!canRun}
+                    key={fixture.id}
+                    onClick={() =>
+                      runAction("day15_fixture_preview", fixture.id)
+                    }
+                    type="button"
+                  >
+                    <span>
+                      {loadingKey === key ? "Running…" : fixture.label}
+                    </span>
+                    <span>{fixture.note}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           <div className="status-line">
             <span className={`status-pill ${statusClass}`}>{statusLabel}</span>
             {result?.mode && (
               <span className="small-muted">Mode: {result.mode}</span>
+            )}
+            {result?.reference && (
+              <span className="small-muted">Reference: {result.reference}</span>
             )}
             {result?.meta?.next && (
               <span className="small-muted">Next: {result.meta.next}</span>
@@ -538,8 +695,8 @@ export default function Day1DiscoveryRefineryPage() {
 
             {!result && (
               <p className="empty">
-                Run calibration first. Then run detector preview or multi-verse
-                preview.
+                Run calibration first. Then use the single-fixture buttons for
+                Day-1.5.
               </p>
             )}
 
@@ -547,6 +704,10 @@ export default function Day1DiscoveryRefineryPage() {
               <div className="summary-item">
                 <strong>Error:</strong> {result.error}
               </div>
+            )}
+
+            {result?.meta?.warning && (
+              <div className="warning">{result.meta.warning}</div>
             )}
 
             {result?.mode === "calibration" && (
@@ -583,60 +744,76 @@ export default function Day1DiscoveryRefineryPage() {
               </>
             )}
 
-            {result?.mode === "detector_preview" && (
+            {isSinglePreview && (
               <>
                 <ul className="summary-list">
                   <li className="summary-item">
-                    <strong>Reference:</strong> {result.reference}
+                    <strong>Reference:</strong> {result.reference ?? "—"}
                   </li>
+
+                  {result.fixture_id && (
+                    <li className="summary-item">
+                      <strong>Fixture:</strong> {result.fixture_id}
+                      {"\n"}
+                      <strong>Genre:</strong> {result.genre ?? "—"}
+                      {"\n"}
+                      <strong>Expected richness:</strong>{" "}
+                      {result.expected_richness ?? "—"}
+                    </li>
+                  )}
+
+                  {result.diagnostic_reason && (
+                    <li className="summary-item">
+                      <strong>Diagnostic reason:</strong>{" "}
+                      {result.diagnostic_reason}
+                    </li>
+                  )}
+
+                  {result.expected_behavior_note && (
+                    <li className="summary-item">
+                      <strong>Expected behavior:</strong>{" "}
+                      {result.expected_behavior_note}
+                    </li>
+                  )}
+
                   <li className="summary-item">
                     <strong>Detector signals:</strong>{" "}
                     {result.detector_signal_count ?? 0}
                   </li>
+
                   <li className="summary-item">
                     <strong>Queue:</strong> {summarizeQueue(result)}
                   </li>
+
+                  {result.action_counts && (
+                    <li className="summary-item">
+                      <strong>Actions:</strong>{" "}
+                      {formatJson(result.action_counts)}
+                    </li>
+                  )}
+
+                  {result.tier_counts && (
+                    <li className="summary-item">
+                      <strong>Tiers:</strong> {formatJson(result.tier_counts)}
+                    </li>
+                  )}
+
                   <li className="summary-item">
                     <strong>Errors:</strong> {(result.errors ?? []).length}
                   </li>
                 </ul>
 
                 <h3>Moderator Queue Preview</h3>
-                {(result.queue ?? []).map((item, index) => (
-                  <div className="queue-row" key={item.queue_item_id ?? index}>
-                    <div className="row-top">
-                      <div>
-                        <div className="row-title">
-                          {index + 1}. {item.suggested_action ?? "—"}
-                        </div>
-                        <div className="row-meta">
-                          Tier: {item.tier ?? "—"} · Judge:{" "}
-                          {item.verdicts?.same_angle?.verdict ?? "—"} ·
-                          Verifier: {item.verdicts?.verifier?.overall ?? "—"}
-                        </div>
-                      </div>
-                      <span
-                        className={`badge ${
-                          item.suggested_action === "approve_reserve"
-                            ? "good"
-                            : item.suggested_action === "rewrite"
-                              ? "warn"
-                              : "bad"
-                        }`}
-                      >
-                        {item.signal?.evidence_level ?? "—"}
-                      </span>
-                    </div>
-                    <div className="quote">
-                      {item.signal?.reader_surprise_sentence?.ru ?? "—"}
-                    </div>
-                  </div>
-                ))}
+                <QueuePreview queue={result.queue ?? []} />
               </>
             )}
 
             {result?.mode === "day15_multi_verse_preview" && (
               <>
+                <div className="warning">
+                  Full batch can timeout. Prefer the single-fixture buttons.
+                </div>
+
                 <ul className="summary-list">
                   <li className="summary-item">
                     <strong>Verses:</strong> {result.verses?.length ?? 0}
@@ -662,7 +839,9 @@ export default function Day1DiscoveryRefineryPage() {
                         </div>
                       </div>
                       <span
-                        className={`badge ${verse.errors?.length ? "bad" : "good"}`}
+                        className={`badge ${
+                          verse.errors?.length ? "bad" : "good"
+                        }`}
                       >
                         {verse.errors?.length ? "ERROR" : "OK"}
                       </span>
@@ -675,19 +854,7 @@ export default function Day1DiscoveryRefineryPage() {
                       Tiers: {formatJson(verse.tier_counts)}
                     </div>
 
-                    {verse.queue.map((item, index) => (
-                      <div className="queue-row" key={item.queue_item_id ?? index}>
-                        <div className="row-meta">
-                          {index + 1}. {item.suggested_action ?? "—"} ·{" "}
-                          {item.tier ?? "—"} · Judge:{" "}
-                          {item.verdicts?.same_angle?.verdict ?? "—"} ·
-                          Verifier: {item.verdicts?.verifier?.overall ?? "—"}
-                        </div>
-                        <div className="quote">
-                          {item.signal?.reader_surprise_sentence?.ru ?? "—"}
-                        </div>
-                      </div>
-                    ))}
+                    <QueuePreview queue={verse.queue} />
                   </div>
                 ))}
               </>
