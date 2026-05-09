@@ -3,6 +3,7 @@ import { isProvider, type Provider } from "@/lib/ai/providers";
 import {
   runDay1Calibration,
   runDay1DetectorPreview,
+  runDay15FixturePreview,
   runDay15MultiVersePreview,
 } from "@/lib/discovery-refinery/day1/runDay1Pipeline";
 
@@ -13,6 +14,7 @@ export const maxDuration = 160;
 type Day1Action =
   | "calibration"
   | "detector_preview"
+  | "day15_fixture_preview"
   | "day15_multi_verse_preview";
 
 function isAdminRequest(req: Request): boolean {
@@ -31,12 +33,20 @@ function isDay1Action(value: unknown): value is Day1Action {
   return (
     value === "calibration" ||
     value === "detector_preview" ||
+    value === "day15_fixture_preview" ||
     value === "day15_multi_verse_preview"
   );
 }
 
 function getProvider(value: unknown, fallback: Provider): Provider {
   return isProvider(value) ? value : fallback;
+}
+
+function getFixtureId(value: unknown): string {
+  if (typeof value !== "string") return "matthew_11_29";
+
+  const trimmed = value.trim();
+  return trimmed || "matthew_11_29";
 }
 
 export async function POST(req: Request) {
@@ -66,11 +76,10 @@ export async function POST(req: Request) {
         meta: {
           action,
           purpose:
-            "Day-1 calibration checks deterministic duplicate handling, Same-Angle Judge behavior, Verifier behavior, and code routing.",
-          next:
-            result.ok
-              ? "Run detector_preview or day15_multi_verse_preview."
-              : "Inspect failed calibration cases before continuing.",
+            "Day-1 calibration checks duplicate handling, Same-Angle Judge behavior, Verifier behavior, and code routing.",
+          next: result.ok
+            ? "Run detector_preview or a single day15_fixture_preview."
+            : "Inspect failed calibration cases before continuing.",
         },
       });
     }
@@ -88,8 +97,33 @@ export async function POST(req: Request) {
           action,
           purpose:
             "Day-1 detector preview runs argument_structure_mapping_v1 on Matthew 11:29 and creates moderator queue items.",
+          next: "Review queue items manually. Do not auto-save anything yet.",
+        },
+      });
+    }
+
+    if (action === "day15_fixture_preview") {
+      const fixtureId = getFixtureId(body?.fixtureId);
+
+      const result = await runDay15FixturePreview({
+        fixtureId,
+        detectorProvider,
+        judgeProvider,
+        verifierProvider,
+      });
+
+      return NextResponse.json({
+        ...result,
+        meta: {
+          ...(result.meta ?? {}),
+          action,
+          fixtureId,
+          purpose:
+            "Day-1.5 single-fixture preview runs one verse at a time to avoid long request timeouts.",
+          boundary:
+            "No Supabase writes, no Studio moderation, no Card Crafter. Diagnostic JSON only.",
           next:
-            "Review queue items manually. Do not auto-save anything yet.",
+            "Review this single fixture result, then run the next fixture separately.",
         },
       });
     }
@@ -105,6 +139,8 @@ export async function POST(req: Request) {
       meta: {
         ...result.meta,
         action,
+        warning:
+          "This full multi-verse action can still timeout on Vercel. Prefer day15_fixture_preview one verse at a time.",
       },
     });
   } catch (error) {
