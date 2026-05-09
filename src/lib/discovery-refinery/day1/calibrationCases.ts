@@ -1,50 +1,36 @@
-import { createAngleFingerprint, createDeterministicId } from "../fingerprint";
+import { createAngleFingerprint } from "../fingerprint";
 import type {
   DiscoverySignal,
-  EvidenceLevel,
-  ExistingCoverageCard,
-  RelationToExisting,
+  RiskFlag,
+  SameAngleVerdict,
   VerifierVerdict,
 } from "../types";
-import {
-  DAY1_CANONICAL_REF,
-  DAY1_PASSAGE_ID,
-  DAY1_PRIMARY_LANG,
-  DAY1_REFERENCE,
-  DAY1_VERSE_TEXT_RU,
-  getMatthew1129ExistingCardsForJudge,
-} from "./matthew1129Snapshot";
+import { DAY1_REFERENCE } from "./matthew1129Snapshot";
 
 export type Day1CalibrationCase = {
   case_id: string;
   label: string;
-  purpose: string;
   signal: DiscoverySignal;
-  nearest_existing_cards: ExistingCoverageCard[];
   expected: {
     hash_match_before_judge: boolean;
-    same_angle_verdict: RelationToExisting;
+    same_angle_verdict: SameAngleVerdict["verdict"];
     verifier_overall: VerifierVerdict["overall"];
     verifier_pretty_but_empty: boolean;
     verifier_risk_flags: Partial<VerifierVerdict["risk_assessment"]>;
   };
 };
 
-const CREATED_AT = "2026-05-08T00:00:00.000Z";
-const RUN_ID = "day1_calibration_run";
-const DETECTOR_ID = "day1_calibration_fixture";
-
-function makeSignal(args: {
-  seed: string;
+function makeCalibrationSignal(args: {
+  caseId: string;
   anchorQuote: string;
-  anchorWords: string[];
+  specificWords: string[];
+  coreObservation: string;
+  readerSurpriseRu: string;
   phenomenon: string;
   interpretiveMove: string;
   angleFamily: DiscoverySignal["angle_fingerprint"]["angle_family"];
-  coreObservation: string;
-  readerSurpriseRu: string;
-  evidenceLevel?: EvidenceLevel;
-  riskFlags?: DiscoverySignal["risk_flags"];
+  evidenceLevel: DiscoverySignal["evidence_level"];
+  riskFlags?: RiskFlag[];
 }): DiscoverySignal {
   const fingerprint = createAngleFingerprint({
     anchor_canonical: {
@@ -60,29 +46,24 @@ function makeSignal(args: {
   });
 
   return {
-    signal_id: createDeterministicId("sig", {
-      reference: DAY1_REFERENCE,
-      seed: args.seed,
-      fingerprint_hash: fingerprint.hash,
-    }),
-
+    signal_id: `sig_${args.caseId}`,
     reference: DAY1_REFERENCE,
-    canonical_ref: DAY1_CANONICAL_REF,
-    passage_id: DAY1_PASSAGE_ID,
+    canonical_ref: DAY1_REFERENCE,
+    passage_id: "matt_11_28-30",
 
-    primary_lang: DAY1_PRIMARY_LANG,
+    primary_lang: "ru",
 
     textual_anchor: {
       canonical: {
         lang: "ru",
         quote: args.anchorQuote,
-        specific_words: args.anchorWords,
+        specific_words: args.specificWords,
         canonical_pending: true,
       },
       surfaces: {
         ru: {
           quote: args.anchorQuote,
-          specific_words: args.anchorWords,
+          specific_words: args.specificWords,
           translation_source: "RSTJ 1876 / Synodal Yahweh Edition",
         },
         en: null,
@@ -102,86 +83,42 @@ function makeSignal(args: {
 
     source_basis: {
       primary: "verse_text_only",
-      has_self_generated_context: false,
+      has_self_generated_context: true,
     },
 
-    evidence_level: args.evidenceLevel ?? "strong",
+    evidence_level: args.evidenceLevel,
     risk_flags: args.riskFlags ?? [],
 
     relation_to_existing: null,
     verifier_verdict: null,
     suggested_next_action: null,
 
-    detector_id: DETECTOR_ID,
-    run_id: RUN_ID,
-    created_at: CREATED_AT,
+    detector_id: "day1_calibration_fixture",
+    run_id: "day1_calibration_static",
+    created_at: "2026-05-09T00:00:00.000Z",
 
     metadata: {
-      verse_text_ru: DAY1_VERSE_TEXT_RU,
-      calibration_fixture: true,
+      calibration_case_id: args.caseId,
     },
   };
-}
-
-const existingCards = getMatthew1129ExistingCardsForJudge();
-
-function nearestByAnchorOrFamily(args: {
-  anchorIncludes?: string;
-  family?: DiscoverySignal["angle_fingerprint"]["angle_family"];
-  limit?: number;
-}): ExistingCoverageCard[] {
-  const limit = args.limit ?? 3;
-
-  const ranked = existingCards
-    .map((card) => {
-      let score = 0;
-
-      if (
-        args.anchorIncludes &&
-        (card.anchor_surface ?? card.anchor_canonical ?? "")
-          .toLowerCase()
-          .includes(args.anchorIncludes.toLowerCase())
-      ) {
-        score += 3;
-      }
-
-      if (args.family && card.angle_family === args.family) {
-        score += 2;
-      }
-
-      if (card.status === "featured") score += 1;
-
-      return { card, score };
-    })
-    .filter((item) => item.score > 0)
-    .sort((a, b) => b.score - a.score);
-
-  const selected = ranked.map((item) => item.card).slice(0, limit);
-
-  return selected.length > 0 ? selected : existingCards.slice(0, limit);
 }
 
 export const DAY1_CALIBRATION_CASES: Day1CalibrationCase[] = [
   {
     case_id: "case_01_same_angle_hash_duplicate",
     label: "Same angle — lexical 'кроток' duplicate",
-    purpose:
-      "The deterministic fingerprint hash should catch this before an LLM judge call. The verifier may still pass the signal intrinsically because duplication is handled by Same-Angle Judge.",
-    signal: makeSignal({
-      seed: "same_angle_lexical_meek",
+    signal: makeCalibrationSignal({
+      caseId: "case_01_same_angle_hash_duplicate",
       anchorQuote: "кроток",
-      anchorWords: ["кроток"],
+      specificWords: ["кроток"],
+      coreObservation:
+        "The word 'кроток' should not be read as weakness or passivity; it describes a controlled gentleness that belongs to the character of the speaker.",
+      readerSurpriseRu:
+        "Я не замечал, что 'кроток' здесь не обязательно звучит как слабость, а может описывать управляемую мягкость.",
       phenomenon: "lexical_meaning_clarification",
       interpretiveMove: "expand_word_semantic_range",
       angleFamily: "lexical",
-      coreObservation:
-        "The signal clarifies the semantic force of the word translated as 'meek/gentle' and distinguishes it from weakness.",
-      readerSurpriseRu:
-        "Я не замечал, что 'кроток' здесь не обязательно звучит как слабость, а может описывать управляемую мягкость.",
-    }),
-    nearest_existing_cards: nearestByAnchorOrFamily({
-      anchorIncludes: "кроток",
-      family: "lexical",
+      evidenceLevel: "strong",
     }),
     expected: {
       hash_match_before_judge: true,
@@ -191,27 +128,21 @@ export const DAY1_CALIBRATION_CASES: Day1CalibrationCase[] = [
       verifier_risk_flags: {},
     },
   },
-
   {
     case_id: "case_02_reason_connector_new_angle",
     label: "New angle — 'ибо' as reason connector",
-    purpose:
-      "The signal is text-grounded and can reasonably be treated as a new rhetorical angle: the connector 'ибо' turns Jesus' self-description into the stated reason for trusting the command.",
-    signal: makeSignal({
-      seed: "reason_connector_new_angle",
-      anchorQuote: "ибо",
-      anchorWords: ["ибо"],
-      phenomenon: "reason_connector_as_argument",
-      interpretiveMove: "reason_clause_grounds_command",
-      angleFamily: "rhetorical",
+    signal: makeCalibrationSignal({
+      caseId: "case_02_reason_connector_new_angle",
+      anchorQuote: "ибо Я кроток и смирен сердцем",
+      specificWords: ["ибо"],
       coreObservation:
-        "The connector 'for' makes the following character description function as the stated reason for the preceding command.",
+        "The causal connector 'ибо' does more than add a description of Jesus' character. It makes that character the reason the invitation 'learn from me' can be trusted: the yoke is safe because of the gentleness and humility of the one giving it.",
       readerSurpriseRu:
-        "Я не замечал, что 'ибо' превращает описание характера Иисуса в основание доверять Его призыву.",
-    }),
-    nearest_existing_cards: nearestByAnchorOrFamily({
-      anchorIncludes: "ибо",
-      family: "rhetorical",
+        "Я не замечал, что «ибо» не просто добавляет описание Иисуса, а объясняет, почему призыву «научитесь от Меня» можно доверять: основанием становится характер самого Учителя.",
+      phenomenon: "causal_particle_as_trust_warrant",
+      interpretiveMove: "speaker_character_grounds_trust_in_imperative",
+      angleFamily: "rhetorical",
+      evidenceLevel: "strong",
     }),
     expected: {
       hash_match_before_judge: false,
@@ -221,59 +152,46 @@ export const DAY1_CALIBRATION_CASES: Day1CalibrationCase[] = [
       verifier_risk_flags: {},
     },
   },
-
   {
     case_id: "case_03_stronger_version_same_anchor_new_move",
     label: "Stronger version — same anchor, sharper rhetorical move",
-    purpose:
-      "Shares the anchor 'кроток' with an existing lexical card, but reframes it as a rhetorical credential. If the judge sees this as a stronger version, replacement is an acceptable Day-1 decision.",
-    signal: makeSignal({
-      seed: "stronger_version_meek_character_argument",
+    signal: makeCalibrationSignal({
+      caseId: "case_03_stronger_version_same_anchor_new_move",
       anchorQuote: "кроток",
-      anchorWords: ["кроток"],
-      phenomenon: "speaker_character_as_argument",
-      interpretiveMove: "character_trait_as_authority_basis",
-      angleFamily: "rhetorical",
+      specificWords: ["кроток"],
       coreObservation:
-        "The speaker's stated gentleness functions rhetorically as a credential for accepting his instruction rather than merely as a character description.",
+        "The word 'кроток' is not only a character description. In the argument of the verse, it helps explain why the yoke can be accepted: the temperament of the teacher becomes part of the reason the command is trustworthy.",
       readerSurpriseRu:
         "Я не замечал, что 'кроток' может работать не как украшение характера, а как основание доверять Учителю.",
-    }),
-    nearest_existing_cards: nearestByAnchorOrFamily({
-      anchorIncludes: "кроток",
-      family: "lexical",
+      phenomenon: "attribute_function_in_yoke_command",
+      interpretiveMove: "meekness_as_ground_for_trusting_teacher_not_character_ornament",
+      angleFamily: "rhetorical",
+      evidenceLevel: "strong",
     }),
     expected: {
       hash_match_before_judge: false,
       same_angle_verdict: "stronger_version",
-      verifier_overall: "pass",
+      verifier_overall: "needs_patch",
       verifier_pretty_but_empty: false,
       verifier_risk_flags: {},
     },
   },
-
   {
     case_id: "case_04_pretty_but_empty",
     label: "Pretty but empty — sentimental paraphrase",
-    purpose:
-      "The code decision layer must flag this before relying on the LLM judge. The core observation is warm but not an analytical textual discovery.",
-    signal: makeSignal({
-      seed: "pretty_but_empty_rest_unique_fingerprint",
+    signal: makeCalibrationSignal({
+      caseId: "case_04_pretty_but_empty",
       anchorQuote: "найдете покой душам вашим",
-      anchorWords: ["покой", "душам"],
-      phenomenon: "generic_emotional_summary",
-      interpretiveMove: "turn_rest_phrase_into_sentiment",
-      angleFamily: "other",
+      specificWords: ["покой", "душам"],
       coreObservation:
-        "Jesus invites tired people to receive rest and shows that he understands weary hearts.",
+        "Jesus deeply understands tired hearts and lovingly gives comfort to anyone who comes to him for peace.",
       readerSurpriseRu:
         "Я не замечал, насколько глубоко Иисус понимает усталое сердце.",
+      phenomenon: "generic_comfort_paraphrase",
+      interpretiveMove: "sentimental_application_without_textual_mechanism",
+      angleFamily: "other",
       evidenceLevel: "weak",
       riskFlags: ["pretty_but_empty"],
-    }),
-    nearest_existing_cards: nearestByAnchorOrFamily({
-      anchorIncludes: "покой",
-      family: "other",
     }),
     expected: {
       hash_match_before_judge: false,
@@ -283,29 +201,22 @@ export const DAY1_CALIBRATION_CASES: Day1CalibrationCase[] = [
       verifier_risk_flags: {},
     },
   },
-
   {
     case_id: "case_05_risky_lexical_overclaim",
     label: "Risky overclaim — unsupported Greek claim",
-    purpose:
-      "The code decision layer must catch an overconfident lexical claim. Day-1 explicitly forbids Greek lexical claims because canonical Greek work is deferred.",
-    signal: makeSignal({
-      seed: "risky_lexical_overclaim_praus",
+    signal: makeCalibrationSignal({
+      caseId: "case_05_risky_lexical_overclaim",
       anchorQuote: "кроток",
-      anchorWords: ["кроток"],
-      phenomenon: "unsupported_original_language_claim",
-      interpretiveMove: "lexical_claim_used_as_discovery",
-      angleFamily: "lexical",
+      specificWords: ["кроток"],
       coreObservation:
-        "The Greek word πραΰς literally means 'safe authority' and proves that Jesus offers controlled power.",
+        "The original Greek word behind 'кроток' literally means 'safe authority', so the verse is defining Jesus as a non-threatening ruler.",
       readerSurpriseRu:
         "Я не замечал, что 'кроткий' в оригинале буквально означает 'безопасная власть'.",
+      phenomenon: "unsupported_original_language_claim",
+      interpretiveMove: "build_theology_from_unverified_lexical_assertion",
+      angleFamily: "lexical",
       evidenceLevel: "weak",
       riskFlags: ["lexical_overclaim"],
-    }),
-    nearest_existing_cards: nearestByAnchorOrFamily({
-      anchorIncludes: "кроток",
-      family: "lexical",
     }),
     expected: {
       hash_match_before_judge: false,
@@ -318,15 +229,3 @@ export const DAY1_CALIBRATION_CASES: Day1CalibrationCase[] = [
     },
   },
 ];
-
-export function getDay1CalibrationCases(): Day1CalibrationCase[] {
-  return DAY1_CALIBRATION_CASES;
-}
-
-export function getDay1CalibrationCase(
-  caseId: string,
-): Day1CalibrationCase | null {
-  return (
-    DAY1_CALIBRATION_CASES.find((item) => item.case_id === caseId) ?? null
-  );
-}
