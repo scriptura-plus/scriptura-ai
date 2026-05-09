@@ -243,9 +243,7 @@ export function buildVerifierPrompt(args: {
     "INPUT — SAME-ANGLE VERDICT:",
     stringifyForPrompt(args.sameAngleVerdict),
     "",
-    args.verseTextRu || args.passageTextRu
-      ? "AUTHORIZED TEXTUAL SCOPE:"
-      : "AUTHORIZED TEXTUAL SCOPE:",
+    "AUTHORIZED TEXTUAL SCOPE:",
     args.verseTextRu ? `Supplied verse text:\n${args.verseTextRu}` : "",
     args.passageTextRu
       ? `Supplied passage/context text:\n${args.passageTextRu}`
@@ -258,6 +256,18 @@ export function buildVerifierPrompt(args: {
     "If the signal depends on a person, event, exception, contrast, chapter pattern, or fact that is not present in the supplied text, evidence_supports_claim must be false.",
     "If the central claim depends on outside-passage material, overall must be fail.",
     "If the outside-passage material is removable and a safer version remains, overall may be needs_patch with a precise patch_instruction.",
+    "",
+    "PATCH VS FAIL RULE:",
+    "Do NOT automatically fail a signal just because its wording is too broad.",
+    "If there is a real, underlinable textual mechanism in the supplied text, but the candidate overstates it, generalizes it, or phrases it too strongly, set overall: needs_patch, not fail.",
+    "Use fail only when the core discovery is unsupported, external to the supplied text, speculative, empty, or unsafe.",
+    "Use needs_patch when the core discovery is real but the wording needs narrowing, softening, or anchoring.",
+    "",
+    "Examples:",
+    "- If a signal says a connector such as 'как бы' turns the whole verse into accusation, but the supplied text does show a real rhetorical reversal, set needs_patch and ask to narrow the claim to the visible reversal.",
+    "- If a signal says a list has a specific movement/order but the order is only partly defensible, set needs_patch if a real list-logic observation remains.",
+    "- If a signal depends on another verse not supplied, set fail unless the outside material can be removed and the remaining observation still works.",
+    "- If a signal is only warm or inspirational and has no textual mechanism, set fail.",
     "",
     "EVALUATION DIMENSIONS:",
     "",
@@ -298,6 +308,7 @@ export function buildVerifierPrompt(args: {
     "- A signal can pass several individual checks and still be pretty_but_empty.",
     "- A signal with any true risk_assessment flag cannot have overall: pass.",
     "- A signal that uses outside-passage material without explicit authorization cannot have overall: pass.",
+    "- A signal with a real textual mechanism but overstrong wording should usually be needs_patch, not fail.",
     "- Day-1 forbids Greek lexical claims because Greek canonical anchor work is deferred.",
     "- If core_observation and reader_surprise_sentence.ru are not aligned, consistency_check must be false.",
     "",
