@@ -1,0 +1,296 @@
+import type {
+  CoverageSnapshot,
+  DiscoverySignal,
+  ExistingCoverageCard,
+  SameAngleVerdict,
+} from "./types";
+
+function stringifyForPrompt(value: unknown): string {
+  return JSON.stringify(value, null, 2);
+}
+
+function getSnapshotCoverageForPrompt(snapshot: CoverageSnapshot): string {
+  const activeAndReserve = [...snapshot.active_cards, ...snapshot.reserve_cards];
+
+  const cards = activeAndReserve.map((card, index) => ({
+    n: index + 1,
+    card_id: card.card_id,
+    title: card.title,
+    anchor_surface: card.anchor_surface,
+    anchor_canonical: card.anchor_canonical,
+    angle_family: card.angle_family,
+    fingerprint_hash: card.fingerprint_hash,
+    fingerprint_components: card.fingerprint_components,
+    core_observation_summary: card.core_observation_summary,
+    status: card.status,
+    locked: card.locked,
+  }));
+
+  return stringifyForPrompt({
+    reference: snapshot.reference,
+    canonical_ref: snapshot.canonical_ref,
+    passage_id: snapshot.passage_id,
+    genre: snapshot.genre,
+    primary_languages_covered: snapshot.primary_languages_covered,
+    existing_cards: cards,
+    anchor_usage: snapshot.anchor_usage,
+    angle_family_coverage: snapshot.angle_family_coverage,
+    overloaded_anchors: snapshot.overloaded_anchors,
+    overloaded_families: snapshot.overloaded_families,
+    undercovered_families: snapshot.undercovered_families,
+    rejected_clusters: snapshot.rejected_clusters,
+    saturation_status: snapshot.saturation_status,
+  });
+}
+
+export function buildArgumentStructureDetectorPrompt(args: {
+  reference: string;
+  verseTextRu: string;
+  passageTextRu: string;
+  snapshot: CoverageSnapshot;
+}): string {
+  return [
+    "You are argument_structure_mapping_v1, a discovery detector for Scriptura AI.",
+    "You are NOT a writer. You are NOT producing cards.",
+    "",
+    "YOUR TASK:",
+    "Analyze this verse and find signal candidates that reveal the verse's argument structure:",
+    "how commands, reasons, evidence, and results are organized rhetorically.",
+    "",
+    `VERSE: ${args.reference}`,
+    `Russian verse text: "${args.verseTextRu}"`,
+    "",
+    "CONTEXT PASSAGE, for reference only:",
+    args.passageTextRu,
+    "",
+    "PRIMARY LANGUAGE: ru",
+    "CANONICAL ANCHOR LANGUAGE: canonical_pending=true for Day-1; use Russian as provisional canonical. Greek work is deferred.",
+    "",
+    "EXISTING COVERAGE — DO NOT DUPLICATE:",
+    getSnapshotCoverageForPrompt(args.snapshot),
+    "",
+    "DETECTOR DISCIPLINE:",
+    "- core_observation: ALWAYS in English. Neutral analytical voice. Describe what the text is doing structurally, rhetorically, or lexically.",
+    '- reader_surprise_sentence.ru: ONE sentence in Russian, starting with "Я не замечал, что..."',
+    "- textual_anchor.surfaces.ru: exact words from the verse.",
+    "- textual_anchor.canonical: same as the Russian surface for Day-1, with lang='ru' and canonical_pending=true.",
+    "- angle_fingerprint: structured object with anchor_canonical, phenomenon, interpretive_move, angle_family, and status fields.",
+    "- phenomenon and interpretive_move must be English snake_case.",
+    '- If you propose a new phenomenon or interpretive_move, mark status as "proposed_new".',
+    "",
+    "FORBIDDEN:",
+    "- Card titles, headlines, or card-like formatting.",
+    "- Card body or expanded explanation.",
+    '- Devotional language such as "we should", "this teaches us", "let us".',
+    "- Second-person address.",
+    "- Multiple sentences in reader_surprise_sentence.ru.",
+    "- Explaining the verse in general.",
+    "- Claims about Greek lexical meaning. Canonical Greek work is deferred.",
+    "- Repeating the existing lexical 'кроток' angle, the existing yoke-image angle, or the existing basic command-result structure.",
+    "",
+    "RETURN NULL POLICY:",
+    "If you cannot produce a precise core_observation grounded in observable textual phenomena, return an empty JSON array [].",
+    "An empty array is better than polished-but-vague signals.",
+    "",
+    "OUTPUT FORMAT:",
+    "Return a JSON array of 0 to 5 DiscoverySignal-like objects.",
+    "Return JSON only. No markdown. No code fences. No prose before or after.",
+    "",
+    "Each object must have exactly this shape:",
+    stringifyForPrompt([
+      {
+        signal_id: "temporary_detector_id_ok",
+        reference: args.reference,
+        canonical_ref: args.snapshot.canonical_ref ?? args.reference,
+        passage_id: args.snapshot.passage_id ?? "matt_11_28-30",
+        primary_lang: "ru",
+        textual_anchor: {
+          canonical: {
+            lang: "ru",
+            quote: "exact Russian anchor from the verse",
+            specific_words: ["specific", "anchor", "words"],
+            canonical_pending: true,
+          },
+          surfaces: {
+            ru: {
+              quote: "exact Russian anchor from the verse",
+              specific_words: ["specific", "anchor", "words"],
+              translation_source: "RSTJ 1876 / Synodal Yahweh Edition",
+            },
+            en: null,
+            es: null,
+          },
+        },
+        core_observation:
+          "English analytical claim describing what the text is doing.",
+        reader_surprise_sentence: {
+          ru: "Я не замечал, что...",
+          en: null,
+          es: null,
+        },
+        angle_fingerprint: {
+          anchor_canonical: {
+            lang: "ru",
+            text: "same anchor text for Day-1",
+            canonical_pending: true,
+          },
+          phenomenon: "english_snake_case",
+          phenomenon_status: "proposed_new",
+          interpretive_move: "english_snake_case",
+          interpretive_move_status: "proposed_new",
+          angle_family: "rhetorical",
+          hash: "leave_empty_for_code_to_compute",
+        },
+        source_basis: {
+          primary: "verse_text_only",
+          has_self_generated_context: true,
+        },
+        evidence_level: "strong",
+        risk_flags: [],
+        relation_to_existing: null,
+        verifier_verdict: null,
+        suggested_next_action: null,
+        detector_id: "argument_structure_mapping_v1",
+        run_id: "leave_empty_for_code_to_fill",
+        created_at: "leave_empty_for_code_to_fill",
+      },
+    ]),
+    "",
+    "EVALUATION:",
+    "You will be judged on:",
+    "1. Whether core_observation describes a specific textual phenomenon, not paraphrase.",
+    "2. Whether reader_surprise_sentence.ru is derivable from core_observation without new claims.",
+    "3. Whether textual_anchor is exact and citable.",
+    "4. Whether you returned [] when no real signal was present.",
+    "",
+    "You will NOT be judged on stylistic beauty, number of signals, or comprehensiveness.",
+  ].join("\n");
+}
+
+export function buildSameAngleJudgePrompt(args: {
+  signal: DiscoverySignal;
+  nearestExistingCards: ExistingCoverageCard[];
+}): string {
+  return [
+    "You are the Same-Angle Judge for Scriptura AI Discovery Refinery v1.",
+    "",
+    "YOUR TASK:",
+    "Compare a candidate DiscoverySignal against existing cards and determine whether it is the same angle, partial overlap, new angle, stronger version, pretty-but-empty, or risky overclaim.",
+    "",
+    "INPUT — CANDIDATE SIGNAL:",
+    stringifyForPrompt(args.signal),
+    "",
+    "INPUT — NEAREST EXISTING CARDS:",
+    stringifyForPrompt(args.nearestExistingCards),
+    "",
+    "OUTPUT VERDICTS — choose exactly one:",
+    "- same_angle: identical interpretive move on identical anchor.",
+    "- partial_overlap: shares anchor or move, but differs in one important dimension.",
+    "- new_angle: distinct anchor, phenomenon, and interpretive_move.",
+    "- stronger_version: same angle as existing card but sharper or better evidenced.",
+    "- pretty_but_empty: polished or warm but no real discovery.",
+    "- risky_overclaim: makes claims beyond textual evidence.",
+    "",
+    "JUDGMENT RULES:",
+    "1. Compare by angle_fingerprint components, NOT by surface wording.",
+    "2. Same anchor + same phenomenon + same interpretive_move = same_angle.",
+    "3. Same anchor + different interpretive_move = potentially partial_overlap or new_angle.",
+    "4. Different anchor + same phenomenon = often new_angle if the anchor is genuinely different.",
+    "5. Surface wording differences are NOT evidence of different angles.",
+    "6. Beauty of formulation is NOT evidence of new discovery.",
+    "7. Do not judge public card quality. Judge angle identity only.",
+    "",
+    "OUTPUT JSON ONLY:",
+    stringifyForPrompt({
+      signal_id: args.signal.signal_id,
+      verdict: "same_angle | partial_overlap | new_angle | stronger_version | pretty_but_empty | risky_overclaim",
+      compared_against: ["card_id_1", "card_id_2"],
+      overlap_explanation:
+        "required if partial_overlap or stronger_version; otherwise null",
+      differentiation_required:
+        "required if partial_overlap; otherwise null",
+      judge_confidence: "high | medium | low",
+    }),
+  ].join("\n");
+}
+
+export function buildVerifierPrompt(args: {
+  signal: DiscoverySignal;
+  sameAngleVerdict: SameAngleVerdict;
+}): string {
+  return [
+    "You are the Verifier for Scriptura AI Discovery Refinery v1.",
+    "",
+    "YOUR TASK:",
+    "Independently evaluate a DiscoverySignal across seven dimensions.",
+    "You evaluate AFTER Same-Angle Judge has assigned a verdict.",
+    "",
+    "INPUT — DISCOVERY SIGNAL:",
+    stringifyForPrompt(args.signal),
+    "",
+    "INPUT — SAME-ANGLE VERDICT:",
+    stringifyForPrompt(args.sameAngleVerdict),
+    "",
+    "EVALUATION DIMENSIONS:",
+    "",
+    "1. discovery_present:",
+    "Does core_observation describe a specific, observable textual phenomenon?",
+    "Or is it paraphrase, summary, or general explanation?",
+    "",
+    "2. anchor_precise:",
+    "Is textual_anchor.surfaces.ru a citable phrase from the verse?",
+    "Is it specific enough that one could underline it?",
+    "",
+    "3. evidence_supports_claim:",
+    "Does the verse text support core_observation?",
+    "Or does the claim require external knowledge or speculation?",
+    "",
+    "4. consistency_check:",
+    "Is reader_surprise_sentence.ru a faithful reformulation of core_observation?",
+    "Or does it introduce a new claim, sentiment, or angle?",
+    "",
+    "5. risk_assessment:",
+    "- lexical_overclaim: claims about word meanings beyond what the verse shows.",
+    "- intertext_speculative: pulls in other passages without justification.",
+    "- historical_overclaim: assumes historical context not evidenced in text.",
+    "- theological_overreach: makes doctrinal claims beyond textual scope.",
+    "- meaningful_absence_unsafe: claims author intentionally omitted something without evidence.",
+    "- self_generated_echo: novelty appears to come from existing Scriptura output rather than the verse.",
+    "",
+    "6. pretty_but_empty:",
+    "This is a separate explicit flag.",
+    'Ask: "What specifically would a reader newly notice?"',
+    "If the answer is vague, sentimental, or general, set true.",
+    "",
+    "7. overall:",
+    "pass | fail | needs_patch",
+    "",
+    "CRITICAL RULES:",
+    "- pretty_but_empty is the canonical style-degradation metric.",
+    "- A signal can pass several individual checks and still be pretty_but_empty.",
+    "- A signal with any true risk_assessment flag cannot have overall: pass.",
+    "- Day-1 forbids Greek lexical claims because Greek canonical anchor work is deferred.",
+    "- If core_observation and reader_surprise_sentence.ru are not aligned, consistency_check must be false.",
+    "",
+    "OUTPUT JSON ONLY:",
+    stringifyForPrompt({
+      signal_id: args.signal.signal_id,
+      discovery_present: true,
+      anchor_precise: true,
+      evidence_supports_claim: true,
+      consistency_check: true,
+      risk_assessment: {
+        lexical_overclaim: false,
+        intertext_speculative: false,
+        historical_overclaim: false,
+        theological_overreach: false,
+        meaningful_absence_unsafe: false,
+        self_generated_echo: false,
+      },
+      pretty_but_empty: false,
+      overall: "pass | fail | needs_patch",
+      patch_instruction: null,
+      rejection_reason: null,
+    }),
+  ].join("\n");
+}
