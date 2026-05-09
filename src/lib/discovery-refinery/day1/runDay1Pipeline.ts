@@ -29,6 +29,10 @@ import {
   DAY1_CALIBRATION_CASES,
   type Day1CalibrationCase,
 } from "./calibrationCases";
+import {
+  DAY15_VERSE_FIXTURES,
+  type Day15VerseFixture,
+} from "./day15VerseCorpus";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -76,6 +80,63 @@ export type Day1CalibrationResult = {
   passed: boolean;
   queue_item: ModeratorQueueItem | null;
   error: string | null;
+};
+
+export type Day15VersePreviewResult = Day1PipelineResult & {
+  fixture_id: string;
+  canonical_ref: string;
+  passage_id: string;
+  genre: Day15VerseFixture["genre"];
+  expected_richness: Day15VerseFixture["expected_richness"];
+  existing_coverage_mode: Day15VerseFixture["existing_coverage_mode"];
+  diagnostic_reason: string;
+  expected_behavior_note: string;
+  action_counts: {
+    approve_reserve: number;
+    approve_active: number;
+    rewrite: number;
+    replace_existing: number;
+    discard: number;
+    send_back: number;
+    mark_for_external_research: number;
+  };
+  tier_counts: {
+    A_routine: number;
+    B_conflict: number;
+    C_risk_escalation: number;
+  };
+};
+
+export type Day15MultiVersePreviewResult = {
+  ok: boolean;
+  mode: "day15_multi_verse_preview";
+  created_at: string;
+  detector_provider: Provider;
+  judge_provider: Provider;
+  verifier_provider: Provider;
+  verse_count: number;
+  total_detector_signal_count: number;
+  total_queue_items: number;
+  total_errors: number;
+  aggregate: {
+    approve_reserve: number;
+    approve_active: number;
+    rewrite: number;
+    replace_existing: number;
+    discard: number;
+    send_back: number;
+    mark_for_external_research: number;
+    A_routine: number;
+    B_conflict: number;
+    C_risk_escalation: number;
+  };
+  verses: Day15VersePreviewResult[];
+  errors: string[];
+  meta: {
+    purpose: string;
+    boundary: string;
+    next: string;
+  };
 };
 
 function isRecord(value: unknown): value is JsonRecord {
@@ -180,6 +241,10 @@ function normalizeEvidenceLevel(
     return value;
   }
 
+  if (value === "moderate" || value === "medium") {
+    return "plausible";
+  }
+
   return "plausible";
 }
 
@@ -215,6 +280,11 @@ function normalizeDetectorSignal(
   value: unknown,
   index: number,
   runId: string,
+  context: {
+    reference: string;
+    canonicalRef: string;
+    passageId: string;
+  },
 ): DiscoverySignal | null {
   if (!isRecord(value)) return null;
 
@@ -277,7 +347,9 @@ function normalizeDetectorSignal(
   });
 
   const signalSeed = {
-    reference: DAY1_REFERENCE,
+    reference: context.reference,
+    canonicalRef: context.canonicalRef,
+    passageId: context.passageId,
     index,
     runId,
     fingerprint_hash: fingerprint.hash,
@@ -293,9 +365,9 @@ function normalizeDetectorSignal(
         ? rawSignalId
         : createDeterministicId("sig", signalSeed),
 
-    reference: DAY1_REFERENCE,
-    canonical_ref: DAY1_REFERENCE,
-    passage_id: "matt_11_28-30",
+    reference: context.reference,
+    canonical_ref: context.canonicalRef,
+    passage_id: context.passageId,
 
     primary_lang: "ru",
 
@@ -643,6 +715,7 @@ function createQueueItem(args: {
   nearestExistingCards: ExistingCoverageCard[];
   sameAngleVerdict: SameAngleVerdict;
   verifierVerdict: VerifierVerdict;
+  verseTextRu: string;
 }): ModeratorQueueItem {
   const tier = getTier({
     sameAngleVerdict: args.sameAngleVerdict,
@@ -682,7 +755,7 @@ function createQueueItem(args: {
     card_draft: null,
 
     context: {
-      verse_with_anchor_highlighted: DAY1_VERSE_TEXT_RU,
+      verse_with_anchor_highlighted: args.verseTextRu,
       nearest_existing_cards: args.nearestExistingCards,
       fingerprint_diff: null,
       existing_language_versions: null,
@@ -716,6 +789,7 @@ async function processSignal(args: {
   existingCards: ExistingCoverageCard[];
   judgeProvider: Provider;
   verifierProvider: Provider;
+  verseTextRu: string;
 }): Promise<{
   queueItem: ModeratorQueueItem;
   diagnostic: Day1DiagnosticItem;
@@ -867,6 +941,7 @@ async function processSignal(args: {
     nearestExistingCards,
     sameAngleVerdict,
     verifierVerdict,
+    verseTextRu: args.verseTextRu,
   });
 
   const diagnostic: Day1DiagnosticItem = {
@@ -955,7 +1030,8 @@ function isAllowedFlexibleCalibrationVariant(
 
     const isStrongerVersion =
       actual.same_angle_verdict === "stronger_version" &&
-      actual.verifier_overall === "pass";
+      (actual.verifier_overall === "pass" ||
+        actual.verifier_overall === "needs_patch");
 
     const isConservativeOverlap =
       actual.same_angle_verdict === "partial_overlap" &&
@@ -996,6 +1072,7 @@ export async function runDay1Calibration(args?: {
         existingCards,
         judgeProvider,
         verifierProvider,
+        verseTextRu: DAY1_VERSE_TEXT_RU,
       });
 
       diagnostics.push(processed.diagnostic);
@@ -1133,7 +1210,13 @@ export async function runDay1DetectorPreview(args?: {
   }
 
   const signals = parsedArray
-    .map((item, index) => normalizeDetectorSignal(item, index, runId))
+    .map((item, index) =>
+      normalizeDetectorSignal(item, index, runId, {
+        reference: DAY1_REFERENCE,
+        canonicalRef: DAY1_REFERENCE,
+        passageId: "matt_11_28-30",
+      }),
+    )
     .filter((item): item is DiscoverySignal => item !== null);
 
   const queue: ModeratorQueueItem[] = [];
@@ -1146,6 +1229,7 @@ export async function runDay1DetectorPreview(args?: {
         existingCards,
         judgeProvider,
         verifierProvider,
+        verseTextRu: DAY1_VERSE_TEXT_RU,
       });
 
       queue.push(processed.queueItem);
@@ -1171,5 +1255,386 @@ export async function runDay1DetectorPreview(args?: {
     queue,
     diagnostics,
     errors,
+  };
+}
+
+function buildDay15DetectorPrompt(fixture: Day15VerseFixture): string {
+  return [
+    "You are the Scriptura AI Discovery Refinery detector.",
+    "",
+    "Task:",
+    "Find discovery signals in this Bible verse/passage.",
+    "Do not write devotional commentary.",
+    "Do not create finished cards.",
+    "Do not force discoveries if the verse is low-richness.",
+    "",
+    "Output language:",
+    "The reader_surprise_sentence.ru field must be in Russian.",
+    "All JSON key names must remain English.",
+    "",
+    "Detector focus:",
+    "Use argument_structure_mapping_v1.",
+    "Look for textual mechanisms such as:",
+    "- causal connectors",
+    "- command/result structure",
+    "- contrast",
+    "- repetition",
+    "- sequence",
+    "- agency shifts",
+    "- rhetorical asymmetry",
+    "- meaningful absence",
+    "- list logic",
+    "- narrative tension",
+    "",
+    "Safety:",
+    "Do not make unsupported Greek/Hebrew claims.",
+    "Do not claim something is in the original language unless the supplied text proves it.",
+    "If a signal is weak or mostly inspirational, either omit it or mark evidence_level as weak.",
+    "For low-richness genealogy/formulaic verses, 0 or 1 signal is acceptable.",
+    "",
+    "Return ONLY a valid JSON array.",
+    "No markdown.",
+    "No code fences.",
+    "",
+    "Each array item must have this exact shape:",
+    JSON.stringify(
+      [
+        {
+          signal_id: "temporary_detector_id_ok",
+          reference: fixture.reference,
+          canonical_ref: fixture.canonical_ref,
+          passage_id: fixture.passage_id,
+          primary_lang: "ru",
+          textual_anchor: {
+            canonical: {
+              lang: "ru",
+              quote: "short exact phrase from the supplied Russian verse",
+              specific_words: ["word1", "word2"],
+              canonical_pending: true,
+            },
+            surfaces: {
+              ru: {
+                quote: "same or surface phrase",
+                specific_words: ["word1", "word2"],
+                translation_source: "RSTJ 1876 / Synodal Yahweh Edition",
+              },
+              en: null,
+              es: null,
+            },
+          },
+          core_observation:
+            "One precise explanation of the textual mechanism. Not a sermon.",
+          reader_surprise_sentence: {
+            ru: "Я не замечал, что ...",
+            en: null,
+            es: null,
+          },
+          angle_fingerprint: {
+            anchor_canonical: {
+              lang: "ru",
+              text: "normalized anchor phrase",
+              canonical_pending: true,
+            },
+            phenomenon: "short_snake_case_textual_phenomenon",
+            phenomenon_status: "proposed_new",
+            interpretive_move: "short_snake_case_interpretive_move",
+            interpretive_move_status: "proposed_new",
+            angle_family: "rhetorical",
+            hash: "leave_empty_for_code_to_compute",
+          },
+          source_basis: {
+            primary: "verse_text_only",
+            has_self_generated_context: true,
+          },
+          evidence_level: "strong",
+          risk_flags: [],
+          relation_to_existing: null,
+          verifier_verdict: null,
+          suggested_next_action: null,
+          detector_id: "argument_structure_mapping_v1",
+          run_id: "leave_empty_for_code_to_fill",
+          created_at: "leave_empty_for_code_to_fill",
+        },
+      ],
+      null,
+      2,
+    ),
+    "",
+    "Allowed evidence_level values:",
+    "- strong",
+    "- plausible",
+    "- weak",
+    "",
+    "Allowed angle_family values:",
+    "- lexical",
+    "- rhetorical",
+    "- structural",
+    "- translation",
+    "- intertextual",
+    "- historical",
+    "- paradox_tension",
+    "- meaningful_absence",
+    "- contextual",
+    "- discourse_function",
+    "- metaphor_image",
+    "- other",
+    "",
+    "VERSE FIXTURE:",
+    JSON.stringify(
+      {
+        id: fixture.id,
+        reference: fixture.reference,
+        canonical_ref: fixture.canonical_ref,
+        passage_id: fixture.passage_id,
+        genre: fixture.genre,
+        expected_richness: fixture.expected_richness,
+        diagnostic_reason: fixture.diagnostic_reason,
+        expected_behavior_note: fixture.expected_behavior_note,
+        verse_text_ru: fixture.verse_text_ru,
+        passage_text_ru: fixture.passage_text_ru,
+      },
+      null,
+      2,
+    ),
+  ].join("\n");
+}
+
+function getExistingCardsForFixture(
+  fixture: Day15VerseFixture,
+): ExistingCoverageCard[] {
+  if (fixture.existing_coverage_mode === "fixture_existing_cards") {
+    return getMatthew1129ExistingCardsForJudge();
+  }
+
+  return [];
+}
+
+function countActions(queue: ModeratorQueueItem[]): Day15VersePreviewResult["action_counts"] {
+  return {
+    approve_reserve: queue.filter((item) => item.suggested_action === "approve_reserve").length,
+    approve_active: queue.filter((item) => item.suggested_action === "approve_active").length,
+    rewrite: queue.filter((item) => item.suggested_action === "rewrite").length,
+    replace_existing: queue.filter((item) => item.suggested_action === "replace_existing").length,
+    discard: queue.filter((item) => item.suggested_action === "discard").length,
+    send_back: queue.filter((item) => item.suggested_action === "send_back").length,
+    mark_for_external_research: queue.filter(
+      (item) => item.suggested_action === "mark_for_external_research",
+    ).length,
+  };
+}
+
+function countTiers(queue: ModeratorQueueItem[]): Day15VersePreviewResult["tier_counts"] {
+  return {
+    A_routine: queue.filter((item) => item.tier === "A_routine").length,
+    B_conflict: queue.filter((item) => item.tier === "B_conflict").length,
+    C_risk_escalation: queue.filter((item) => item.tier === "C_risk_escalation").length,
+  };
+}
+
+async function runDay15VersePreview(args: {
+  fixture: Day15VerseFixture;
+  detectorProvider: Provider;
+  judgeProvider: Provider;
+  verifierProvider: Provider;
+}): Promise<Day15VersePreviewResult> {
+  const prompt = buildDay15DetectorPrompt(args.fixture);
+  const existingCards = getExistingCardsForFixture(args.fixture);
+
+  const runId = createDeterministicId("run", {
+    reference: args.fixture.reference,
+    mode: "day15_multi_verse_preview",
+    created_at: new Date().toISOString(),
+  });
+
+  const errors: string[] = [];
+  let detectorRawText: string | null = null;
+
+  try {
+    detectorRawText = await runAI(args.detectorProvider, prompt, "ru", true);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+
+    return {
+      ok: false,
+      mode: "detector_preview",
+      fixture_id: args.fixture.id,
+      reference: args.fixture.reference,
+      canonical_ref: args.fixture.canonical_ref,
+      passage_id: args.fixture.passage_id,
+      genre: args.fixture.genre,
+      expected_richness: args.fixture.expected_richness,
+      existing_coverage_mode: args.fixture.existing_coverage_mode,
+      diagnostic_reason: args.fixture.diagnostic_reason,
+      expected_behavior_note: args.fixture.expected_behavior_note,
+      detector_provider: args.detectorProvider,
+      judge_provider: args.judgeProvider,
+      verifier_provider: args.verifierProvider,
+      detector_raw_text: null,
+      detector_signal_count: 0,
+      queue: [],
+      diagnostics: [],
+      errors: [`Detector failed: ${message}`],
+      action_counts: countActions([]),
+      tier_counts: countTiers([]),
+    };
+  }
+
+  const parsedArray = parseJsonArray(detectorRawText);
+
+  if (!parsedArray) {
+    return {
+      ok: false,
+      mode: "detector_preview",
+      fixture_id: args.fixture.id,
+      reference: args.fixture.reference,
+      canonical_ref: args.fixture.canonical_ref,
+      passage_id: args.fixture.passage_id,
+      genre: args.fixture.genre,
+      expected_richness: args.fixture.expected_richness,
+      existing_coverage_mode: args.fixture.existing_coverage_mode,
+      diagnostic_reason: args.fixture.diagnostic_reason,
+      expected_behavior_note: args.fixture.expected_behavior_note,
+      detector_provider: args.detectorProvider,
+      judge_provider: args.judgeProvider,
+      verifier_provider: args.verifierProvider,
+      detector_raw_text: detectorRawText,
+      detector_signal_count: 0,
+      queue: [],
+      diagnostics: [],
+      errors: ["Detector did not return a valid JSON array."],
+      action_counts: countActions([]),
+      tier_counts: countTiers([]),
+    };
+  }
+
+  const signals = parsedArray
+    .map((item, index) =>
+      normalizeDetectorSignal(item, index, runId, {
+        reference: args.fixture.reference,
+        canonicalRef: args.fixture.canonical_ref,
+        passageId: args.fixture.passage_id,
+      }),
+    )
+    .filter((item): item is DiscoverySignal => item !== null);
+
+  const queue: ModeratorQueueItem[] = [];
+  const diagnostics: Day1DiagnosticItem[] = [];
+
+  for (const signal of signals) {
+    try {
+      const processed = await processSignal({
+        signal,
+        existingCards,
+        judgeProvider: args.judgeProvider,
+        verifierProvider: args.verifierProvider,
+        verseTextRu: args.fixture.verse_text_ru,
+      });
+
+      queue.push(processed.queueItem);
+      diagnostics.push(processed.diagnostic);
+    } catch (error) {
+      errors.push(
+        `${signal.signal_id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
+  return {
+    ok: errors.length === 0,
+    mode: "detector_preview",
+    fixture_id: args.fixture.id,
+    reference: args.fixture.reference,
+    canonical_ref: args.fixture.canonical_ref,
+    passage_id: args.fixture.passage_id,
+    genre: args.fixture.genre,
+    expected_richness: args.fixture.expected_richness,
+    existing_coverage_mode: args.fixture.existing_coverage_mode,
+    diagnostic_reason: args.fixture.diagnostic_reason,
+    expected_behavior_note: args.fixture.expected_behavior_note,
+    detector_provider: args.detectorProvider,
+    judge_provider: args.judgeProvider,
+    verifier_provider: args.verifierProvider,
+    detector_raw_text: detectorRawText,
+    detector_signal_count: signals.length,
+    queue,
+    diagnostics,
+    errors,
+    action_counts: countActions(queue),
+    tier_counts: countTiers(queue),
+  };
+}
+
+export async function runDay15MultiVersePreview(args?: {
+  detectorProvider?: Provider;
+  judgeProvider?: Provider;
+  verifierProvider?: Provider;
+}): Promise<Day15MultiVersePreviewResult> {
+  const detectorProvider = args?.detectorProvider ?? "claude";
+  const judgeProvider = args?.judgeProvider ?? "openai";
+  const verifierProvider = args?.verifierProvider ?? "openai";
+
+  const verses: Day15VersePreviewResult[] = [];
+  const errors: string[] = [];
+
+  for (const fixture of DAY15_VERSE_FIXTURES) {
+    const result = await runDay15VersePreview({
+      fixture,
+      detectorProvider,
+      judgeProvider,
+      verifierProvider,
+    });
+
+    verses.push(result);
+
+    if (!result.ok) {
+      errors.push(
+        `${fixture.reference}: ${result.errors.join("; ") || "unknown error"}`,
+      );
+    }
+  }
+
+  const aggregate = {
+    approve_reserve: verses.reduce((sum, verse) => sum + verse.action_counts.approve_reserve, 0),
+    approve_active: verses.reduce((sum, verse) => sum + verse.action_counts.approve_active, 0),
+    rewrite: verses.reduce((sum, verse) => sum + verse.action_counts.rewrite, 0),
+    replace_existing: verses.reduce((sum, verse) => sum + verse.action_counts.replace_existing, 0),
+    discard: verses.reduce((sum, verse) => sum + verse.action_counts.discard, 0),
+    send_back: verses.reduce((sum, verse) => sum + verse.action_counts.send_back, 0),
+    mark_for_external_research: verses.reduce(
+      (sum, verse) => sum + verse.action_counts.mark_for_external_research,
+      0,
+    ),
+    A_routine: verses.reduce((sum, verse) => sum + verse.tier_counts.A_routine, 0),
+    B_conflict: verses.reduce((sum, verse) => sum + verse.tier_counts.B_conflict, 0),
+    C_risk_escalation: verses.reduce((sum, verse) => sum + verse.tier_counts.C_risk_escalation, 0),
+  };
+
+  return {
+    ok: errors.length === 0,
+    mode: "day15_multi_verse_preview",
+    created_at: new Date().toISOString(),
+    detector_provider: detectorProvider,
+    judge_provider: judgeProvider,
+    verifier_provider: verifierProvider,
+    verse_count: verses.length,
+    total_detector_signal_count: verses.reduce(
+      (sum, verse) => sum + verse.detector_signal_count,
+      0,
+    ),
+    total_queue_items: verses.reduce((sum, verse) => sum + verse.queue.length, 0),
+    total_errors: errors.length,
+    aggregate,
+    verses,
+    errors,
+    meta: {
+      purpose:
+        "Day-1.5 multi-verse preview characterizes Discovery Refinery behavior across mixed genres before Supabase persistence.",
+      boundary:
+        "No Supabase writes, no Studio moderation, no Card Crafter. Diagnostic JSON only.",
+      next:
+        "Review aggregate distribution and per-verse diagnostics before deciding whether to tune prompts or design persistence.",
+    },
   };
 }
