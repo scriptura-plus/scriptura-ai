@@ -155,7 +155,9 @@ function normalizeRiskFlags(value: unknown): RiskFlag[] {
     .filter((item): item is RiskFlag => allowed.has(item as RiskFlag));
 }
 
-function normalizeEvidenceLevel(value: unknown): DiscoverySignal["evidence_level"] {
+function normalizeEvidenceLevel(
+  value: unknown,
+): DiscoverySignal["evidence_level"] {
   if (value === "strong" || value === "plausible" || value === "weak") {
     return value;
   }
@@ -181,7 +183,10 @@ function normalizeAngleFamily(
     "other",
   ]);
 
-  if (typeof value === "string" && allowed.has(value as AngleFingerprint["angle_family"])) {
+  if (
+    typeof value === "string" &&
+    allowed.has(value as AngleFingerprint["angle_family"])
+  ) {
     return value as AngleFingerprint["angle_family"];
   }
 
@@ -210,10 +215,10 @@ function normalizeDetectorSignal(
     toString(surfaceRu?.quote);
 
   const surfaceQuote = toString(surfaceRu?.quote) || canonicalQuote;
-  const specificWords =
-    toStringArray(surfaceRu?.specific_words).length > 0
-      ? toStringArray(surfaceRu?.specific_words)
-      : toStringArray(canonical?.specific_words);
+
+  const surfaceWords = toStringArray(surfaceRu?.specific_words);
+  const canonicalWords = toStringArray(canonical?.specific_words);
+  const specificWords = surfaceWords.length > 0 ? surfaceWords : canonicalWords;
 
   const coreObservation = toString(value.core_observation);
 
@@ -345,12 +350,15 @@ function selectNearestExistingCards(
   existingCards: ExistingCoverageCard[],
   limit = 5,
 ): ExistingCoverageCard[] {
+  const ruSurface = signal.textual_anchor.surfaces.ru;
+  const anchorCandidates = [
+    ruSurface?.quote,
+    ...(ruSurface?.specific_words ?? []),
+    signal.angle_fingerprint.anchor_canonical.text,
+  ];
+
   const anchorWords = new Set(
-    [
-      signal.textual_anchor.surfaces.ru?.quote,
-      ...signal.textual_anchor.surfaces.ru?.specific_words ?? [],
-      signal.angle_fingerprint.anchor_canonical.text,
-    ]
+    anchorCandidates
       .filter(Boolean)
       .map((item) => String(item).toLowerCase()),
   );
@@ -359,7 +367,9 @@ function selectNearestExistingCards(
     .map((card) => {
       let score = 0;
 
-      const cardAnchor = `${card.anchor_surface ?? ""} ${card.anchor_canonical ?? ""}`.toLowerCase();
+      const cardAnchor = `${card.anchor_surface ?? ""} ${
+        card.anchor_canonical ?? ""
+      }`.toLowerCase();
 
       for (const word of anchorWords) {
         if (word && cardAnchor.includes(word)) score += 3;
@@ -419,10 +429,8 @@ function normalizeSameAngleVerdict(
       toStringArray(value?.compared_against).length > 0
         ? toStringArray(value?.compared_against)
         : comparedAgainst,
-    overlap_explanation:
-      toString(value?.overlap_explanation) || null,
-    differentiation_required:
-      toString(value?.differentiation_required) || null,
+    overlap_explanation: toString(value?.overlap_explanation) || null,
+    differentiation_required: toString(value?.differentiation_required) || null,
     judge_confidence:
       confidence === "high" || confidence === "medium" || confidence === "low"
         ? confidence
@@ -434,9 +442,7 @@ function normalizeVerifierVerdict(
   value: JsonRecord | null,
   signal: DiscoverySignal,
 ): VerifierVerdict {
-  const risk = isRecord(value?.risk_assessment)
-    ? value.risk_assessment
-    : {};
+  const risk = isRecord(value?.risk_assessment) ? value.risk_assessment : {};
 
   const overall = toString(value?.overall);
 
@@ -461,6 +467,77 @@ function normalizeVerifierVerdict(
         : "fail",
     patch_instruction: toString(value?.patch_instruction) || null,
     rejection_reason: toString(value?.rejection_reason) || null,
+  };
+}
+
+function createDeterministicVerifierVerdict(args: {
+  signal: DiscoverySignal;
+  kind: "lexical_overclaim" | "pretty_but_empty" | "hash_duplicate";
+}): VerifierVerdict {
+  if (args.kind === "lexical_overclaim") {
+    return {
+      signal_id: args.signal.signal_id,
+      discovery_present: true,
+      anchor_precise: true,
+      evidence_supports_claim: false,
+      consistency_check: true,
+      risk_assessment: {
+        lexical_overclaim: true,
+        intertext_speculative: false,
+        historical_overclaim: false,
+        theological_overreach: false,
+        meaningful_absence_unsafe: false,
+        self_generated_echo: false,
+      },
+      pretty_but_empty: false,
+      overall: "fail",
+      patch_instruction: null,
+      rejection_reason:
+        "Code decision: lexical overclaim risk was already present on the signal.",
+    };
+  }
+
+  if (args.kind === "pretty_but_empty") {
+    return {
+      signal_id: args.signal.signal_id,
+      discovery_present: false,
+      anchor_precise: true,
+      evidence_supports_claim: false,
+      consistency_check: true,
+      risk_assessment: {
+        lexical_overclaim: false,
+        intertext_speculative: false,
+        historical_overclaim: false,
+        theological_overreach: false,
+        meaningful_absence_unsafe: false,
+        self_generated_echo: false,
+      },
+      pretty_but_empty: true,
+      overall: "fail",
+      patch_instruction: null,
+      rejection_reason:
+        "Code decision: signal was already classified as pretty-but-empty.",
+    };
+  }
+
+  return {
+    signal_id: args.signal.signal_id,
+    discovery_present: true,
+    anchor_precise: true,
+    evidence_supports_claim: true,
+    consistency_check: true,
+    risk_assessment: {
+      lexical_overclaim: false,
+      intertext_speculative: false,
+      historical_overclaim: false,
+      theological_overreach: false,
+      meaningful_absence_unsafe: false,
+      self_generated_echo: false,
+    },
+    pretty_but_empty: false,
+    overall: "pass",
+    patch_instruction: null,
+    rejection_reason: null,
   };
 }
 
@@ -621,8 +698,39 @@ async function processSignal(args: {
   );
 
   let sameAngleVerdict: SameAngleVerdict;
+  let verifierVerdict: VerifierVerdict | null = null;
 
-  if (hashDuplicate) {
+  if (args.signal.risk_flags.includes("lexical_overclaim")) {
+    sameAngleVerdict = {
+      signal_id: args.signal.signal_id,
+      verdict: "risky_overclaim",
+      compared_against: nearestExistingCards.map((card) => card.card_id),
+      overlap_explanation:
+        "Code decision: signal was pre-flagged as lexical_overclaim before Same-Angle Judge.",
+      differentiation_required: null,
+      judge_confidence: "high",
+    };
+
+    verifierVerdict = createDeterministicVerifierVerdict({
+      signal: args.signal,
+      kind: "lexical_overclaim",
+    });
+  } else if (args.signal.risk_flags.includes("pretty_but_empty")) {
+    sameAngleVerdict = {
+      signal_id: args.signal.signal_id,
+      verdict: "pretty_but_empty",
+      compared_against: nearestExistingCards.map((card) => card.card_id),
+      overlap_explanation:
+        "Code decision: signal was pre-flagged as pretty_but_empty before Same-Angle Judge.",
+      differentiation_required: null,
+      judge_confidence: "high",
+    };
+
+    verifierVerdict = createDeterministicVerifierVerdict({
+      signal: args.signal,
+      kind: "pretty_but_empty",
+    });
+  } else if (hashDuplicate) {
     sameAngleVerdict = {
       signal_id: args.signal.signal_id,
       verdict: "same_angle",
@@ -632,6 +740,11 @@ async function processSignal(args: {
       differentiation_required: null,
       judge_confidence: "high",
     };
+
+    verifierVerdict = createDeterministicVerifierVerdict({
+      signal: args.signal,
+      kind: "hash_duplicate",
+    });
   } else {
     const judgePrompt = buildSameAngleJudgePrompt({
       signal: args.signal,
@@ -639,36 +752,78 @@ async function processSignal(args: {
     });
 
     const judgeRaw = await runAI(args.judgeProvider, judgePrompt, "en", true);
+
     sameAngleVerdict = normalizeSameAngleVerdict(
       parseJsonObject(judgeRaw),
       args.signal,
       "new_angle",
       nearestExistingCards.map((card) => card.card_id),
     );
+
+    if (sameAngleVerdict.verdict === "same_angle") {
+      const signalFingerprint = args.signal.angle_fingerprint;
+
+      const exactComponentMatch = nearestExistingCards.some((card) => {
+        const components = card.fingerprint_components;
+        if (!components) return false;
+
+        return (
+          components.anchor === signalFingerprint.anchor_canonical.text &&
+          components.phenomenon === signalFingerprint.phenomenon &&
+          components.interpretive_move === signalFingerprint.interpretive_move &&
+          components.angle_family === signalFingerprint.angle_family
+        );
+      });
+
+      if (!exactComponentMatch) {
+        sameAngleVerdict = {
+          ...sameAngleVerdict,
+          verdict: "partial_overlap",
+          overlap_explanation:
+            sameAngleVerdict.overlap_explanation ??
+            "Code guard: Judge said same_angle, but no exact fingerprint component match was found.",
+          differentiation_required:
+            sameAngleVerdict.differentiation_required ??
+            "Moderator should check whether this shares only the anchor or actually repeats the same interpretive move.",
+          judge_confidence:
+            sameAngleVerdict.judge_confidence === "high"
+              ? "medium"
+              : sameAngleVerdict.judge_confidence,
+        };
+      }
+    }
   }
 
-  const verifierPrompt = buildVerifierPrompt({
-    signal: args.signal,
-    sameAngleVerdict,
-  });
+  if (!verifierVerdict) {
+    const verifierPrompt = buildVerifierPrompt({
+      signal: args.signal,
+      sameAngleVerdict,
+    });
 
-  const verifierRaw = await runAI(args.verifierProvider, verifierPrompt, "en", true);
-  const verifierVerdict = normalizeVerifierVerdict(
-    parseJsonObject(verifierRaw),
-    args.signal,
-  );
+    const verifierRaw = await runAI(
+      args.verifierProvider,
+      verifierPrompt,
+      "en",
+      true,
+    );
+
+    verifierVerdict = normalizeVerifierVerdict(
+      parseJsonObject(verifierRaw),
+      args.signal,
+    );
+  }
+
+  const finalVerifierVerdict = verifierVerdict;
 
   return createQueueItem({
     signal: args.signal,
     nearestExistingCards,
     sameAngleVerdict,
-    verifierVerdict,
+    verifierVerdict: finalVerifierVerdict,
   });
 }
 
-function compareCalibrationResult(
-  result: Day1CalibrationResult,
-): boolean {
+function compareCalibrationResult(result: Day1CalibrationResult): boolean {
   const expected = result.expected;
   const actual = result.actual;
 
@@ -684,15 +839,15 @@ function compareCalibrationResult(
     return false;
   }
 
-  if (
-    actual.verifier_pretty_but_empty !== expected.verifier_pretty_but_empty
-  ) {
+  if (actual.verifier_pretty_but_empty !== expected.verifier_pretty_but_empty) {
     return false;
   }
 
   for (const [key, value] of Object.entries(expected.verifier_risk_flags)) {
     const actualValue =
-      actual.verifier_risk_flags[key as keyof VerifierVerdict["risk_assessment"]];
+      actual.verifier_risk_flags[
+        key as keyof VerifierVerdict["risk_assessment"]
+      ];
 
     if (actualValue !== value) return false;
   }
