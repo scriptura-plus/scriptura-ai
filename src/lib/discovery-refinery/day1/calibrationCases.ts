@@ -166,7 +166,7 @@ export const DAY1_CALIBRATION_CASES: Day1CalibrationCase[] = [
     case_id: "case_01_same_angle_hash_duplicate",
     label: "Same angle — lexical 'кроток' duplicate",
     purpose:
-      "The deterministic fingerprint hash should catch this before an LLM judge call. Different wording, same anchor/phenomenon/interpretive move.",
+      "The deterministic fingerprint hash should catch this before an LLM judge call. The verifier may still pass the signal intrinsically because duplication is handled by Same-Angle Judge.",
     signal: makeSignal({
       seed: "same_angle_lexical_meek",
       anchorQuote: "кроток",
@@ -186,31 +186,31 @@ export const DAY1_CALIBRATION_CASES: Day1CalibrationCase[] = [
     expected: {
       hash_match_before_judge: true,
       same_angle_verdict: "same_angle",
-      verifier_overall: "fail",
+      verifier_overall: "pass",
       verifier_pretty_but_empty: false,
       verifier_risk_flags: {},
     },
   },
 
   {
-    case_id: "case_02_new_angle_reason_clause",
-    label: "New angle — 'ибо' as reason clause",
+    case_id: "case_02_new_angle_reason_connector",
+    label: "New angle — 'ибо' as reason connector",
     purpose:
       "This should pass as a new rhetorical angle: the connector 'ибо' makes Jesus' character function as the reason for trusting the command.",
     signal: makeSignal({
-      seed: "new_angle_reason_clause",
-      anchorQuote: "ибо Я кроток и смирен сердцем",
-      anchorWords: ["ибо", "кроток"],
-      phenomenon: "reason_clause_as_argument",
-      interpretiveMove: "character_as_basis_for_trust",
+      seed: "new_angle_reason_connector",
+      anchorQuote: "ибо",
+      anchorWords: ["ибо"],
+      phenomenon: "reason_connector_as_argument",
+      interpretiveMove: "reason_clause_grounds_command",
       angleFamily: "rhetorical",
       coreObservation:
-        "The reason clause introduced by 'for' grounds the preceding command in the speaker's character, making gentleness and humility the stated basis for trusting the invitation.",
+        "The connector 'for' makes the following character description function as the stated reason for the preceding command.",
       readerSurpriseRu:
-        "Я не замечал, что 'ибо Я кроток' не просто описывает Иисуса, а объясняет, почему Его ярму можно доверять.",
+        "Я не замечал, что 'ибо' превращает описание характера Иисуса в основание доверять Его призыву.",
     }),
     nearest_existing_cards: nearestByAnchorOrFamily({
-      anchorIncludes: "кроток",
+      anchorIncludes: "ибо",
       family: "rhetorical",
     }),
     expected: {
@@ -258,11 +258,11 @@ export const DAY1_CALIBRATION_CASES: Day1CalibrationCase[] = [
     purpose:
       "The verifier must flag this even though it sounds warm. The core observation is not an analytical textual claim.",
     signal: makeSignal({
-      seed: "pretty_but_empty_rest",
+      seed: "pretty_but_empty_rest_unique_fingerprint",
       anchorQuote: "найдете покой душам вашим",
       anchorWords: ["покой", "душам"],
-      phenomenon: "generic_comfort_paraphrase",
-      interpretiveMove: "sentimental_application_without_textual_mechanism",
+      phenomenon: "generic_emotional_summary",
+      interpretiveMove: "turn_rest_phrase_into_sentiment",
       angleFamily: "other",
       coreObservation:
         "Jesus invites tired people to receive rest and shows that he understands weary hearts.",
