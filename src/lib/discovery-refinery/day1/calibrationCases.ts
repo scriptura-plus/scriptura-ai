@@ -193,12 +193,12 @@ export const DAY1_CALIBRATION_CASES: Day1CalibrationCase[] = [
   },
 
   {
-    case_id: "case_02_new_angle_reason_connector",
-    label: "New angle — 'ибо' as reason connector",
+    case_id: "case_02_reason_connector_overlap_needs_patch",
+    label: "Partial overlap — 'ибо' as reason connector",
     purpose:
-      "This should pass as a new rhetorical angle: the connector 'ибо' makes Jesus' character function as the reason for trusting the command.",
+      "This is a real rhetorical signal, but it overlaps with the existing/nearby idea that Jesus' stated character becomes a basis for trust. The correct Day-1 behavior is conservative: partial_overlap plus needs_patch, not automatic approval.",
     signal: makeSignal({
-      seed: "new_angle_reason_connector",
+      seed: "reason_connector_overlap_needs_patch",
       anchorQuote: "ибо",
       anchorWords: ["ибо"],
       phenomenon: "reason_connector_as_argument",
@@ -215,8 +215,8 @@ export const DAY1_CALIBRATION_CASES: Day1CalibrationCase[] = [
     }),
     expected: {
       hash_match_before_judge: false,
-      same_angle_verdict: "new_angle",
-      verifier_overall: "pass",
+      same_angle_verdict: "partial_overlap",
+      verifier_overall: "needs_patch",
       verifier_pretty_but_empty: false,
       verifier_risk_flags: {},
     },
@@ -226,7 +226,7 @@ export const DAY1_CALIBRATION_CASES: Day1CalibrationCase[] = [
     case_id: "case_03_partial_overlap_same_anchor_new_move",
     label: "Partial overlap — same anchor, different move",
     purpose:
-      "Shares the anchor 'кроток' with an existing lexical card, but tries to move from lexical meaning to rhetorical function. Judge should not treat wording alone as same_angle.",
+      "Shares the anchor 'кроток' with an existing lexical card, but moves from lexical meaning to rhetorical function. It should remain partial_overlap, but the verifier may pass the signal intrinsically because the observation is text-grounded.",
     signal: makeSignal({
       seed: "partial_overlap_meek_character_argument",
       anchorQuote: "кроток",
@@ -246,7 +246,7 @@ export const DAY1_CALIBRATION_CASES: Day1CalibrationCase[] = [
     expected: {
       hash_match_before_judge: false,
       same_angle_verdict: "partial_overlap",
-      verifier_overall: "needs_patch",
+      verifier_overall: "pass",
       verifier_pretty_but_empty: false,
       verifier_risk_flags: {},
     },
@@ -256,7 +256,7 @@ export const DAY1_CALIBRATION_CASES: Day1CalibrationCase[] = [
     case_id: "case_04_pretty_but_empty",
     label: "Pretty but empty — sentimental paraphrase",
     purpose:
-      "The verifier must flag this even though it sounds warm. The core observation is not an analytical textual claim.",
+      "The code decision layer must flag this before relying on the LLM judge. The core observation is warm but not an analytical textual discovery.",
     signal: makeSignal({
       seed: "pretty_but_empty_rest_unique_fingerprint",
       anchorQuote: "найдете покой душам вашим",
@@ -288,7 +288,7 @@ export const DAY1_CALIBRATION_CASES: Day1CalibrationCase[] = [
     case_id: "case_05_risky_lexical_overclaim",
     label: "Risky overclaim — unsupported Greek claim",
     purpose:
-      "The verifier must catch an overconfident lexical claim. Day-1 explicitly forbids Greek lexical claims because canonical Greek work is deferred.",
+      "The code decision layer must catch an overconfident lexical claim. Day-1 explicitly forbids Greek lexical claims because canonical Greek work is deferred.",
     signal: makeSignal({
       seed: "risky_lexical_overclaim_praus",
       anchorQuote: "кроток",
