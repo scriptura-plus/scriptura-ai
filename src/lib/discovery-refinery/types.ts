@@ -60,6 +60,7 @@ export type RiskFlag =
 
 export type RelationToExisting =
   | "same_angle"
+  | "same_angle_different_language"
   | "partial_overlap"
   | "new_angle"
   | "stronger_version"
@@ -149,9 +150,9 @@ export type DiscoverySignal = {
   evidence_level: EvidenceLevel;
   risk_flags: RiskFlag[];
 
-  relation_to_existing?: RelationToExisting | null;
+  relation_to_existing?: RelationToExisting | SameAngleVerdict | null;
   verifier_verdict?: VerifierVerdict | null;
-  suggested_next_action?: SuggestedNextAction | null;
+  suggested_next_action?: SuggestedNextAction | ModeratorAction | null;
 
   detector_id: string;
   run_id: string;
@@ -298,8 +299,8 @@ export type ModeratorQueueItem = {
   };
 
   verdicts: {
-    same_angle: SameAngleVerdict | null;
-    verifier: VerifierVerdict | null;
+    same_angle: SameAngleVerdict;
+    verifier: VerifierVerdict;
   };
 
   suggested_action: ModeratorAction;
