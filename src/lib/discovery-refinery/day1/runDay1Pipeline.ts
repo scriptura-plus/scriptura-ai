@@ -34,6 +34,19 @@ type JsonRecord = Record<string, unknown>;
 
 type RunMode = "calibration" | "detector_preview";
 
+export type Day1DiagnosticItem = {
+  signal_id: string;
+  reader_surprise_ru: string | null;
+  core_observation: string;
+  existing_cards_count: number;
+  nearest_existing_cards: ExistingCoverageCard[];
+  hash_duplicate_card: ExistingCoverageCard | null;
+  judge_raw_response: string | null;
+  verifier_raw_response: string | null;
+  normalized_same_angle_verdict: SameAngleVerdict;
+  normalized_verifier_verdict: VerifierVerdict;
+};
+
 export type Day1PipelineResult = {
   ok: boolean;
   mode: RunMode;
@@ -44,6 +57,7 @@ export type Day1PipelineResult = {
   detector_raw_text: string | null;
   detector_signal_count: number;
   queue: ModeratorQueueItem[];
+  diagnostics: Day1DiagnosticItem[];
   calibration?: Day1CalibrationResult[];
   errors: string[];
 };
@@ -695,7 +709,10 @@ async function processSignal(args: {
   existingCards: ExistingCoverageCard[];
   judgeProvider: Provider;
   verifierProvider: Provider;
-}): Promise<ModeratorQueueItem> {
+}): Promise<{
+  queueItem: ModeratorQueueItem;
+  diagnostic: Day1DiagnosticItem;
+}> {
   const hashDuplicate = findHashDuplicate(args.signal, args.existingCards);
   const nearestExistingCards = selectNearestExistingCards(
     args.signal,
@@ -704,8 +721,13 @@ async function processSignal(args: {
 
   let sameAngleVerdict: SameAngleVerdict;
   let verifierVerdict: VerifierVerdict | null = null;
+  let judgeRawResponse: string | null = null;
+  let verifierRawResponse: string | null = null;
 
   if (args.signal.risk_flags.includes("lexical_overclaim")) {
+    judgeRawResponse =
+      "CODE_DECISION: signal was pre-flagged as lexical_overclaim. Same-Angle Judge was not called.";
+
     sameAngleVerdict = {
       signal_id: args.signal.signal_id,
       verdict: "risky_overclaim",
@@ -716,11 +738,17 @@ async function processSignal(args: {
       judge_confidence: "high",
     };
 
+    verifierRawResponse =
+      "CODE_DECISION: deterministic verifier verdict for pre-flagged lexical_overclaim.";
+
     verifierVerdict = createDeterministicVerifierVerdict({
       signal: args.signal,
       kind: "lexical_overclaim",
     });
   } else if (args.signal.risk_flags.includes("pretty_but_empty")) {
+    judgeRawResponse =
+      "CODE_DECISION: signal was pre-flagged as pretty_but_empty. Same-Angle Judge was not called.";
+
     sameAngleVerdict = {
       signal_id: args.signal.signal_id,
       verdict: "pretty_but_empty",
@@ -731,11 +759,17 @@ async function processSignal(args: {
       judge_confidence: "high",
     };
 
+    verifierRawResponse =
+      "CODE_DECISION: deterministic verifier verdict for pre-flagged pretty_but_empty.";
+
     verifierVerdict = createDeterministicVerifierVerdict({
       signal: args.signal,
       kind: "pretty_but_empty",
     });
   } else if (hashDuplicate) {
+    judgeRawResponse =
+      "CODE_DECISION: deterministic fingerprint hash matched an existing card. Same-Angle Judge was not called.";
+
     sameAngleVerdict = {
       signal_id: args.signal.signal_id,
       verdict: "same_angle",
@@ -745,6 +779,9 @@ async function processSignal(args: {
       differentiation_required: null,
       judge_confidence: "high",
     };
+
+    verifierRawResponse =
+      "CODE_DECISION: deterministic verifier pass for intrinsic signal quality; duplicate routing is handled by Same-Angle verdict.";
 
     verifierVerdict = createDeterministicVerifierVerdict({
       signal: args.signal,
@@ -756,10 +793,10 @@ async function processSignal(args: {
       nearestExistingCards,
     });
 
-    const judgeRaw = await runAI(args.judgeProvider, judgePrompt, "en", true);
+    judgeRawResponse = await runAI(args.judgeProvider, judgePrompt, "en", true);
 
     sameAngleVerdict = normalizeSameAngleVerdict(
-      parseJsonObject(judgeRaw),
+      parseJsonObject(judgeRawResponse),
       args.signal,
       "new_angle",
       nearestExistingCards.map((card) => card.card_id),
@@ -805,7 +842,7 @@ async function processSignal(args: {
       sameAngleVerdict,
     });
 
-    const verifierRaw = await runAI(
+    verifierRawResponse = await runAI(
       args.verifierProvider,
       verifierPrompt,
       "en",
@@ -813,17 +850,35 @@ async function processSignal(args: {
     );
 
     verifierVerdict = normalizeVerifierVerdict(
-      parseJsonObject(verifierRaw),
+      parseJsonObject(verifierRawResponse),
       args.signal,
     );
   }
 
-  return createQueueItem({
+  const queueItem = createQueueItem({
     signal: args.signal,
     nearestExistingCards,
     sameAngleVerdict,
     verifierVerdict,
   });
+
+  const diagnostic: Day1DiagnosticItem = {
+    signal_id: args.signal.signal_id,
+    reader_surprise_ru: args.signal.reader_surprise_sentence.ru,
+    core_observation: args.signal.core_observation,
+    existing_cards_count: args.existingCards.length,
+    nearest_existing_cards: nearestExistingCards,
+    hash_duplicate_card: hashDuplicate,
+    judge_raw_response: judgeRawResponse,
+    verifier_raw_response: verifierRawResponse,
+    normalized_same_angle_verdict: sameAngleVerdict,
+    normalized_verifier_verdict: verifierVerdict,
+  };
+
+  return {
+    queueItem,
+    diagnostic,
+  };
 }
 
 function actualMatchesExpected(args: {
@@ -860,9 +915,7 @@ function actualMatchesExpected(args: {
   return true;
 }
 
-function hasNoVerifierRisks(
-  actual: Day1CalibrationResult["actual"],
-): boolean {
+function hasNoVerifierRisks(actual: Day1CalibrationResult["actual"]): boolean {
   return !Object.values(actual.verifier_risk_flags).some(Boolean);
 }
 
@@ -926,16 +979,21 @@ export async function runDay1Calibration(args?: {
   const existingCards = getMatthew1129ExistingCardsForJudge();
 
   const calibration: Day1CalibrationResult[] = [];
+  const diagnostics: Day1DiagnosticItem[] = [];
   const errors: string[] = [];
 
   for (const item of DAY1_CALIBRATION_CASES) {
     try {
-      const queueItem = await processSignal({
+      const processed = await processSignal({
         signal: item.signal,
         existingCards,
         judgeProvider,
         verifierProvider,
       });
+
+      diagnostics.push(processed.diagnostic);
+
+      const queueItem = processed.queueItem;
 
       const actual = {
         hash_match_before_judge:
@@ -995,6 +1053,7 @@ export async function runDay1Calibration(args?: {
     queue: calibration
       .map((item) => item.queue_item)
       .filter((item): item is ModeratorQueueItem => item !== null),
+    diagnostics,
     calibration,
     errors,
   };
@@ -1043,6 +1102,7 @@ export async function runDay1DetectorPreview(args?: {
       detector_raw_text: null,
       detector_signal_count: 0,
       queue: [],
+      diagnostics: [],
       errors: [`Detector failed: ${message}`],
     };
   }
@@ -1060,6 +1120,7 @@ export async function runDay1DetectorPreview(args?: {
       detector_raw_text: detectorRawText,
       detector_signal_count: 0,
       queue: [],
+      diagnostics: [],
       errors: ["Detector did not return a valid JSON array."],
     };
   }
@@ -1069,17 +1130,19 @@ export async function runDay1DetectorPreview(args?: {
     .filter((item): item is DiscoverySignal => item !== null);
 
   const queue: ModeratorQueueItem[] = [];
+  const diagnostics: Day1DiagnosticItem[] = [];
 
   for (const signal of signals) {
     try {
-      queue.push(
-        await processSignal({
-          signal,
-          existingCards,
-          judgeProvider,
-          verifierProvider,
-        }),
-      );
+      const processed = await processSignal({
+        signal,
+        existingCards,
+        judgeProvider,
+        verifierProvider,
+      });
+
+      queue.push(processed.queueItem);
+      diagnostics.push(processed.diagnostic);
     } catch (error) {
       errors.push(
         `${signal.signal_id}: ${
@@ -1099,6 +1162,7 @@ export async function runDay1DetectorPreview(args?: {
     detector_raw_text: detectorRawText,
     detector_signal_count: signals.length,
     queue,
+    diagnostics,
     errors,
   };
 }
