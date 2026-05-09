@@ -5,7 +5,6 @@ import {
   createDeterministicId,
 } from "../fingerprint";
 import {
-  buildArgumentStructureDetectorPrompt,
   buildSameAngleJudgePrompt,
   buildVerifierPrompt,
 } from "../prompts";
@@ -37,6 +36,18 @@ import {
 type JsonRecord = Record<string, unknown>;
 
 type RunMode = "calibration" | "detector_preview" | "day15_fixture_preview";
+
+type TextDetectorSignalSeed = {
+  anchor: string;
+  specificWords: string[];
+  observation: string;
+  surprise: string;
+  evidenceLevel: DiscoverySignal["evidence_level"];
+  angleFamily: AngleFingerprint["angle_family"];
+  riskFlags: RiskFlag[];
+  phenomenon: string;
+  interpretiveMove: string;
+};
 
 export type Day1DiagnosticItem = {
   signal_id: string;
@@ -83,6 +94,7 @@ export type Day1CalibrationResult = {
 };
 
 export type Day15VersePreviewResult = Day1PipelineResult & {
+  mode: "day15_fixture_preview";
   fixture_id: string;
   canonical_ref: string;
   passage_id: string;
@@ -158,7 +170,7 @@ function toStringArray(value: unknown): string[] {
 function stripCodeFence(text: string): string {
   return text
     .trim()
-    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/^```(?:json|text)?\s*/i, "")
     .replace(/\s*```$/i, "")
     .trim();
 }
@@ -227,22 +239,85 @@ function normalizeRiskFlags(value: unknown): RiskFlag[] {
     "pretty_but_empty",
   ]);
 
-  if (!Array.isArray(value)) return [];
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => (typeof item === "string" ? item.trim() : ""))
+      .filter((item): item is RiskFlag => allowed.has(item as RiskFlag));
+  }
 
-  return value
-    .map((item) => (typeof item === "string" ? item.trim() : ""))
-    .filter((item): item is RiskFlag => allowed.has(item as RiskFlag));
+  if (typeof value !== "string") return [];
+
+  const lower = value.toLowerCase();
+
+  if (
+    lower === "none" ||
+    lower === "no" ||
+    lower === "нет" ||
+    lower === "без" ||
+    lower === "-"
+  ) {
+    return [];
+  }
+
+  const flags = new Set<RiskFlag>();
+
+  if (lower.includes("lexical_overclaim") || lower.includes("лекс")) {
+    flags.add("lexical_overclaim");
+  }
+
+  if (lower.includes("intertext") || lower.includes("межтекст")) {
+    flags.add("intertext_speculative");
+  }
+
+  if (lower.includes("historical") || lower.includes("истор")) {
+    flags.add("historical_overclaim");
+  }
+
+  if (lower.includes("theological") || lower.includes("богослов")) {
+    flags.add("theological_overreach");
+  }
+
+  if (
+    lower.includes("meaningful_absence") ||
+    lower.includes("absence") ||
+    lower.includes("отсутств")
+  ) {
+    flags.add("meaningful_absence_unsafe");
+  }
+
+  if (lower.includes("self_generated") || lower.includes("echo")) {
+    flags.add("self_generated_echo");
+  }
+
+  if (lower.includes("pretty_but_empty") || lower.includes("пуст")) {
+    flags.add("pretty_but_empty");
+  }
+
+  return Array.from(flags);
 }
 
 function normalizeEvidenceLevel(
   value: unknown,
 ): DiscoverySignal["evidence_level"] {
-  if (value === "strong" || value === "plausible" || value === "weak") {
-    return value;
+  const text = typeof value === "string" ? value.trim().toLowerCase() : value;
+
+  if (text === "strong" || text === "сильная" || text === "сильный") {
+    return "strong";
   }
 
-  if (value === "moderate" || value === "medium") {
+  if (
+    text === "plausible" ||
+    text === "moderate" ||
+    text === "medium" ||
+    text === "средняя" ||
+    text === "вероятная" ||
+    text === "правдоподобная"
+  ) {
     return "plausible";
+  }
+
+  if (text === "weak" || text === "слабая" || text === "слабый") {
+    return "weak";
   }
 
   return "plausible";
@@ -268,12 +343,294 @@ function normalizeAngleFamily(
 
   if (
     typeof value === "string" &&
-    allowed.has(value as AngleFingerprint["angle_family"])
+    allowed.has(value.trim() as AngleFingerprint["angle_family"])
   ) {
-    return value as AngleFingerprint["angle_family"];
+    return value.trim() as AngleFingerprint["angle_family"];
+  }
+
+  const lower = typeof value === "string" ? value.toLowerCase() : "";
+
+  if (lower.includes("лекс")) return "lexical";
+  if (lower.includes("ритор")) return "rhetorical";
+  if (lower.includes("структ")) return "structural";
+  if (lower.includes("перевод")) return "translation";
+  if (lower.includes("межтекст")) return "intertextual";
+  if (lower.includes("истор")) return "historical";
+  if (lower.includes("парадокс") || lower.includes("напряж")) {
+    return "paradox_tension";
+  }
+  if (lower.includes("отсутств")) return "meaningful_absence";
+  if (lower.includes("контекст")) return "contextual";
+  if (lower.includes("дискурс")) return "discourse_function";
+  if (lower.includes("метафор") || lower.includes("образ")) {
+    return "metaphor_image";
   }
 
   return "other";
+}
+
+function inferAngleFamilyFromObservation(
+  observation: string,
+): AngleFingerprint["angle_family"] {
+  const lower = observation.toLowerCase();
+
+  if (lower.includes("слово") || lower.includes("лекс")) return "lexical";
+  if (lower.includes("союз") || lower.includes("ритор")) return "rhetorical";
+  if (lower.includes("структ") || lower.includes("повтор")) {
+    return "structural";
+  }
+  if (lower.includes("перевод")) return "translation";
+  if (lower.includes("другим стих") || lower.includes("межтекст")) {
+    return "intertextual";
+  }
+  if (lower.includes("истор")) return "historical";
+  if (lower.includes("парадокс") || lower.includes("напряж")) {
+    return "paradox_tension";
+  }
+  if (lower.includes("отсутств")) return "meaningful_absence";
+  if (lower.includes("контекст")) return "contextual";
+  if (lower.includes("переход") || lower.includes("дискурс")) {
+    return "discourse_function";
+  }
+  if (lower.includes("образ") || lower.includes("метафор")) {
+    return "metaphor_image";
+  }
+
+  return "rhetorical";
+}
+
+function inferPhenomenon(observation: string, anchor: string): string {
+  const lower = `${observation} ${anchor}`.toLowerCase();
+
+  if (lower.includes("ибо") || lower.includes("потому") || lower.includes("союз")) {
+    return "causal_connector_as_argument_signal";
+  }
+
+  if (lower.includes("повтор") || lower.includes("повторяется")) {
+    return "repetition_as_structural_signal";
+  }
+
+  if (lower.includes("список") || lower.includes("перечень")) {
+    return "list_logic_as_rhetorical_structure";
+  }
+
+  if (lower.includes("контраст") || lower.includes("противопостав")) {
+    return "contrast_as_argument_structure";
+  }
+
+  if (lower.includes("агент") || lower.includes("субъект")) {
+    return "agency_shift_in_textual_structure";
+  }
+
+  if (lower.includes("отсутств")) {
+    return "meaningful_absence_in_surface_text";
+  }
+
+  if (lower.includes("вопрос") || lower.includes("ответ")) {
+    return "question_answer_structure";
+  }
+
+  return "textual_detail_creates_discovery";
+}
+
+function inferInterpretiveMove(observation: string, surprise: string): string {
+  const lower = `${observation} ${surprise}`.toLowerCase();
+
+  if (lower.includes("довер")) {
+    return "textual_detail_reframes_trust_basis";
+  }
+
+  if (lower.includes("команд") || lower.includes("повел")) {
+    return "textual_detail_reframes_command_logic";
+  }
+
+  if (lower.includes("покой")) {
+    return "textual_detail_reframes_rest_result";
+  }
+
+  if (lower.includes("симуляц") || lower.includes("видимость")) {
+    return "textual_detail_separates_appearance_from_reality";
+  }
+
+  if (lower.includes("отец") || lower.includes("сын")) {
+    return "textual_detail_creates_narrative_tension";
+  }
+
+  if (lower.includes("не слабость") || lower.includes("слабост")) {
+    return "wording_expands_reader_semantic_assumption";
+  }
+
+  return "specific_wording_changes_reader_assumption";
+}
+
+function parseSpecificWords(text: string, anchor: string): string[] {
+  const raw = text.trim();
+
+  if (!raw || raw.toLowerCase() === "none" || raw.toLowerCase() === "нет") {
+    return anchor
+      .split(/\s+/)
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .slice(0, 6);
+  }
+
+  return raw
+    .split(/[,;·|]/)
+    .map((item) => item.trim().replace(/^["«]+|["»]+$/g, ""))
+    .filter(Boolean);
+}
+
+function normalizeSurprise(text: string, observation: string): string {
+  const trimmed = text.trim();
+
+  if (trimmed) {
+    if (trimmed.toLowerCase().startsWith("я не замечал")) {
+      return trimmed;
+    }
+
+    return `Я не замечал, что ${trimmed.replace(/^что\s+/i, "")}`;
+  }
+
+  return `Я не замечал, что ${observation}`;
+}
+
+function parseLabeledTextBlock(block: string): Record<string, string> {
+  const labels: Record<string, string> = {
+    "якорь": "anchor",
+    "anchor": "anchor",
+    "textual anchor": "anchor",
+
+    "слова": "specificWords",
+    "specific words": "specificWords",
+    "words": "specificWords",
+
+    "наблюдение": "observation",
+    "observation": "observation",
+    "core observation": "observation",
+
+    "открытие": "surprise",
+    "surprise": "surprise",
+    "reader surprise": "surprise",
+
+    "доказательность": "evidenceLevel",
+    "evidence": "evidenceLevel",
+    "evidence level": "evidenceLevel",
+
+    "семья": "angleFamily",
+    "family": "angleFamily",
+    "angle family": "angleFamily",
+
+    "риск": "riskFlags",
+    "риски": "riskFlags",
+    "risk": "riskFlags",
+    "risk flags": "riskFlags",
+
+    "феномен": "phenomenon",
+    "phenomenon": "phenomenon",
+
+    "ход": "interpretiveMove",
+    "interpretive move": "interpretiveMove",
+    "move": "interpretiveMove",
+  };
+
+  const result: Record<string, string> = {};
+  let currentKey: string | null = null;
+
+  for (const rawLine of block.split(/\r?\n/)) {
+    const line = rawLine.trim();
+
+    if (!line) continue;
+
+    const match = line.match(/^([^:：]{2,40})[:：]\s*(.*)$/);
+
+    if (match) {
+      const rawLabel = match[1].trim().toLowerCase();
+      const mapped = labels[rawLabel];
+
+      if (mapped) {
+        currentKey = mapped;
+        result[currentKey] = match[2].trim();
+        continue;
+      }
+    }
+
+    if (currentKey) {
+      result[currentKey] = `${result[currentKey] ?? ""} ${line}`.trim();
+    }
+  }
+
+  return result;
+}
+
+function parseTextDetectorBlocks(text: string): string[] {
+  const cleaned = stripCodeFence(text);
+
+  if (
+    /^NO_SIGNALS\s*$/i.test(cleaned) ||
+    /^НЕТ_СИГНАЛОВ\s*$/i.test(cleaned) ||
+    /^НЕТ СИГНАЛОВ\s*$/i.test(cleaned)
+  ) {
+    return [];
+  }
+
+  const withMarkers = cleaned.replace(
+    /(^|\n)\s*(СИГНАЛ|SIGNAL)\s*\d*\s*[:\-—]?\s*/gi,
+    "\n<<<SIGNAL_BLOCK>>>",
+  );
+
+  const parts = withMarkers
+    .split("<<<SIGNAL_BLOCK>>>")
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  if (parts.length > 0) return parts;
+
+  return cleaned.trim() ? [cleaned.trim()] : [];
+}
+
+function parseTextDetectorSignals(text: string): TextDetectorSignalSeed[] {
+  const blocks = parseTextDetectorBlocks(text);
+  const seeds: TextDetectorSignalSeed[] = [];
+
+  for (const block of blocks) {
+    const fields = parseLabeledTextBlock(block);
+
+    const anchor = (fields.anchor ?? "").trim();
+    const observation = (fields.observation ?? "").trim();
+
+    if (!anchor || !observation) continue;
+
+    const surprise = normalizeSurprise(fields.surprise ?? "", observation);
+    const angleFamily =
+      normalizeAngleFamily(fields.angleFamily) ||
+      inferAngleFamilyFromObservation(observation);
+
+    const finalFamily =
+      angleFamily === "other"
+        ? inferAngleFamilyFromObservation(observation)
+        : angleFamily;
+
+    const phenomenon =
+      fields.phenomenon?.trim() || inferPhenomenon(observation, anchor);
+
+    const interpretiveMove =
+      fields.interpretiveMove?.trim() ||
+      inferInterpretiveMove(observation, surprise);
+
+    seeds.push({
+      anchor,
+      specificWords: parseSpecificWords(fields.specificWords ?? "", anchor),
+      observation,
+      surprise,
+      evidenceLevel: normalizeEvidenceLevel(fields.evidenceLevel),
+      angleFamily: finalFamily,
+      riskFlags: normalizeRiskFlags(fields.riskFlags),
+      phenomenon,
+      interpretiveMove,
+    });
+  }
+
+  return seeds;
 }
 
 function normalizeDetectorSignal(
@@ -420,8 +777,135 @@ function normalizeDetectorSignal(
     metadata: {
       normalized_from_detector: true,
       detector_index: index,
+      detector_format: "json",
     },
   };
+}
+
+function createSignalFromTextSeed(args: {
+  seed: TextDetectorSignalSeed;
+  index: number;
+  runId: string;
+  context: {
+    reference: string;
+    canonicalRef: string;
+    passageId: string;
+  };
+}): DiscoverySignal {
+  const fingerprint = createAngleFingerprint({
+    anchor_canonical: {
+      lang: "ru",
+      text: args.seed.anchor,
+      canonical_pending: true,
+    },
+    phenomenon: args.seed.phenomenon,
+    phenomenon_status: "proposed_new",
+    interpretive_move: args.seed.interpretiveMove,
+    interpretive_move_status: "proposed_new",
+    angle_family: args.seed.angleFamily,
+  });
+
+  const signalSeed = {
+    reference: args.context.reference,
+    canonicalRef: args.context.canonicalRef,
+    passageId: args.context.passageId,
+    index: args.index,
+    runId: args.runId,
+    fingerprint_hash: fingerprint.hash,
+    coreObservation: args.seed.observation,
+    readerSurpriseRu: args.seed.surprise,
+  };
+
+  return {
+    signal_id: createDeterministicId("sig", signalSeed),
+
+    reference: args.context.reference,
+    canonical_ref: args.context.canonicalRef,
+    passage_id: args.context.passageId,
+
+    primary_lang: "ru",
+
+    textual_anchor: {
+      canonical: {
+        lang: "ru",
+        quote: args.seed.anchor,
+        specific_words: args.seed.specificWords,
+        canonical_pending: true,
+      },
+      surfaces: {
+        ru: {
+          quote: args.seed.anchor,
+          specific_words: args.seed.specificWords,
+          translation_source: "RSTJ 1876 / Synodal Yahweh Edition",
+        },
+        en: null,
+        es: null,
+      },
+    },
+
+    core_observation: args.seed.observation,
+
+    reader_surprise_sentence: {
+      ru: args.seed.surprise,
+      en: null,
+      es: null,
+    },
+
+    angle_fingerprint: fingerprint,
+
+    source_basis: {
+      primary: "verse_text_only",
+      has_self_generated_context: true,
+    },
+
+    evidence_level: args.seed.evidenceLevel,
+    risk_flags: args.seed.riskFlags,
+
+    relation_to_existing: null,
+    verifier_verdict: null,
+    suggested_next_action: null,
+
+    detector_id: "argument_structure_mapping_v1",
+    run_id: args.runId,
+    created_at: new Date().toISOString(),
+
+    metadata: {
+      normalized_from_detector: true,
+      detector_index: args.index,
+      detector_format: "text_first",
+    },
+  };
+}
+
+function parseDetectorOutputToSignals(args: {
+  detectorRawText: string;
+  runId: string;
+  context: {
+    reference: string;
+    canonicalRef: string;
+    passageId: string;
+  };
+}): DiscoverySignal[] {
+  const parsedArray = parseJsonArray(args.detectorRawText);
+
+  if (parsedArray) {
+    return parsedArray
+      .map((item, index) =>
+        normalizeDetectorSignal(item, index, args.runId, args.context),
+      )
+      .filter((item): item is DiscoverySignal => item !== null);
+  }
+
+  const seeds = parseTextDetectorSignals(args.detectorRawText);
+
+  return seeds.map((seed, index) =>
+    createSignalFromTextSeed({
+      seed,
+      index,
+      runId: args.runId,
+      context: args.context,
+    }),
+  );
 }
 
 function findHashDuplicate(
@@ -1143,6 +1627,80 @@ export async function runDay1Calibration(args?: {
   };
 }
 
+function buildTextFirstDetectorPrompt(args: {
+  reference: string;
+  verseTextRu: string;
+  passageTextRu: string;
+  genre?: string;
+  expectedRichness?: string;
+  diagnosticReason?: string;
+  expectedBehaviorNote?: string;
+  existingSnapshot?: unknown;
+}): string {
+  return [
+    "Ты — детектор Discovery Refinery для Scriptura AI.",
+    "",
+    "Твоя задача — найти 0–3 настоящих текстовых сигнала, из которых позже можно сделать карточки-открытия.",
+    "Не пиши готовые карточки.",
+    "Не пиши проповедь.",
+    "Не объясняй стих в целом.",
+    "Ищи только конкретные текстовые механизмы: союз, повтор, контраст, порядок слов, список, переход агентности, вопрос-ответ, риторическую асимметрию, значимое отсутствие, напряжение повествования.",
+    "",
+    "ВАЖНО:",
+    "Не возвращай JSON.",
+    "Не используй markdown-таблицу.",
+    "Верни обычный текст в строгих блоках.",
+    "Если сильных сигналов нет, верни ровно одну строку: НЕТ_СИГНАЛОВ",
+    "",
+    "Формат каждого сигнала:",
+    "",
+    "СИГНАЛ 1",
+    "Якорь: короткая точная фраза из русского текста",
+    "Слова: слово1, слово2",
+    "Наблюдение: точное объяснение текстового механизма; не sermon",
+    "Открытие: Я не замечал, что ...",
+    "Доказательность: strong | plausible | weak",
+    "Семья: rhetorical | structural | lexical | meaningful_absence | discourse_function | metaphor_image | contextual | other",
+    "Риск: none | lexical_overclaim | intertext_speculative | historical_overclaim | theological_overreach | meaningful_absence_unsafe | self_generated_echo | pretty_but_empty",
+    "Феномен: short_snake_case_english_phrase",
+    "Ход: short_snake_case_english_phrase",
+    "",
+    "Требования к качеству:",
+    "- Якорь должен быть виден прямо в тексте.",
+    "- Наблюдение должно показывать механизм, а не просто красивую мысль.",
+    "- Открытие должно звучать как: «Я не замечал, что...»",
+    "- Не делай утверждений о греческом/еврейском, если они не даны в тексте.",
+    "- Для бедных/формульных стихов лучше 0–1 сигнал, чем натянутые открытия.",
+    "- Для narrative не выдумывай психологию персонажей сверх текста.",
+    "- Для meaningful absence будь осторожен: отсутствие должно быть видимым и не превращаться в догадку об авторском намерении.",
+    "",
+    "Данные стиха:",
+    `Reference: ${args.reference}`,
+    args.genre ? `Genre: ${args.genre}` : "",
+    args.expectedRichness ? `Expected richness: ${args.expectedRichness}` : "",
+    args.diagnosticReason ? `Diagnostic reason: ${args.diagnosticReason}` : "",
+    args.expectedBehaviorNote
+      ? `Expected behavior note: ${args.expectedBehaviorNote}`
+      : "",
+    "",
+    "Текст стиха:",
+    args.verseTextRu,
+    "",
+    "Контекст/отрывок:",
+    args.passageTextRu,
+    "",
+    args.existingSnapshot
+      ? `Existing coverage snapshot:\n${JSON.stringify(
+          args.existingSnapshot,
+          null,
+          2,
+        )}`
+      : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 export async function runDay1DetectorPreview(args?: {
   detectorProvider?: Provider;
   judgeProvider?: Provider;
@@ -1155,11 +1713,17 @@ export async function runDay1DetectorPreview(args?: {
   const snapshot = getMatthew1129Day1Snapshot();
   const existingCards = getMatthew1129ExistingCardsForJudge();
 
-  const prompt = buildArgumentStructureDetectorPrompt({
+  const prompt = buildTextFirstDetectorPrompt({
     reference: DAY1_REFERENCE,
     verseTextRu: DAY1_VERSE_TEXT_RU,
     passageTextRu: DAY1_PASSAGE_TEXT_RU,
-    snapshot,
+    genre: "gospel_discourse",
+    expectedRichness: "rich",
+    diagnosticReason:
+      "Known rich discourse case with existing cards; useful for duplicate and overlap testing.",
+    expectedBehaviorNote:
+      "Should produce 2-4 useful signals, with some approve_reserve and possibly one rewrite due to overlap.",
+    existingSnapshot: snapshot,
   });
 
   const runId = createDeterministicId("run", {
@@ -1172,7 +1736,7 @@ export async function runDay1DetectorPreview(args?: {
   let detectorRawText: string | null = null;
 
   try {
-    detectorRawText = await runAI(detectorProvider, prompt, "ru", true);
+    detectorRawText = await runAI(detectorProvider, prompt, "ru", false);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
 
@@ -1191,33 +1755,15 @@ export async function runDay1DetectorPreview(args?: {
     };
   }
 
-  const parsedArray = parseJsonArray(detectorRawText);
-
-  if (!parsedArray) {
-    return {
-      ok: false,
-      mode: "detector_preview",
+  const signals = parseDetectorOutputToSignals({
+    detectorRawText,
+    runId,
+    context: {
       reference: DAY1_REFERENCE,
-      detector_provider: detectorProvider,
-      judge_provider: judgeProvider,
-      verifier_provider: verifierProvider,
-      detector_raw_text: detectorRawText,
-      detector_signal_count: 0,
-      queue: [],
-      diagnostics: [],
-      errors: ["Detector did not return a valid JSON array."],
-    };
-  }
-
-  const signals = parsedArray
-    .map((item, index) =>
-      normalizeDetectorSignal(item, index, runId, {
-        reference: DAY1_REFERENCE,
-        canonicalRef: DAY1_REFERENCE,
-        passageId: "matt_11_28-30",
-      }),
-    )
-    .filter((item): item is DiscoverySignal => item !== null);
+      canonicalRef: DAY1_REFERENCE,
+      passageId: "matt_11_28-30",
+    },
+  });
 
   const queue: ModeratorQueueItem[] = [];
   const diagnostics: Day1DiagnosticItem[] = [];
@@ -1243,6 +1789,12 @@ export async function runDay1DetectorPreview(args?: {
     }
   }
 
+  if (signals.length === 0 && !detectorRawText.includes("НЕТ_СИГНАЛОВ")) {
+    errors.push(
+      "Detector returned text, but no parseable signal blocks were found.",
+    );
+  }
+
   return {
     ok: errors.length === 0,
     mode: "detector_preview",
@@ -1256,147 +1808,6 @@ export async function runDay1DetectorPreview(args?: {
     diagnostics,
     errors,
   };
-}
-
-function buildDay15DetectorPrompt(fixture: Day15VerseFixture): string {
-  return [
-    "You are the Scriptura AI Discovery Refinery detector.",
-    "",
-    "Task:",
-    "Find discovery signals in this Bible verse/passage.",
-    "Do not write devotional commentary.",
-    "Do not create finished cards.",
-    "Do not force discoveries if the verse is low-richness.",
-    "",
-    "Output language:",
-    "The reader_surprise_sentence.ru field must be in Russian.",
-    "All JSON key names must remain English.",
-    "",
-    "Detector focus:",
-    "Use argument_structure_mapping_v1.",
-    "Look for textual mechanisms such as:",
-    "- causal connectors",
-    "- command/result structure",
-    "- contrast",
-    "- repetition",
-    "- sequence",
-    "- agency shifts",
-    "- rhetorical asymmetry",
-    "- meaningful absence",
-    "- list logic",
-    "- narrative tension",
-    "",
-    "Safety:",
-    "Do not make unsupported Greek/Hebrew claims.",
-    "Do not claim something is in the original language unless the supplied text proves it.",
-    "If a signal is weak or mostly inspirational, either omit it or mark evidence_level as weak.",
-    "For low-richness genealogy/formulaic verses, 0 or 1 signal is acceptable.",
-    "",
-    "Return ONLY a valid JSON array.",
-    "No markdown.",
-    "No code fences.",
-    "",
-    "Each array item must have this exact shape:",
-    JSON.stringify(
-      [
-        {
-          signal_id: "temporary_detector_id_ok",
-          reference: fixture.reference,
-          canonical_ref: fixture.canonical_ref,
-          passage_id: fixture.passage_id,
-          primary_lang: "ru",
-          textual_anchor: {
-            canonical: {
-              lang: "ru",
-              quote: "short exact phrase from the supplied Russian verse",
-              specific_words: ["word1", "word2"],
-              canonical_pending: true,
-            },
-            surfaces: {
-              ru: {
-                quote: "same or surface phrase",
-                specific_words: ["word1", "word2"],
-                translation_source: "RSTJ 1876 / Synodal Yahweh Edition",
-              },
-              en: null,
-              es: null,
-            },
-          },
-          core_observation:
-            "One precise explanation of the textual mechanism. Not a sermon.",
-          reader_surprise_sentence: {
-            ru: "Я не замечал, что ...",
-            en: null,
-            es: null,
-          },
-          angle_fingerprint: {
-            anchor_canonical: {
-              lang: "ru",
-              text: "normalized anchor phrase",
-              canonical_pending: true,
-            },
-            phenomenon: "short_snake_case_textual_phenomenon",
-            phenomenon_status: "proposed_new",
-            interpretive_move: "short_snake_case_interpretive_move",
-            interpretive_move_status: "proposed_new",
-            angle_family: "rhetorical",
-            hash: "leave_empty_for_code_to_compute",
-          },
-          source_basis: {
-            primary: "verse_text_only",
-            has_self_generated_context: true,
-          },
-          evidence_level: "strong",
-          risk_flags: [],
-          relation_to_existing: null,
-          verifier_verdict: null,
-          suggested_next_action: null,
-          detector_id: "argument_structure_mapping_v1",
-          run_id: "leave_empty_for_code_to_fill",
-          created_at: "leave_empty_for_code_to_fill",
-        },
-      ],
-      null,
-      2,
-    ),
-    "",
-    "Allowed evidence_level values:",
-    "- strong",
-    "- plausible",
-    "- weak",
-    "",
-    "Allowed angle_family values:",
-    "- lexical",
-    "- rhetorical",
-    "- structural",
-    "- translation",
-    "- intertextual",
-    "- historical",
-    "- paradox_tension",
-    "- meaningful_absence",
-    "- contextual",
-    "- discourse_function",
-    "- metaphor_image",
-    "- other",
-    "",
-    "VERSE FIXTURE:",
-    JSON.stringify(
-      {
-        id: fixture.id,
-        reference: fixture.reference,
-        canonical_ref: fixture.canonical_ref,
-        passage_id: fixture.passage_id,
-        genre: fixture.genre,
-        expected_richness: fixture.expected_richness,
-        diagnostic_reason: fixture.diagnostic_reason,
-        expected_behavior_note: fixture.expected_behavior_note,
-        verse_text_ru: fixture.verse_text_ru,
-        passage_text_ru: fixture.passage_text_ru,
-      },
-      null,
-      2,
-    ),
-  ].join("\n");
 }
 
 function getExistingCardsForFixture(
@@ -1440,8 +1851,9 @@ function countTiers(
   return {
     A_routine: queue.filter((item) => item.tier === "A_routine").length,
     B_conflict: queue.filter((item) => item.tier === "B_conflict").length,
-    C_risk_escalation: queue.filter((item) => item.tier === "C_risk_escalation")
-      .length,
+    C_risk_escalation: queue.filter(
+      (item) => item.tier === "C_risk_escalation",
+    ).length,
   };
 }
 
@@ -1451,8 +1863,21 @@ async function runDay15VersePreview(args: {
   judgeProvider: Provider;
   verifierProvider: Provider;
 }): Promise<Day15VersePreviewResult> {
-  const prompt = buildDay15DetectorPrompt(args.fixture);
   const existingCards = getExistingCardsForFixture(args.fixture);
+
+  const prompt = buildTextFirstDetectorPrompt({
+    reference: args.fixture.reference,
+    verseTextRu: args.fixture.verse_text_ru,
+    passageTextRu: args.fixture.passage_text_ru,
+    genre: args.fixture.genre,
+    expectedRichness: args.fixture.expected_richness,
+    diagnosticReason: args.fixture.diagnostic_reason,
+    expectedBehaviorNote: args.fixture.expected_behavior_note,
+    existingSnapshot:
+      args.fixture.existing_coverage_mode === "fixture_existing_cards"
+        ? getMatthew1129Day1Snapshot()
+        : null,
+  });
 
   const runId = createDeterministicId("run", {
     reference: args.fixture.reference,
@@ -1464,7 +1889,7 @@ async function runDay15VersePreview(args: {
   let detectorRawText: string | null = null;
 
   try {
-    detectorRawText = await runAI(args.detectorProvider, prompt, "ru", true);
+    detectorRawText = await runAI(args.detectorProvider, prompt, "ru", false);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
 
@@ -1493,43 +1918,15 @@ async function runDay15VersePreview(args: {
     };
   }
 
-  const parsedArray = parseJsonArray(detectorRawText);
-
-  if (!parsedArray) {
-    return {
-      ok: false,
-      mode: "day15_fixture_preview",
-      fixture_id: args.fixture.id,
+  const signals = parseDetectorOutputToSignals({
+    detectorRawText,
+    runId,
+    context: {
       reference: args.fixture.reference,
-      canonical_ref: args.fixture.canonical_ref,
-      passage_id: args.fixture.passage_id,
-      genre: args.fixture.genre,
-      expected_richness: args.fixture.expected_richness,
-      existing_coverage_mode: args.fixture.existing_coverage_mode,
-      diagnostic_reason: args.fixture.diagnostic_reason,
-      expected_behavior_note: args.fixture.expected_behavior_note,
-      detector_provider: args.detectorProvider,
-      judge_provider: args.judgeProvider,
-      verifier_provider: args.verifierProvider,
-      detector_raw_text: detectorRawText,
-      detector_signal_count: 0,
-      queue: [],
-      diagnostics: [],
-      errors: ["Detector did not return a valid JSON array."],
-      action_counts: countActions([]),
-      tier_counts: countTiers([]),
-    };
-  }
-
-  const signals = parsedArray
-    .map((item, index) =>
-      normalizeDetectorSignal(item, index, runId, {
-        reference: args.fixture.reference,
-        canonicalRef: args.fixture.canonical_ref,
-        passageId: args.fixture.passage_id,
-      }),
-    )
-    .filter((item): item is DiscoverySignal => item !== null);
+      canonicalRef: args.fixture.canonical_ref,
+      passageId: args.fixture.passage_id,
+    },
+  });
 
   const queue: ModeratorQueueItem[] = [];
   const diagnostics: Day1DiagnosticItem[] = [];
@@ -1553,6 +1950,12 @@ async function runDay15VersePreview(args: {
         }`,
       );
     }
+  }
+
+  if (signals.length === 0 && !detectorRawText.includes("НЕТ_СИГНАЛОВ")) {
+    errors.push(
+      "Detector returned text, but no parseable signal blocks were found.",
+    );
   }
 
   return {
@@ -1580,37 +1983,19 @@ async function runDay15VersePreview(args: {
   };
 }
 
-export function getDay15FixtureIds(): string[] {
-  return DAY15_VERSE_FIXTURES.map((fixture) => fixture.id);
-}
-
-export async function runDay15FixturePreview(args?: {
-  fixtureId?: string;
+export async function runDay15FixturePreview(args: {
+  fixtureId: string;
   detectorProvider?: Provider;
   judgeProvider?: Provider;
   verifierProvider?: Provider;
 }): Promise<Day15VersePreviewResult> {
-  const detectorProvider = args?.detectorProvider ?? "claude";
-  const judgeProvider = args?.judgeProvider ?? "openai";
-  const verifierProvider = args?.verifierProvider ?? "openai";
+  const detectorProvider = args.detectorProvider ?? "claude";
+  const judgeProvider = args.judgeProvider ?? "openai";
+  const verifierProvider = args.verifierProvider ?? "openai";
 
-  const fallbackFixture = DAY15_VERSE_FIXTURES[0];
-
-  if (!fallbackFixture) {
-    throw new Error("No Day-1.5 verse fixtures are configured.");
-  }
-
-  const fixtureId = args?.fixtureId ?? fallbackFixture.id;
-
-  const fixture = DAY15_VERSE_FIXTURES.find((item) => item.id === fixtureId);
-
-  if (!fixture) {
-    throw new Error(
-      `Unknown Day-1.5 fixtureId "${fixtureId}". Available fixture IDs: ${getDay15FixtureIds().join(
-        ", ",
-      )}`,
-    );
-  }
+  const fixture =
+    DAY15_VERSE_FIXTURES.find((item) => item.id === args.fixtureId) ??
+    DAY15_VERSE_FIXTURES[0];
 
   return runDay15VersePreview({
     fixture,
@@ -1704,7 +2089,10 @@ export async function runDay15MultiVersePreview(args?: {
       (sum, verse) => sum + verse.detector_signal_count,
       0,
     ),
-    total_queue_items: verses.reduce((sum, verse) => sum + verse.queue.length, 0),
+    total_queue_items: verses.reduce(
+      (sum, verse) => sum + verse.queue.length,
+      0,
+    ),
     total_errors: errors.length,
     aggregate,
     verses,
