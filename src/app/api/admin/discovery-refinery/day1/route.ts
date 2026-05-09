@@ -115,7 +115,6 @@ export async function POST(req: Request) {
       return NextResponse.json({
         ...result,
         meta: {
-          ...(result.meta ?? {}),
           action,
           fixtureId,
           purpose:
