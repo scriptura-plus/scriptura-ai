@@ -600,15 +600,21 @@ function getSuggestedAction(args: {
   }
 
   if (
-    args.verifierVerdict.overall === "fail" ||
     args.sameAngleVerdict.verdict === "same_angle" ||
-    args.sameAngleVerdict.verdict === "risky_overclaim" ||
-    hasAnyRisk(args.verifierVerdict)
+    args.sameAngleVerdict.verdict === "risky_overclaim"
   ) {
     return "discard";
   }
 
+  if (args.verifierVerdict.overall === "fail") {
+    return "discard";
+  }
+
   if (args.verifierVerdict.overall === "needs_patch") {
+    return "rewrite";
+  }
+
+  if (hasAnyRisk(args.verifierVerdict)) {
     return "rewrite";
   }
 
@@ -623,7 +629,8 @@ function getSuggestedAction(args: {
   if (
     args.sameAngleVerdict.verdict === "new_angle" &&
     args.verifierVerdict.overall === "pass" &&
-    args.signal.evidence_level === "strong"
+    (args.signal.evidence_level === "strong" ||
+      args.signal.evidence_level === "plausible")
   ) {
     return "approve_reserve";
   }
