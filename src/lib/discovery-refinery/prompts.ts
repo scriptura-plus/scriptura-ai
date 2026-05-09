@@ -60,8 +60,15 @@ export function buildArgumentStructureDetectorPrompt(args: {
     `VERSE: ${args.reference}`,
     `Russian verse text: "${args.verseTextRu}"`,
     "",
-    "CONTEXT PASSAGE, for reference only:",
+    "AUTHORIZED CONTEXT PASSAGE:",
     args.passageTextRu,
+    "",
+    "SCOPE DISCIPLINE:",
+    "- Use ONLY the supplied Russian verse text and the supplied authorized context passage.",
+    "- Do NOT use other verses from the chapter unless they are included in the authorized context passage above.",
+    "- Do NOT use general Bible knowledge, later/earlier verses, cross-references, doctrine, historical background, or original-language claims unless they are explicitly supplied.",
+    "- If a possible insight depends on material outside the supplied passage, omit it.",
+    "- If you cannot make the signal stand on the supplied text alone, return [].",
     "",
     "PRIMARY LANGUAGE: ru",
     "CANONICAL ANCHOR LANGUAGE: canonical_pending=true for Day-1; use Russian as provisional canonical. Greek work is deferred.",
@@ -72,7 +79,7 @@ export function buildArgumentStructureDetectorPrompt(args: {
     "DETECTOR DISCIPLINE:",
     "- core_observation: ALWAYS in English. Neutral analytical voice. Describe what the text is doing structurally, rhetorically, or lexically.",
     '- reader_surprise_sentence.ru: ONE sentence in Russian, starting with "Я не замечал, что..."',
-    "- textual_anchor.surfaces.ru: exact words from the verse.",
+    "- textual_anchor.surfaces.ru: exact words from the supplied verse or authorized context passage.",
     "- textual_anchor.canonical: same as the Russian surface for Day-1, with lang='ru' and canonical_pending=true.",
     "- angle_fingerprint: structured object with anchor_canonical, phenomenon, interpretive_move, angle_family, and status fields.",
     "- phenomenon and interpretive_move must be English snake_case.",
@@ -86,10 +93,11 @@ export function buildArgumentStructureDetectorPrompt(args: {
     "- Multiple sentences in reader_surprise_sentence.ru.",
     "- Explaining the verse in general.",
     "- Claims about Greek lexical meaning. Canonical Greek work is deferred.",
+    "- Any claim that depends on a verse, character, event, exception, contrast, or chapter pattern outside the supplied authorized context passage.",
     "- Repeating the existing lexical 'кроток' angle, the existing yoke-image angle, or the existing basic command-result structure.",
     "",
     "RETURN NULL POLICY:",
-    "If you cannot produce a precise core_observation grounded in observable textual phenomena, return an empty JSON array [].",
+    "If you cannot produce a precise core_observation grounded in observable textual phenomena inside the supplied text, return an empty JSON array [].",
     "An empty array is better than polished-but-vague signals.",
     "",
     "OUTPUT FORMAT:",
@@ -107,13 +115,13 @@ export function buildArgumentStructureDetectorPrompt(args: {
         textual_anchor: {
           canonical: {
             lang: "ru",
-            quote: "exact Russian anchor from the verse",
+            quote: "exact Russian anchor from the supplied text",
             specific_words: ["specific", "anchor", "words"],
             canonical_pending: true,
           },
           surfaces: {
             ru: {
-              quote: "exact Russian anchor from the verse",
+              quote: "exact Russian anchor from the supplied text",
               specific_words: ["specific", "anchor", "words"],
               translation_source: "RSTJ 1876 / Synodal Yahweh Edition",
             },
@@ -122,7 +130,7 @@ export function buildArgumentStructureDetectorPrompt(args: {
           },
         },
         core_observation:
-          "English analytical claim describing what the text is doing.",
+          "English analytical claim describing what the supplied text is doing.",
         reader_surprise_sentence: {
           ru: "Я не замечал, что...",
           en: null,
@@ -143,7 +151,7 @@ export function buildArgumentStructureDetectorPrompt(args: {
         },
         source_basis: {
           primary: "verse_text_only",
-          has_self_generated_context: true,
+          has_self_generated_context: false,
         },
         evidence_level: "strong",
         risk_flags: [],
@@ -160,8 +168,9 @@ export function buildArgumentStructureDetectorPrompt(args: {
     "You will be judged on:",
     "1. Whether core_observation describes a specific textual phenomenon, not paraphrase.",
     "2. Whether reader_surprise_sentence.ru is derivable from core_observation without new claims.",
-    "3. Whether textual_anchor is exact and citable.",
-    "4. Whether you returned [] when no real signal was present.",
+    "3. Whether textual_anchor is exact and citable from the supplied text.",
+    "4. Whether you stayed inside the supplied verse/context passage.",
+    "5. Whether you returned [] when no real signal was present.",
     "",
     "You will NOT be judged on stylistic beauty, number of signals, or comprehensiveness.",
   ].join("\n");
@@ -203,7 +212,8 @@ export function buildSameAngleJudgePrompt(args: {
     "OUTPUT JSON ONLY:",
     stringifyForPrompt({
       signal_id: args.signal.signal_id,
-      verdict: "same_angle | partial_overlap | new_angle | stronger_version | pretty_but_empty | risky_overclaim",
+      verdict:
+        "same_angle | partial_overlap | new_angle | stronger_version | pretty_but_empty | risky_overclaim",
       compared_against: ["card_id_1", "card_id_2"],
       overlap_explanation:
         "required if partial_overlap or stronger_version; otherwise null",
@@ -217,6 +227,8 @@ export function buildSameAngleJudgePrompt(args: {
 export function buildVerifierPrompt(args: {
   signal: DiscoverySignal;
   sameAngleVerdict: SameAngleVerdict;
+  verseTextRu?: string;
+  passageTextRu?: string;
 }): string {
   return [
     "You are the Verifier for Scriptura AI Discovery Refinery v1.",
@@ -231,6 +243,22 @@ export function buildVerifierPrompt(args: {
     "INPUT — SAME-ANGLE VERDICT:",
     stringifyForPrompt(args.sameAngleVerdict),
     "",
+    args.verseTextRu || args.passageTextRu
+      ? "AUTHORIZED TEXTUAL SCOPE:"
+      : "AUTHORIZED TEXTUAL SCOPE:",
+    args.verseTextRu ? `Supplied verse text:\n${args.verseTextRu}` : "",
+    args.passageTextRu
+      ? `Supplied passage/context text:\n${args.passageTextRu}`
+      : "",
+    "",
+    "SCOPE RULE:",
+    "The supplied verse/passage text is the only authorized evidence.",
+    "Do not use general Bible knowledge to rescue a signal.",
+    "Do not use other verses, later chapter material, cross-references, historical background, theology, or original-language claims unless they are explicitly present in the supplied text above.",
+    "If the signal depends on a person, event, exception, contrast, chapter pattern, or fact that is not present in the supplied text, evidence_supports_claim must be false.",
+    "If the central claim depends on outside-passage material, overall must be fail.",
+    "If the outside-passage material is removable and a safer version remains, overall may be needs_patch with a precise patch_instruction.",
+    "",
     "EVALUATION DIMENSIONS:",
     "",
     "1. discovery_present:",
@@ -238,23 +266,23 @@ export function buildVerifierPrompt(args: {
     "Or is it paraphrase, summary, or general explanation?",
     "",
     "2. anchor_precise:",
-    "Is textual_anchor.surfaces.ru a citable phrase from the verse?",
+    "Is textual_anchor.surfaces.ru a citable phrase from the supplied text?",
     "Is it specific enough that one could underline it?",
     "",
     "3. evidence_supports_claim:",
-    "Does the verse text support core_observation?",
-    "Or does the claim require external knowledge or speculation?",
+    "Does the supplied verse/passage text support core_observation?",
+    "Or does the claim require external knowledge, another verse, chapter-level material outside the supplied passage, or speculation?",
     "",
     "4. consistency_check:",
     "Is reader_surprise_sentence.ru a faithful reformulation of core_observation?",
     "Or does it introduce a new claim, sentiment, or angle?",
     "",
     "5. risk_assessment:",
-    "- lexical_overclaim: claims about word meanings beyond what the verse shows.",
-    "- intertext_speculative: pulls in other passages without justification.",
-    "- historical_overclaim: assumes historical context not evidenced in text.",
+    "- lexical_overclaim: claims about word meanings beyond what the supplied text shows.",
+    "- intertext_speculative: pulls in other passages, later/earlier verses, chapter patterns, cross-references, or biblical facts not present in the supplied passage.",
+    "- historical_overclaim: assumes historical context not evidenced in the supplied text.",
     "- theological_overreach: makes doctrinal claims beyond textual scope.",
-    "- meaningful_absence_unsafe: claims author intentionally omitted something without evidence.",
+    "- meaningful_absence_unsafe: claims author intentionally omitted something without evidence, or makes an absence argument using material outside the supplied passage.",
     "- self_generated_echo: novelty appears to come from existing Scriptura output rather than the verse.",
     "",
     "6. pretty_but_empty:",
@@ -269,8 +297,14 @@ export function buildVerifierPrompt(args: {
     "- pretty_but_empty is the canonical style-degradation metric.",
     "- A signal can pass several individual checks and still be pretty_but_empty.",
     "- A signal with any true risk_assessment flag cannot have overall: pass.",
+    "- A signal that uses outside-passage material without explicit authorization cannot have overall: pass.",
     "- Day-1 forbids Greek lexical claims because Greek canonical anchor work is deferred.",
     "- If core_observation and reader_surprise_sentence.ru are not aligned, consistency_check must be false.",
+    "",
+    "EXAMPLES OF SCOPE FAILURES:",
+    "- A signal about Genesis 5:20 that depends on Enoch in Genesis 5:24 fails unless Genesis 5:24 is included in the supplied passage.",
+    "- A signal about a repeated chapter pattern fails if the repeated pattern is not visible in the supplied passage.",
+    "- A signal about original Hebrew/Greek fails unless original-language data was supplied.",
     "",
     "OUTPUT JSON ONLY:",
     stringifyForPrompt({
