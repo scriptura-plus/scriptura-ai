@@ -402,7 +402,11 @@ function inferAngleFamilyFromObservation(
 function inferPhenomenon(observation: string, anchor: string): string {
   const lower = `${observation} ${anchor}`.toLowerCase();
 
-  if (lower.includes("ибо") || lower.includes("потому") || lower.includes("союз")) {
+  if (
+    lower.includes("ибо") ||
+    lower.includes("потому") ||
+    lower.includes("союз")
+  ) {
     return "causal_connector_as_argument_signal";
   }
 
@@ -496,41 +500,41 @@ function normalizeSurprise(text: string, observation: string): string {
 
 function parseLabeledTextBlock(block: string): Record<string, string> {
   const labels: Record<string, string> = {
-    "якорь": "anchor",
-    "anchor": "anchor",
+    якорь: "anchor",
+    anchor: "anchor",
     "textual anchor": "anchor",
 
-    "слова": "specificWords",
+    слова: "specificWords",
     "specific words": "specificWords",
-    "words": "specificWords",
+    words: "specificWords",
 
-    "наблюдение": "observation",
-    "observation": "observation",
+    наблюдение: "observation",
+    observation: "observation",
     "core observation": "observation",
 
-    "открытие": "surprise",
-    "surprise": "surprise",
+    открытие: "surprise",
+    surprise: "surprise",
     "reader surprise": "surprise",
 
-    "доказательность": "evidenceLevel",
-    "evidence": "evidenceLevel",
+    доказательность: "evidenceLevel",
+    evidence: "evidenceLevel",
     "evidence level": "evidenceLevel",
 
-    "семья": "angleFamily",
-    "family": "angleFamily",
+    семья: "angleFamily",
+    family: "angleFamily",
     "angle family": "angleFamily",
 
-    "риск": "riskFlags",
-    "риски": "riskFlags",
-    "risk": "riskFlags",
+    риск: "riskFlags",
+    риски: "riskFlags",
+    risk: "riskFlags",
     "risk flags": "riskFlags",
 
-    "феномен": "phenomenon",
-    "phenomenon": "phenomenon",
+    феномен: "phenomenon",
+    phenomenon: "phenomenon",
 
-    "ход": "interpretiveMove",
+    ход: "interpretiveMove",
     "interpretive move": "interpretiveMove",
-    "move": "interpretiveMove",
+    move: "interpretiveMove",
   };
 
   const result: Record<string, string> = {};
@@ -1274,6 +1278,7 @@ async function processSignal(args: {
   judgeProvider: Provider;
   verifierProvider: Provider;
   verseTextRu: string;
+  passageTextRu: string;
 }): Promise<{
   queueItem: ModeratorQueueItem;
   diagnostic: Day1DiagnosticItem;
@@ -1405,6 +1410,8 @@ async function processSignal(args: {
     const verifierPrompt = buildVerifierPrompt({
       signal: args.signal,
       sameAngleVerdict,
+      verseTextRu: args.verseTextRu,
+      passageTextRu: args.passageTextRu,
     });
 
     verifierRawResponse = await runAI(
@@ -1557,6 +1564,7 @@ export async function runDay1Calibration(args?: {
         judgeProvider,
         verifierProvider,
         verseTextRu: DAY1_VERSE_TEXT_RU,
+        passageTextRu: DAY1_PASSAGE_TEXT_RU,
       });
 
       diagnostics.push(processed.diagnostic);
@@ -1646,6 +1654,13 @@ function buildTextFirstDetectorPrompt(args: {
     "Не объясняй стих в целом.",
     "Ищи только конкретные текстовые механизмы: союз, повтор, контраст, порядок слов, список, переход агентности, вопрос-ответ, риторическую асимметрию, значимое отсутствие, напряжение повествования.",
     "",
+    "ЖЁСТКАЯ ГРАНИЦА МАТЕРИАЛА:",
+    "Используй только текст стиха и контекст/отрывок, которые даны ниже.",
+    "Не используй другие стихи из главы, если они не входят в данный ниже контекст/отрывок.",
+    "Не используй общие библейские знания, перекрёстные ссылки, будущие/предыдущие события, исторический фон или греческий/еврейский язык, если это не дано явно ниже.",
+    "Если мысль зависит от материала за пределами данного текста, не выдавай её.",
+    "Если для бедного/формульного стиха нет сигнала внутри данного текста, верни НЕТ_СИГНАЛОВ.",
+    "",
     "ВАЖНО:",
     "Не возвращай JSON.",
     "Не используй markdown-таблицу.",
@@ -1666,13 +1681,14 @@ function buildTextFirstDetectorPrompt(args: {
     "Ход: short_snake_case_english_phrase",
     "",
     "Требования к качеству:",
-    "- Якорь должен быть виден прямо в тексте.",
+    "- Якорь должен быть виден прямо в данном тексте.",
     "- Наблюдение должно показывать механизм, а не просто красивую мысль.",
     "- Открытие должно звучать как: «Я не замечал, что...»",
     "- Не делай утверждений о греческом/еврейском, если они не даны в тексте.",
     "- Для бедных/формульных стихов лучше 0–1 сигнал, чем натянутые открытия.",
     "- Для narrative не выдумывай психологию персонажей сверх текста.",
-    "- Для meaningful absence будь осторожен: отсутствие должно быть видимым и не превращаться в догадку об авторском намерении.",
+    "- Для meaningful absence будь осторожен: отсутствие должно быть видимым внутри данного текста и не превращаться в догадку об авторском намерении.",
+    "- Не сравнивай с персонажем/событием/исключением, которого нет в данном ниже тексте.",
     "",
     "Данные стиха:",
     `Reference: ${args.reference}`,
@@ -1776,6 +1792,7 @@ export async function runDay1DetectorPreview(args?: {
         judgeProvider,
         verifierProvider,
         verseTextRu: DAY1_VERSE_TEXT_RU,
+        passageTextRu: DAY1_PASSAGE_TEXT_RU,
       });
 
       queue.push(processed.queueItem);
@@ -1939,6 +1956,7 @@ async function runDay15VersePreview(args: {
         judgeProvider: args.judgeProvider,
         verifierProvider: args.verifierProvider,
         verseTextRu: args.fixture.verse_text_ru,
+        passageTextRu: args.fixture.passage_text_ru,
       });
 
       queue.push(processed.queueItem);
