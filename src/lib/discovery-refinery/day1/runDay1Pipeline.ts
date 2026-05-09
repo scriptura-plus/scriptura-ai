@@ -36,7 +36,7 @@ import {
 
 type JsonRecord = Record<string, unknown>;
 
-type RunMode = "calibration" | "detector_preview";
+type RunMode = "calibration" | "detector_preview" | "day15_fixture_preview";
 
 export type Day1DiagnosticItem = {
   signal_id: string;
@@ -1409,25 +1409,39 @@ function getExistingCardsForFixture(
   return [];
 }
 
-function countActions(queue: ModeratorQueueItem[]): Day15VersePreviewResult["action_counts"] {
+function countActions(
+  queue: ModeratorQueueItem[],
+): Day15VersePreviewResult["action_counts"] {
   return {
-    approve_reserve: queue.filter((item) => item.suggested_action === "approve_reserve").length,
-    approve_active: queue.filter((item) => item.suggested_action === "approve_active").length,
-    rewrite: queue.filter((item) => item.suggested_action === "rewrite").length,
-    replace_existing: queue.filter((item) => item.suggested_action === "replace_existing").length,
-    discard: queue.filter((item) => item.suggested_action === "discard").length,
-    send_back: queue.filter((item) => item.suggested_action === "send_back").length,
+    approve_reserve: queue.filter(
+      (item) => item.suggested_action === "approve_reserve",
+    ).length,
+    approve_active: queue.filter(
+      (item) => item.suggested_action === "approve_active",
+    ).length,
+    rewrite: queue.filter((item) => item.suggested_action === "rewrite")
+      .length,
+    replace_existing: queue.filter(
+      (item) => item.suggested_action === "replace_existing",
+    ).length,
+    discard: queue.filter((item) => item.suggested_action === "discard")
+      .length,
+    send_back: queue.filter((item) => item.suggested_action === "send_back")
+      .length,
     mark_for_external_research: queue.filter(
       (item) => item.suggested_action === "mark_for_external_research",
     ).length,
   };
 }
 
-function countTiers(queue: ModeratorQueueItem[]): Day15VersePreviewResult["tier_counts"] {
+function countTiers(
+  queue: ModeratorQueueItem[],
+): Day15VersePreviewResult["tier_counts"] {
   return {
     A_routine: queue.filter((item) => item.tier === "A_routine").length,
     B_conflict: queue.filter((item) => item.tier === "B_conflict").length,
-    C_risk_escalation: queue.filter((item) => item.tier === "C_risk_escalation").length,
+    C_risk_escalation: queue.filter((item) => item.tier === "C_risk_escalation")
+      .length,
   };
 }
 
@@ -1442,7 +1456,7 @@ async function runDay15VersePreview(args: {
 
   const runId = createDeterministicId("run", {
     reference: args.fixture.reference,
-    mode: "day15_multi_verse_preview",
+    mode: "day15_fixture_preview",
     created_at: new Date().toISOString(),
   });
 
@@ -1456,7 +1470,7 @@ async function runDay15VersePreview(args: {
 
     return {
       ok: false,
-      mode: "detector_preview",
+      mode: "day15_fixture_preview",
       fixture_id: args.fixture.id,
       reference: args.fixture.reference,
       canonical_ref: args.fixture.canonical_ref,
@@ -1484,7 +1498,7 @@ async function runDay15VersePreview(args: {
   if (!parsedArray) {
     return {
       ok: false,
-      mode: "detector_preview",
+      mode: "day15_fixture_preview",
       fixture_id: args.fixture.id,
       reference: args.fixture.reference,
       canonical_ref: args.fixture.canonical_ref,
@@ -1543,7 +1557,7 @@ async function runDay15VersePreview(args: {
 
   return {
     ok: errors.length === 0,
-    mode: "detector_preview",
+    mode: "day15_fixture_preview",
     fixture_id: args.fixture.id,
     reference: args.fixture.reference,
     canonical_ref: args.fixture.canonical_ref,
@@ -1564,6 +1578,46 @@ async function runDay15VersePreview(args: {
     action_counts: countActions(queue),
     tier_counts: countTiers(queue),
   };
+}
+
+export function getDay15FixtureIds(): string[] {
+  return DAY15_VERSE_FIXTURES.map((fixture) => fixture.id);
+}
+
+export async function runDay15FixturePreview(args?: {
+  fixtureId?: string;
+  detectorProvider?: Provider;
+  judgeProvider?: Provider;
+  verifierProvider?: Provider;
+}): Promise<Day15VersePreviewResult> {
+  const detectorProvider = args?.detectorProvider ?? "claude";
+  const judgeProvider = args?.judgeProvider ?? "openai";
+  const verifierProvider = args?.verifierProvider ?? "openai";
+
+  const fallbackFixture = DAY15_VERSE_FIXTURES[0];
+
+  if (!fallbackFixture) {
+    throw new Error("No Day-1.5 verse fixtures are configured.");
+  }
+
+  const fixtureId = args?.fixtureId ?? fallbackFixture.id;
+
+  const fixture = DAY15_VERSE_FIXTURES.find((item) => item.id === fixtureId);
+
+  if (!fixture) {
+    throw new Error(
+      `Unknown Day-1.5 fixtureId "${fixtureId}". Available fixture IDs: ${getDay15FixtureIds().join(
+        ", ",
+      )}`,
+    );
+  }
+
+  return runDay15VersePreview({
+    fixture,
+    detectorProvider,
+    judgeProvider,
+    verifierProvider,
+  });
 }
 
 export async function runDay15MultiVersePreview(args?: {
@@ -1596,19 +1650,46 @@ export async function runDay15MultiVersePreview(args?: {
   }
 
   const aggregate = {
-    approve_reserve: verses.reduce((sum, verse) => sum + verse.action_counts.approve_reserve, 0),
-    approve_active: verses.reduce((sum, verse) => sum + verse.action_counts.approve_active, 0),
-    rewrite: verses.reduce((sum, verse) => sum + verse.action_counts.rewrite, 0),
-    replace_existing: verses.reduce((sum, verse) => sum + verse.action_counts.replace_existing, 0),
-    discard: verses.reduce((sum, verse) => sum + verse.action_counts.discard, 0),
-    send_back: verses.reduce((sum, verse) => sum + verse.action_counts.send_back, 0),
+    approve_reserve: verses.reduce(
+      (sum, verse) => sum + verse.action_counts.approve_reserve,
+      0,
+    ),
+    approve_active: verses.reduce(
+      (sum, verse) => sum + verse.action_counts.approve_active,
+      0,
+    ),
+    rewrite: verses.reduce(
+      (sum, verse) => sum + verse.action_counts.rewrite,
+      0,
+    ),
+    replace_existing: verses.reduce(
+      (sum, verse) => sum + verse.action_counts.replace_existing,
+      0,
+    ),
+    discard: verses.reduce(
+      (sum, verse) => sum + verse.action_counts.discard,
+      0,
+    ),
+    send_back: verses.reduce(
+      (sum, verse) => sum + verse.action_counts.send_back,
+      0,
+    ),
     mark_for_external_research: verses.reduce(
       (sum, verse) => sum + verse.action_counts.mark_for_external_research,
       0,
     ),
-    A_routine: verses.reduce((sum, verse) => sum + verse.tier_counts.A_routine, 0),
-    B_conflict: verses.reduce((sum, verse) => sum + verse.tier_counts.B_conflict, 0),
-    C_risk_escalation: verses.reduce((sum, verse) => sum + verse.tier_counts.C_risk_escalation, 0),
+    A_routine: verses.reduce(
+      (sum, verse) => sum + verse.tier_counts.A_routine,
+      0,
+    ),
+    B_conflict: verses.reduce(
+      (sum, verse) => sum + verse.tier_counts.B_conflict,
+      0,
+    ),
+    C_risk_escalation: verses.reduce(
+      (sum, verse) => sum + verse.tier_counts.C_risk_escalation,
+      0,
+    ),
   };
 
   return {
