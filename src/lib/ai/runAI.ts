@@ -6,6 +6,7 @@ const MISSING_KEY = (envName: string) =>
 
 // Cost-control defaults.
 // These defaults are used only if the matching Vercel env variable is missing.
+// For quality experiments, explicitly set OPENAI_MODEL=gpt-5.5 in Vercel.
 const SAFE_OPENAI_MODEL = "gpt-5.4-mini";
 const SAFE_CLAUDE_MODEL = "claude-sonnet-4-6";
 const SAFE_GEMINI_MODEL = "gemini-2.5-flash";
@@ -20,8 +21,18 @@ const LANG_NAME: Record<Lang, string> = {
   es: "Spanish",
 };
 
-function systemInstruction(lang: Lang): string {
+function systemInstruction(lang: Lang, expectJSON = false): string {
   const name = LANG_NAME[lang];
+
+  if (expectJSON) {
+    return (
+      `You are a biblical scholar assistant. ` +
+      `You MUST return valid JSON only. ` +
+      `Do not use markdown. Do not use code fences. Do not add prose before or after the JSON. ` +
+      `JSON key names may remain in English when the user prompt requires English keys. ` +
+      `Any natural-language JSON string values intended for the user MUST be in ${name}.`
+    );
+  }
 
   return (
     `You are a biblical scholar assistant. ` +
@@ -56,9 +67,7 @@ function getRetryAfterMs(headers: Headers): number | null {
 
 function getClaudeUserMessage(status: number, body: string): string {
   if (status === 529) {
-    return (
-      "Claude is temporarily overloaded. Please try again in a moment."
-    );
+    return "Claude is temporarily overloaded. Please try again in a moment.";
   }
 
   return `Claude error ${status}: ${body.slice(0, 400)}`;
@@ -69,17 +78,6 @@ export function resolveAIModel(provider: Provider): string {
     const envModel = process.env.OPENAI_MODEL?.trim();
 
     if (!envModel) return SAFE_OPENAI_MODEL;
-
-    // Cost-control safety:
-    // GPT-5.5 was useful for quality tests, but it is too expensive for automatic flows.
-    // Even if Vercel still has OPENAI_MODEL=gpt-5.5, do not use it accidentally.
-    if (envModel === "gpt-5.5") {
-      console.warn(
-        `[OpenAI] OPENAI_MODEL is set to gpt-5.5, but automatic use is blocked. Falling back to ${SAFE_OPENAI_MODEL}.`,
-      );
-
-      return SAFE_OPENAI_MODEL;
-    }
 
     return envModel;
   }
@@ -101,18 +99,34 @@ export async function runAI(
   lang: Lang = "en",
   expectJSON = false,
 ): Promise<string> {
-  if (provider === "openai") return runOpenAI(prompt, lang);
+  if (provider === "openai") return runOpenAI(prompt, lang, expectJSON);
   if (provider === "claude") return runClaude(prompt, lang);
   if (provider === "gemini") return runGemini(prompt, lang, expectJSON);
 
   throw new Error(`Unknown provider: ${provider}`);
 }
 
-async function runOpenAI(prompt: string, lang: Lang): Promise<string> {
+async function runOpenAI(
+  prompt: string,
+  lang: Lang,
+  expectJSON = false,
+): Promise<string> {
   const key = process.env.OPENAI_API_KEY;
   if (!key) throw new Error(MISSING_KEY("OPENAI_API_KEY"));
 
   const model = resolveAIModel("openai");
+
+  const finalPrompt = expectJSON
+    ? prompt +
+      "\n\nCRITICAL JSON OUTPUT RULES:\n" +
+      "- Return ONLY valid JSON.\n" +
+      "- No markdown.\n" +
+      "- No code fences.\n" +
+      "- No explanation before or after.\n" +
+      "- The first character must be { or [.\n" +
+      "- The last character must be } or ].\n" +
+      "- Keep JSON key names exactly as requested in the prompt."
+    : prompt;
 
   const res = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
@@ -122,8 +136,9 @@ async function runOpenAI(prompt: string, lang: Lang): Promise<string> {
     },
     body: JSON.stringify({
       model,
-      instructions: systemInstruction(lang),
-      input: prompt,
+      instructions: systemInstruction(lang, expectJSON),
+      input: finalPrompt,
+      max_output_tokens: expectJSON ? 8000 : 3000,
     }),
   });
 
@@ -157,12 +172,27 @@ async function runOpenAI(prompt: string, lang: Lang): Promise<string> {
   type OutputContent = { type?: string; text?: string };
   type OutputItem = { content?: OutputContent[] };
 
-  const text = ((data?.output ?? []) as OutputItem[])
+  let text = ((data?.output ?? []) as OutputItem[])
     .flatMap((item) => item?.content ?? [])
     .filter((c) => c.type === "output_text")
     .map((c) => c.text ?? "")
     .join("")
     .trim();
+
+  if (expectJSON) {
+    text = text
+      .replace(/^```(?:json)?\s*/im, "")
+      .replace(/\s*```\s*$/m, "")
+      .trim();
+
+    if (text && text[0] !== "{" && text[0] !== "[") {
+      console.error("[OpenAI] Expected JSON, unexpected start char:", {
+        model,
+        start: JSON.stringify(text[0]),
+        preview: text.slice(0, 300),
+      });
+    }
+  }
 
   if (!text) {
     console.error(
@@ -295,7 +325,7 @@ async function runGemini(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      system_instruction: { parts: [{ text: systemInstruction(lang) }] },
+      system_instruction: { parts: [{ text: systemInstruction(lang, expectJSON) }] },
       contents: [{ parts: [{ text: finalPrompt }] }],
       generationConfig,
     }),
