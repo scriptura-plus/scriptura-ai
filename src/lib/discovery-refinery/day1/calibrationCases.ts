@@ -228,4 +228,53 @@ export const DAY1_CALIBRATION_CASES: Day1CalibrationCase[] = [
       },
     },
   },
+  {
+    case_id: "case_06_real_mechanism_overstrong_wording",
+    label: "Needs patch — real mechanism with overstrong wording",
+    signal: makeCalibrationSignal({
+      caseId: "case_06_real_mechanism_overstrong_wording",
+      anchorQuote: "ибо Я кроток и смирен сердцем",
+      specificWords: ["ибо", "кроток", "смирен сердцем"],
+      coreObservation:
+        "The causal connector 'ибо' makes Jesus' inner character the complete explanation for why the command 'learn from me' should be obeyed. The verse therefore treats the teacher's character as the only sufficient basis for accepting the yoke.",
+      readerSurpriseRu:
+        "Я не замечал, что «ибо» делает внутренний характер Учителя единственным достаточным основанием для того, чтобы принять Его иго и повиноваться команде «научитесь».",
+      phenomenon: "causal_connector_as_command_warrant",
+      interpretiveMove: "teacher_character_as_total_basis_for_obedience",
+      angleFamily: "rhetorical",
+      evidenceLevel: "strong",
+    }),
+    expected: {
+      hash_match_before_judge: false,
+      same_angle_verdict: "new_angle",
+      verifier_overall: "needs_patch",
+      verifier_pretty_but_empty: false,
+      verifier_risk_flags: {},
+    },
+  },
+  {
+    case_id: "case_07_no_mechanism_cosmetic_fix",
+    label: "Fail — polished language without real textual mechanism",
+    signal: makeCalibrationSignal({
+      caseId: "case_07_no_mechanism_cosmetic_fix",
+      anchorQuote: "иго Мое благо, и бремя Мое легко",
+      specificWords: ["иго", "бремя", "легко"],
+      coreObservation:
+        "Jesus uses tender and balanced language that creates a warm emotional atmosphere and helps the reader feel that life with him is peaceful and beautiful.",
+      readerSurpriseRu:
+        "Я не замечал, насколько красиво и мягко звучит эта фраза: она создаёт ощущение мира, тепла и внутреннего облегчения.",
+      phenomenon: "polished_devotional_impression",
+      interpretiveMove: "cosmetic_emotional_rephrasing_without_textual_mechanism",
+      angleFamily: "other",
+      evidenceLevel: "weak",
+      riskFlags: ["pretty_but_empty"],
+    }),
+    expected: {
+      hash_match_before_judge: false,
+      same_angle_verdict: "pretty_but_empty",
+      verifier_overall: "fail",
+      verifier_pretty_but_empty: true,
+      verifier_risk_flags: {},
+    },
+  },
 ];
