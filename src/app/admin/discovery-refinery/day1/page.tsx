@@ -67,14 +67,6 @@ type ApiResult = {
     errors?: string[];
   }>;
   errors?: string[];
-  run_log?: {
-    saved?: boolean;
-    skipped?: boolean;
-    run_id?: string | null;
-    signal_count?: number;
-    error?: string | null;
-    reason?: string;
-  };
   meta?: {
     action?: string;
     fixtureId?: string;
@@ -86,7 +78,45 @@ type ApiResult = {
   error?: string;
 };
 
-const ADMIN_SECRET_STORAGE_KEY = "scriptura.discoveryRefinery.adminSecret";
+type RealVerseRouteResponse = {
+  ok?: boolean;
+  mode?: string;
+  changed_database?: boolean;
+  saved_to_run_log?: boolean;
+  run_log?: {
+    saved?: boolean;
+    run_id?: string | null;
+    signal_count?: number;
+    skipped?: boolean;
+    error?: string | null;
+  } | null;
+  reference?: string;
+  canonical_ref?: string;
+  lang?: string;
+  existing_card_count?: number;
+  active_or_reserve_count?: number;
+  result?: {
+    ok?: boolean;
+    mode?: string;
+    reference?: string;
+    canonical_ref?: string;
+    passage_id?: string;
+    detector_signal_count?: number;
+    queue_item_count?: number;
+    action_counts?: Record<string, number>;
+    tier_counts?: Record<string, number>;
+    errors?: string[];
+    queue?: QueueItem[];
+    signal_flow?: Record<string, unknown>;
+    scope_decision?: Record<string, unknown>;
+    input_context_snapshot?: Record<string, unknown>;
+    detector_raw_text?: string | null;
+  };
+  error?: string;
+};
+
+const ADMIN_SECRET_STORAGE_KEY = "scriptura_admin_secret";
+const REAL_REFERENCE_STORAGE_KEY = "scriptura_discovery_real_reference";
 
 const DAY15_FIXTURES = [
   {
@@ -116,13 +146,13 @@ const DAY15_FIXTURES = [
   },
 ];
 
-function getStatusLabel(result: ApiResult | null): string {
+function getStatusLabel(result: ApiResult | RealVerseRouteResponse | null): string {
   if (!result) return "No run yet";
   if (result.ok) return "OK";
   return "Not OK";
 }
 
-function getStatusClass(result: ApiResult | null): string {
+function getStatusClass(result: ApiResult | RealVerseRouteResponse | null): string {
   if (!result) return "status-neutral";
   if (result.ok) return "status-ok";
   return "status-bad";
@@ -134,19 +164,19 @@ function summarizeCalibration(result: ApiResult): string {
   return `${passed}/${cases.length} cases passed`;
 }
 
-function summarizeQueue(result: ApiResult): string {
-  const queue = result.queue ?? [];
-  const approve = queue.filter(
+function summarizeQueue(queue: QueueItem[] | undefined): string {
+  const items = queue ?? [];
+  const approve = items.filter(
     (item) => item.suggested_action === "approve_reserve",
   ).length;
-  const rewrite = queue.filter(
+  const rewrite = items.filter(
     (item) => item.suggested_action === "rewrite",
   ).length;
-  const discard = queue.filter(
+  const discard = items.filter(
     (item) => item.suggested_action === "discard",
   ).length;
 
-  return `${queue.length} queue items · ${approve} approve_reserve · ${rewrite} rewrite · ${discard} discard`;
+  return `${items.length} queue items · ${approve} approve_reserve · ${rewrite} rewrite · ${discard} discard`;
 }
 
 function formatJson(value: unknown): string {
@@ -206,40 +236,70 @@ function QueuePreview({ queue }: { queue: QueueItem[] }) {
 
 export default function Day1DiscoveryRefineryPage() {
   const [adminSecret, setAdminSecret] = useState("");
+  const [realReference, setRealReference] = useState("1 Паралипоменон 25:1");
   const [result, setResult] = useState<ApiResult | null>(null);
+  const [realResult, setRealResult] = useState<RealVerseRouteResponse | null>(
+    null,
+  );
   const [loadingKey, setLoadingKey] = useState<string | null>(null);
 
   useEffect(() => {
-    const savedSecret = window.localStorage.getItem(ADMIN_SECRET_STORAGE_KEY);
+    try {
+      const savedSecret = window.localStorage.getItem(ADMIN_SECRET_STORAGE_KEY);
+      const savedReference = window.localStorage.getItem(
+        REAL_REFERENCE_STORAGE_KEY,
+      );
 
-    if (savedSecret) {
-      setAdminSecret(savedSecret);
+      if (savedSecret) setAdminSecret(savedSecret);
+      if (savedReference) setRealReference(savedReference);
+    } catch {
+      // localStorage is optional convenience only.
     }
   }, []);
 
   useEffect(() => {
-    const trimmed = adminSecret.trim();
-
-    if (trimmed) {
-      window.localStorage.setItem(ADMIN_SECRET_STORAGE_KEY, trimmed);
+    try {
+      if (adminSecret.trim()) {
+        window.localStorage.setItem(ADMIN_SECRET_STORAGE_KEY, adminSecret);
+      }
+    } catch {
+      // Ignore.
     }
   }, [adminSecret]);
 
-  const statusLabel = useMemo(() => getStatusLabel(result), [result]);
-  const statusClass = useMemo(() => getStatusClass(result), [result]);
+  useEffect(() => {
+    try {
+      if (realReference.trim()) {
+        window.localStorage.setItem(
+          REAL_REFERENCE_STORAGE_KEY,
+          realReference.trim(),
+        );
+      }
+    } catch {
+      // Ignore.
+    }
+  }, [realReference]);
+
+  const activeResult = (realResult ?? result) as
+    | ApiResult
+    | RealVerseRouteResponse
+    | null;
+  const statusLabel = useMemo(() => getStatusLabel(activeResult), [activeResult]);
+  const statusClass = useMemo(() => getStatusClass(activeResult), [activeResult]);
 
   async function runAction(action: Action, fixtureId?: string) {
     const key = fixtureId ? `${action}:${fixtureId}` : action;
 
     setLoadingKey(key);
     setResult(null);
+    setRealResult(null);
 
     try {
       const response = await fetch("/api/admin/discovery-refinery/day1", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-admin-secret": adminSecret.trim(),
+          "x-admin-secret": adminSecret,
         },
         body: JSON.stringify({
           action,
@@ -273,12 +333,73 @@ export default function Day1DiscoveryRefineryPage() {
     }
   }
 
+  async function runRealVerse() {
+    const reference = realReference.trim();
+
+    if (!reference) {
+      setRealResult({
+        ok: false,
+        error: "Enter a reference first.",
+      });
+      return;
+    }
+
+    setLoadingKey("real_text_only");
+    setResult(null);
+    setRealResult(null);
+
+    try {
+      const response = await fetch("/api/admin/discovery-refinery/real-verse", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-secret": adminSecret,
+        },
+        body: JSON.stringify({
+          reference,
+          lang: "ru",
+          detectorProvider: "claude",
+          judgeProvider: "openai",
+          verifierProvider: "openai",
+          saveRunLog: true,
+        }),
+      });
+
+      const data = (await response.json().catch(() => null)) as
+        | RealVerseRouteResponse
+        | null;
+
+      if (!response.ok) {
+        setRealResult(
+          data ?? {
+            ok: false,
+            error: `Request failed with status ${response.status}`,
+          },
+        );
+        return;
+      }
+
+      setRealResult(data ?? { ok: false, error: "Empty response" });
+    } catch (error) {
+      setRealResult({
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setLoadingKey(null);
+    }
+  }
+
   const isLoading = loadingKey !== null;
   const canRun = adminSecret.trim().length > 0 && !isLoading;
-
   const isSinglePreview =
     result?.mode === "detector_preview" ||
     result?.mode === "day15_fixture_preview";
+
+  const realQueue = realResult?.result?.queue ?? [];
+  const realActionCounts = realResult?.result?.action_counts;
+  const realTierCounts = realResult?.result?.tier_counts;
+  const realErrors = realResult?.result?.errors ?? [];
 
   return (
     <main className="day1-page">
@@ -344,7 +465,8 @@ export default function Day1DiscoveryRefineryPage() {
           gap: 14px;
         }
 
-        .secret-row {
+        .secret-row,
+        .real-row {
           display: grid;
           grid-template-columns: 1fr;
           gap: 8px;
@@ -379,7 +501,8 @@ export default function Day1DiscoveryRefineryPage() {
           gap: 10px;
         }
 
-        .fixture-section {
+        .fixture-section,
+        .real-section {
           border-top: 1px solid rgba(100, 78, 48, 0.14);
           padding-top: 14px;
         }
@@ -423,6 +546,10 @@ export default function Day1DiscoveryRefineryPage() {
 
         .danger {
           background: #6f4720;
+        }
+
+        .success {
+          background: #337852;
         }
 
         .fixture-button {
@@ -619,9 +746,9 @@ export default function Day1DiscoveryRefineryPage() {
           <div className="eyebrow">Scriptura AI · Discovery Refinery</div>
           <h1>Day-1 / Day-1.5 Console</h1>
           <p className="subtitle">
-            Diagnostic preview with Supabase run-log v0. No Studio moderation,
-            no Card Crafter. Use single-fixture preview for Day-1.5 to avoid
-            Vercel timeout.
+            Diagnostic preview. Fixture runs test calibration behavior. Real
+            verse text-only runs save diagnostic run-log rows for the 10-run
+            forcing function before Source Packet work resumes.
           </p>
         </section>
 
@@ -634,7 +761,7 @@ export default function Day1DiscoveryRefineryPage() {
               onChange={(event) => setAdminSecret(event.target.value)}
               placeholder="Paste ADMIN_SECRET"
               type="password"
-              autoComplete="current-password"
+              autoComplete="off"
             />
           </div>
 
@@ -701,26 +828,51 @@ export default function Day1DiscoveryRefineryPage() {
             </div>
           </div>
 
+          <div className="real-section">
+            <div className="section-label">
+              Real text-only run — saves Supabase diagnostic run-log
+            </div>
+            <div className="real-row">
+              <label htmlFor="real-reference">Reference</label>
+              <input
+                id="real-reference"
+                value={realReference}
+                onChange={(event) => setRealReference(event.target.value)}
+                placeholder="Например: 1 Паралипоменон 25:1"
+                type="text"
+              />
+            </div>
+            <div className="button-row">
+              <button
+                className="success"
+                disabled={!canRun || !realReference.trim()}
+                onClick={runRealVerse}
+                type="button"
+              >
+                {loadingKey === "real_text_only"
+                  ? "Running Real Text-Only…"
+                  : "Run Real Text-Only"}
+              </button>
+            </div>
+          </div>
+
           <div className="status-line">
             <span className={`status-pill ${statusClass}`}>{statusLabel}</span>
-            {result?.mode && (
-              <span className="small-muted">Mode: {result.mode}</span>
+            {activeResult?.mode && (
+              <span className="small-muted">Mode: {activeResult.mode}</span>
             )}
-            {result?.reference && (
-              <span className="small-muted">Reference: {result.reference}</span>
-            )}
-            {result?.run_log?.saved && (
+            {activeResult?.reference && (
               <span className="small-muted">
-                Run-log: saved · {result.run_log.signal_count ?? 0} signals
-              </span>
-            )}
-            {result?.run_log?.error && (
-              <span className="small-muted">
-                Run-log error: {result.run_log.error}
+                Reference: {activeResult.reference}
               </span>
             )}
             {result?.meta?.next && (
               <span className="small-muted">Next: {result.meta.next}</span>
+            )}
+            {realResult?.run_log?.run_id && (
+              <span className="small-muted">
+                Run log: {realResult.run_log.run_id}
+              </span>
             )}
           </div>
         </section>
@@ -729,10 +881,9 @@ export default function Day1DiscoveryRefineryPage() {
           <section className="panel">
             <h2>Readable Summary</h2>
 
-            {!result && (
+            {!result && !realResult && (
               <p className="empty">
-                Run calibration first. Then use the single-fixture buttons for
-                Day-1.5.
+                Run calibration, a fixture preview, or a real text-only verse.
               </p>
             )}
 
@@ -742,21 +893,72 @@ export default function Day1DiscoveryRefineryPage() {
               </div>
             )}
 
+            {realResult?.error && (
+              <div className="summary-item">
+                <strong>Error:</strong> {realResult.error}
+              </div>
+            )}
+
             {result?.meta?.warning && (
               <div className="warning">{result.meta.warning}</div>
             )}
 
-            {result?.run_log && (
-              <div className="summary-item">
-                <strong>Run-log:</strong>{" "}
-                {result.run_log.saved
-                  ? `saved · run_id: ${result.run_log.run_id ?? "—"} · signals: ${
-                      result.run_log.signal_count ?? 0
-                    }`
-                  : result.run_log.skipped
-                    ? `skipped · ${result.run_log.reason ?? "—"}`
-                    : `not saved · ${result.run_log.error ?? "unknown error"}`}
-              </div>
+            {realResult && (
+              <>
+                <ul className="summary-list">
+                  <li className="summary-item">
+                    <strong>Real verse:</strong> {realResult.reference ?? "—"}
+                    {"\n"}
+                    <strong>Canonical:</strong>{" "}
+                    {realResult.canonical_ref ?? "—"}
+                    {"\n"}
+                    <strong>Saved to run-log:</strong>{" "}
+                    {realResult.saved_to_run_log ? "yes" : "no"}
+                    {"\n"}
+                    <strong>Run id:</strong>{" "}
+                    {realResult.run_log?.run_id ?? "—"}
+                  </li>
+
+                  <li className="summary-item">
+                    <strong>Existing cards:</strong>{" "}
+                    {realResult.existing_card_count ?? 0}
+                    {"\n"}
+                    <strong>Active/reserve:</strong>{" "}
+                    {realResult.active_or_reserve_count ?? 0}
+                  </li>
+
+                  <li className="summary-item">
+                    <strong>Detector signals:</strong>{" "}
+                    {realResult.result?.detector_signal_count ?? 0}
+                  </li>
+
+                  <li className="summary-item">
+                    <strong>Queue:</strong> {summarizeQueue(realQueue)}
+                  </li>
+
+                  {realActionCounts && (
+                    <li className="summary-item">
+                      <strong>Actions:</strong> {formatJson(realActionCounts)}
+                    </li>
+                  )}
+
+                  {realTierCounts && (
+                    <li className="summary-item">
+                      <strong>Tiers:</strong> {formatJson(realTierCounts)}
+                    </li>
+                  )}
+
+                  <li className="summary-item">
+                    <strong>Errors:</strong> {realErrors.length}
+                    {realResult.run_log?.error
+                      ? `\nRun-log error: ${realResult.run_log.error}`
+                      : ""}
+                  </li>
+                </ul>
+
+                <h3>Moderator Queue Preview</h3>
+                <QueuePreview queue={realQueue} />
+              </>
             )}
 
             {result?.mode === "calibration" && (
@@ -766,7 +968,7 @@ export default function Day1DiscoveryRefineryPage() {
                     <strong>Calibration:</strong> {summarizeCalibration(result)}
                   </li>
                   <li className="summary-item">
-                    <strong>Queue:</strong> {summarizeQueue(result)}
+                    <strong>Queue:</strong> {summarizeQueue(result.queue)}
                   </li>
                 </ul>
 
@@ -831,7 +1033,7 @@ export default function Day1DiscoveryRefineryPage() {
                   </li>
 
                   <li className="summary-item">
-                    <strong>Queue:</strong> {summarizeQueue(result)}
+                    <strong>Queue:</strong> {summarizeQueue(result.queue)}
                   </li>
 
                   {result.action_counts && (
@@ -912,7 +1114,13 @@ export default function Day1DiscoveryRefineryPage() {
 
           <section className="panel">
             <h2>Raw JSON</h2>
-            <pre>{result ? formatJson(result) : "No result yet."}</pre>
+            <pre>
+              {realResult
+                ? formatJson(realResult)
+                : result
+                  ? formatJson(result)
+                  : "No result yet."}
+            </pre>
           </section>
         </div>
       </div>
