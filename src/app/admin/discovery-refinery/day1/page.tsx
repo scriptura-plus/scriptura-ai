@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type Action =
   | "calibration"
@@ -67,6 +67,14 @@ type ApiResult = {
     errors?: string[];
   }>;
   errors?: string[];
+  run_log?: {
+    saved?: boolean;
+    skipped?: boolean;
+    run_id?: string | null;
+    signal_count?: number;
+    error?: string | null;
+    reason?: string;
+  };
   meta?: {
     action?: string;
     fixtureId?: string;
@@ -77,6 +85,8 @@ type ApiResult = {
   };
   error?: string;
 };
+
+const ADMIN_SECRET_STORAGE_KEY = "scriptura.discoveryRefinery.adminSecret";
 
 const DAY15_FIXTURES = [
   {
@@ -199,6 +209,22 @@ export default function Day1DiscoveryRefineryPage() {
   const [result, setResult] = useState<ApiResult | null>(null);
   const [loadingKey, setLoadingKey] = useState<string | null>(null);
 
+  useEffect(() => {
+    const savedSecret = window.localStorage.getItem(ADMIN_SECRET_STORAGE_KEY);
+
+    if (savedSecret) {
+      setAdminSecret(savedSecret);
+    }
+  }, []);
+
+  useEffect(() => {
+    const trimmed = adminSecret.trim();
+
+    if (trimmed) {
+      window.localStorage.setItem(ADMIN_SECRET_STORAGE_KEY, trimmed);
+    }
+  }, [adminSecret]);
+
   const statusLabel = useMemo(() => getStatusLabel(result), [result]);
   const statusClass = useMemo(() => getStatusClass(result), [result]);
 
@@ -213,7 +239,7 @@ export default function Day1DiscoveryRefineryPage() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-admin-secret": adminSecret,
+          "x-admin-secret": adminSecret.trim(),
         },
         body: JSON.stringify({
           action,
@@ -593,7 +619,7 @@ export default function Day1DiscoveryRefineryPage() {
           <div className="eyebrow">Scriptura AI · Discovery Refinery</div>
           <h1>Day-1 / Day-1.5 Console</h1>
           <p className="subtitle">
-            Diagnostic preview only. No Supabase writes, no Studio moderation,
+            Diagnostic preview with Supabase run-log v0. No Studio moderation,
             no Card Crafter. Use single-fixture preview for Day-1.5 to avoid
             Vercel timeout.
           </p>
@@ -608,7 +634,7 @@ export default function Day1DiscoveryRefineryPage() {
               onChange={(event) => setAdminSecret(event.target.value)}
               placeholder="Paste ADMIN_SECRET"
               type="password"
-              autoComplete="off"
+              autoComplete="current-password"
             />
           </div>
 
@@ -683,6 +709,16 @@ export default function Day1DiscoveryRefineryPage() {
             {result?.reference && (
               <span className="small-muted">Reference: {result.reference}</span>
             )}
+            {result?.run_log?.saved && (
+              <span className="small-muted">
+                Run-log: saved · {result.run_log.signal_count ?? 0} signals
+              </span>
+            )}
+            {result?.run_log?.error && (
+              <span className="small-muted">
+                Run-log error: {result.run_log.error}
+              </span>
+            )}
             {result?.meta?.next && (
               <span className="small-muted">Next: {result.meta.next}</span>
             )}
@@ -708,6 +744,19 @@ export default function Day1DiscoveryRefineryPage() {
 
             {result?.meta?.warning && (
               <div className="warning">{result.meta.warning}</div>
+            )}
+
+            {result?.run_log && (
+              <div className="summary-item">
+                <strong>Run-log:</strong>{" "}
+                {result.run_log.saved
+                  ? `saved · run_id: ${result.run_log.run_id ?? "—"} · signals: ${
+                      result.run_log.signal_count ?? 0
+                    }`
+                  : result.run_log.skipped
+                    ? `skipped · ${result.run_log.reason ?? "—"}`
+                    : `not saved · ${result.run_log.error ?? "unknown error"}`}
+              </div>
             )}
 
             {result?.mode === "calibration" && (
