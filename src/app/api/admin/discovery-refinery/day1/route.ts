@@ -6,6 +6,7 @@ import {
   runDay15FixturePreview,
   runDay15MultiVersePreview,
 } from "@/lib/discovery-refinery/day1/runDay1Pipeline";
+import { saveDiscoveryRefineryRun } from "@/lib/discovery-refinery/runLog/saveDiscoveryRefineryRun";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -42,11 +43,50 @@ function getProvider(value: unknown, fallback: Provider): Provider {
   return isProvider(value) ? value : fallback;
 }
 
-function getFixtureId(value: unknown): string {
-  if (typeof value !== "string") return "matthew_11_29";
+function getString(value: unknown, fallback = ""): string {
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
 
-  const trimmed = value.trim();
-  return trimmed || "matthew_11_29";
+async function trySaveRunLog(args: {
+  result: unknown;
+  mode: string;
+  isFixture: boolean;
+  fixtureId?: string | null;
+}) {
+  try {
+    const saved = await saveDiscoveryRefineryRun({
+      result: args.result,
+      mode: args.mode,
+      isFixture: args.isFixture,
+      fixtureId: args.fixtureId ?? null,
+    });
+
+    return {
+      saved: !saved.skipped,
+      skipped: saved.skipped,
+      run_id: saved.run_id,
+      signal_count: saved.signal_count,
+      error: null,
+    };
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Failed to save run log";
+
+    console.error("[DISCOVERY_REFINERY_DAY1] run-log save failed", {
+      mode: args.mode,
+      fixtureId: args.fixtureId,
+      message,
+      error,
+    });
+
+    return {
+      saved: false,
+      skipped: false,
+      run_id: null,
+      signal_count: 0,
+      error: message,
+    };
+  }
 }
 
 export async function POST(req: Request) {
@@ -73,13 +113,19 @@ export async function POST(req: Request) {
 
       return NextResponse.json({
         ...result,
+        run_log: {
+          saved: false,
+          skipped: true,
+          reason: "Calibration is not saved to run-log v0.",
+        },
         meta: {
           action,
           purpose:
-            "Day-1 calibration checks duplicate handling, Same-Angle Judge behavior, Verifier behavior, and code routing.",
-          next: result.ok
-            ? "Run detector_preview or a single day15_fixture_preview."
-            : "Inspect failed calibration cases before continuing.",
+            "Day-1 calibration checks deterministic duplicate handling, Same-Angle Judge behavior, Verifier behavior, and code routing.",
+          next:
+            result.ok
+              ? "Run detector_preview or day15_fixture_preview."
+              : "Inspect failed calibration cases before continuing.",
         },
       });
     }
@@ -91,19 +137,28 @@ export async function POST(req: Request) {
         verifierProvider,
       });
 
+      const runLog = await trySaveRunLog({
+        result,
+        mode: "fixture_preview",
+        isFixture: true,
+        fixtureId: "matthew_11_29",
+      });
+
       return NextResponse.json({
         ...result,
+        run_log: runLog,
         meta: {
           action,
           purpose:
             "Day-1 detector preview runs argument_structure_mapping_v1 on Matthew 11:29 and creates moderator queue items.",
-          next: "Review queue items manually. Do not auto-save anything yet.",
+          next:
+            "Review queue items manually. Run-log v0 should now contain this diagnostic run.",
         },
       });
     }
 
     if (action === "day15_fixture_preview") {
-      const fixtureId = getFixtureId(body?.fixtureId);
+      const fixtureId = getString(body?.fixtureId, "matthew_11_29");
 
       const result = await runDay15FixturePreview({
         fixtureId,
@@ -112,17 +167,23 @@ export async function POST(req: Request) {
         verifierProvider,
       });
 
+      const runLog = await trySaveRunLog({
+        result,
+        mode: "fixture_preview",
+        isFixture: true,
+        fixtureId,
+      });
+
       return NextResponse.json({
         ...result,
+        run_log: runLog,
         meta: {
           action,
           fixtureId,
           purpose:
-            "Day-1.5 single-fixture preview runs one verse at a time to avoid long request timeouts.",
-          boundary:
-            "No Supabase writes, no Studio moderation, no Card Crafter. Diagnostic JSON only.",
+            "Single-fixture Discovery Refinery preview saves one diagnostic run plus its signal rows to Supabase run-log v0.",
           next:
-            "Review this single fixture result, then run the next fixture separately.",
+            "Check discovery_refinery_runs and discovery_refinery_signals in Supabase.",
         },
       });
     }
@@ -135,11 +196,15 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       ...result,
+      run_log: {
+        saved: false,
+        skipped: true,
+        reason:
+          "Batch preview is not saved by run-log v0 yet. Save single fixture previews first.",
+      },
       meta: {
         ...result.meta,
         action,
-        warning:
-          "This full multi-verse action can still timeout on Vercel. Prefer day15_fixture_preview one verse at a time.",
       },
     });
   } catch (error) {
