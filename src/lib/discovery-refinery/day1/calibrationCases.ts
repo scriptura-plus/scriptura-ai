@@ -136,11 +136,11 @@ export const DAY1_CALIBRATION_CASES: Day1CalibrationCase[] = [
       anchorQuote: "ибо Я кроток и смирен сердцем",
       specificWords: ["ибо"],
       coreObservation:
-        "The causal connector 'ибо' does more than add a description of Jesus' character. It makes that character the reason the invitation 'learn from me' can be trusted: the yoke is safe because of the gentleness and humility of the one giving it.",
+        "The causal connector 'ибо' makes the character description function as the stated reason attached to the command 'learn from me.' In the supplied wording, the reason clause points to the teacher's meek and humble character rather than to a separate promise, title, or external proof.",
       readerSurpriseRu:
-        "Я не замечал, что «ибо» не просто добавляет описание Иисуса, а объясняет, почему призыву «научитесь от Меня» можно доверять: основанием становится характер самого Учителя.",
-      phenomenon: "causal_particle_as_trust_warrant",
-      interpretiveMove: "speaker_character_grounds_trust_in_imperative",
+        "Я не замечал, что «ибо» делает слова о кротости и смирении не отдельным портретом, а причиной, которая объясняет команду «научитесь от Меня».",
+      phenomenon: "causal_connector_links_command_to_character_reason",
+      interpretiveMove: "read_character_description_as_reason_clause_for_learning_command",
       angleFamily: "rhetorical",
       evidenceLevel: "strong",
     }),
