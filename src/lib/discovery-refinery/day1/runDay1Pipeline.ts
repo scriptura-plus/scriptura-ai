@@ -4,10 +4,7 @@ import {
   createAngleFingerprint,
   createDeterministicId,
 } from "../fingerprint";
-import {
-  buildSameAngleJudgePrompt,
-  buildVerifierPrompt,
-} from "../prompts";
+import { buildSameAngleJudgePrompt } from "../prompts";
 import type {
   AngleFingerprint,
   DiscoverySignal,
@@ -39,9 +36,30 @@ type RunMode = "calibration" | "detector_preview" | "day15_fixture_preview";
 
 type DetectorOutputStatus =
   | "not_run"
-  | "no_signals_declared"
+  | "detector_failed"
+  | "declared_no_signals"
   | "signals_parsed"
   | "unparseable_text";
+
+type SignalFlow = {
+  detector_output_status: DetectorOutputStatus;
+  detector_declared_no_signals: boolean;
+  parsed_signal_count: number;
+  queue_item_count: number;
+  discarded_count: number;
+  rewrite_count: number;
+  approved_count: number;
+  all_parsed_signals_discarded: boolean;
+  no_signals_reason: string | null;
+};
+
+type ScopeDecision = {
+  passage_id: string;
+  included_verses: string[];
+  authorized_scope: string;
+  excluded_context: string;
+  rationale: string;
+};
 
 type TextDetectorSignalSeed = {
   anchor: string;
@@ -55,26 +73,6 @@ type TextDetectorSignalSeed = {
   interpretiveMove: string;
 };
 
-export type ScopeDecision = {
-  passage_id: string;
-  included_verses: string[];
-  authorized_scope: string;
-  excluded_context: string;
-  rationale: string;
-};
-
-export type SignalFlowSummary = {
-  detector_output_status: DetectorOutputStatus;
-  detector_declared_no_signals: boolean;
-  parsed_signal_count: number;
-  queue_item_count: number;
-  discarded_count: number;
-  rewrite_count: number;
-  approved_count: number;
-  all_parsed_signals_discarded: boolean;
-  no_signals_reason: string | null;
-};
-
 export type Day1DiagnosticItem = {
   signal_id: string;
   reader_surprise_ru: string | null;
@@ -86,7 +84,6 @@ export type Day1DiagnosticItem = {
   verifier_raw_response: string | null;
   normalized_same_angle_verdict: SameAngleVerdict;
   normalized_verifier_verdict: VerifierVerdict;
-  scope_decision: ScopeDecision;
 };
 
 export type Day1PipelineResult = {
@@ -100,7 +97,7 @@ export type Day1PipelineResult = {
   detector_output_status: DetectorOutputStatus;
   detector_declared_no_signals: boolean;
   detector_signal_count: number;
-  signal_flow: SignalFlowSummary;
+  signal_flow: SignalFlow;
   scope_decision: ScopeDecision;
   queue: ModeratorQueueItem[];
   diagnostics: Day1DiagnosticItem[];
@@ -182,17 +179,6 @@ export type Day15MultiVersePreviewResult = {
   };
 };
 
-const EMPTY_SCOPE_DECISION: ScopeDecision = {
-  passage_id: "unknown",
-  included_verses: [],
-  authorized_scope:
-    "No detector scope was used for this result. This is expected for calibration cases that use prebuilt signals.",
-  excluded_context:
-    "All external context not explicitly included in the calibration signal is excluded.",
-  rationale:
-    "Calibration checks routing and verifier behavior, not live discovery from a supplied passage.",
-};
-
 function isRecord(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -207,6 +193,10 @@ function toStringArray(value: unknown): string[] {
   return value
     .map((item) => (typeof item === "string" ? item.trim() : ""))
     .filter(Boolean);
+}
+
+function stringifyForPrompt(value: unknown): string {
+  return JSON.stringify(value, null, 2);
 }
 
 function stripCodeFence(text: string): string {
@@ -962,100 +952,6 @@ function parseDetectorOutputToSignals(args: {
   );
 }
 
-function getDetectorOutputStatus(
-  detectorRawText: string | null,
-  parsedSignalCount: number,
-): DetectorOutputStatus {
-  if (!detectorRawText) return "not_run";
-  if (detectorDeclaredNoSignals(detectorRawText)) return "no_signals_declared";
-  if (parsedSignalCount > 0) return "signals_parsed";
-  return "unparseable_text";
-}
-
-function extractVerseRangeFromPassageId(passageId: string): string[] {
-  const normalized = passageId.trim();
-
-  const match = normalized.match(
-    /^([1-3]?[a-z]+)_(\d+)_(\d+)(?:-(\d+))?$/i,
-  );
-
-  if (!match) return [normalized];
-
-  const chapter = match[2];
-  const start = Number(match[3]);
-  const end = match[4] ? Number(match[4]) : start;
-
-  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) {
-    return [normalized];
-  }
-
-  return Array.from(
-    { length: end - start + 1 },
-    (_, index) => `${chapter}:${start + index}`,
-  );
-}
-
-function createScopeDecision(args: {
-  passageId: string;
-  verseTextRu: string;
-  passageTextRu: string;
-  rationale: string;
-}): ScopeDecision {
-  const versePreview = args.verseTextRu.trim().slice(0, 80);
-  const passagePreview = args.passageTextRu.trim().slice(0, 80);
-
-  return {
-    passage_id: args.passageId,
-    included_verses: extractVerseRangeFromPassageId(args.passageId),
-    authorized_scope:
-      `Detector and Verifier may use only the supplied verse text and supplied passage/context text for this run. Verse preview: "${versePreview}". Passage preview: "${passagePreview}".`,
-    excluded_context:
-      "Other verses from the chapter, cross-references, later/earlier events, general Bible knowledge, historical background, and Greek/Hebrew claims are excluded unless explicitly present in the supplied passage text.",
-    rationale: args.rationale,
-  };
-}
-
-function createSignalFlowSummary(args: {
-  detectorRawText: string | null;
-  parsedSignalCount: number;
-  queue: ModeratorQueueItem[];
-  noSignalsReason?: string | null;
-}): SignalFlowSummary {
-  const detectorOutputStatus = getDetectorOutputStatus(
-    args.detectorRawText,
-    args.parsedSignalCount,
-  );
-
-  const discardedCount = args.queue.filter(
-    (item) => item.suggested_action === "discard",
-  ).length;
-
-  const rewriteCount = args.queue.filter(
-    (item) => item.suggested_action === "rewrite",
-  ).length;
-
-  const approvedCount = args.queue.filter(
-    (item) =>
-      item.suggested_action === "approve_reserve" ||
-      item.suggested_action === "approve_active",
-  ).length;
-
-  return {
-    detector_output_status: detectorOutputStatus,
-    detector_declared_no_signals: detectorOutputStatus === "no_signals_declared",
-    parsed_signal_count: args.parsedSignalCount,
-    queue_item_count: args.queue.length,
-    discarded_count: discardedCount,
-    rewrite_count: rewriteCount,
-    approved_count: approvedCount,
-    all_parsed_signals_discarded:
-      args.parsedSignalCount > 0 &&
-      args.queue.length > 0 &&
-      discardedCount === args.queue.length,
-    no_signals_reason: args.noSignalsReason ?? null,
-  };
-}
-
 function findHashDuplicate(
   signal: DiscoverySignal,
   existingCards: ExistingCoverageCard[],
@@ -1303,10 +1199,7 @@ function getSuggestedAction(args: {
     return "discard";
   }
 
-  if (
-    args.sameAngleVerdict.verdict === "same_angle" ||
-    args.sameAngleVerdict.verdict === "risky_overclaim"
-  ) {
+  if (args.sameAngleVerdict.verdict === "same_angle") {
     return "discard";
   }
 
@@ -1314,11 +1207,19 @@ function getSuggestedAction(args: {
     return "discard";
   }
 
+  // Important Day-1.5 routing distinction:
+  // A risky/overstrong wording that still has a real textual mechanism should be
+  // rewritten, not discarded. Hard pre-flagged lexical overclaims still fail above
+  // because their deterministic verifier verdict is "fail".
   if (args.verifierVerdict.overall === "needs_patch") {
     return "rewrite";
   }
 
   if (hasAnyRisk(args.verifierVerdict)) {
+    return "rewrite";
+  }
+
+  if (args.sameAngleVerdict.verdict === "risky_overclaim") {
     return "rewrite";
   }
 
@@ -1416,6 +1317,103 @@ function createQueueItem(args: {
   };
 }
 
+function buildScopedVerifierPrompt(args: {
+  signal: DiscoverySignal;
+  sameAngleVerdict: SameAngleVerdict;
+  verseTextRu: string;
+  passageTextRu: string;
+}): string {
+  return [
+    "You are the Verifier for Scriptura AI Discovery Refinery v1.",
+    "",
+    "YOUR TASK:",
+    "Independently evaluate a DiscoverySignal across seven dimensions.",
+    "You evaluate AFTER Same-Angle Judge has assigned a verdict.",
+    "",
+    "AUTHORIZED TEXTUAL SCOPE:",
+    "Use only the supplied verse text and supplied passage text below.",
+    "Do not use other verses from the chapter, cross-references, later/earlier events, historical background, Greek/Hebrew claims, or theology unless supplied explicitly below.",
+    "",
+    "SUPPLIED VERSE TEXT RU:",
+    args.verseTextRu,
+    "",
+    "SUPPLIED PASSAGE TEXT RU:",
+    args.passageTextRu,
+    "",
+    "INPUT — DISCOVERY SIGNAL:",
+    stringifyForPrompt(args.signal),
+    "",
+    "INPUT — SAME-ANGLE VERDICT:",
+    stringifyForPrompt(args.sameAngleVerdict),
+    "",
+    "EVALUATION DIMENSIONS:",
+    "",
+    "1. discovery_present:",
+    "Does core_observation describe a specific, observable textual phenomenon?",
+    "Or is it paraphrase, summary, devotional impression, or general explanation?",
+    "",
+    "2. anchor_precise:",
+    "Is textual_anchor.surfaces.ru a citable phrase from the supplied verse/passage?",
+    "Is it specific enough that one could underline it?",
+    "",
+    "3. evidence_supports_claim:",
+    "Does the supplied text support core_observation?",
+    "Or does the claim require external knowledge, original-language work, theological inference, or speculation?",
+    "",
+    "4. consistency_check:",
+    "Is reader_surprise_sentence.ru a faithful reformulation of core_observation?",
+    "Or does it introduce a new claim, sentiment, or angle?",
+    "",
+    "5. risk_assessment:",
+    "- lexical_overclaim: claims about word meanings beyond what the supplied text shows.",
+    "- intertext_speculative: pulls in other passages without explicit supplied evidence.",
+    "- historical_overclaim: assumes historical context not evidenced in supplied text.",
+    "- theological_overreach: makes doctrinal/theological claims beyond textual scope.",
+    "- meaningful_absence_unsafe: claims author intentionally omitted something without evidence.",
+    "- self_generated_echo: novelty appears to come from existing Scriptura output rather than the supplied text.",
+    "",
+    "6. pretty_but_empty:",
+    "This is a separate explicit flag.",
+    'Ask: "What specifically would a reader newly notice in the words of the supplied text?"',
+    "If the answer is vague, sentimental, cosmetic, or general, set true.",
+    "",
+    "7. overall:",
+    "pass | fail | needs_patch",
+    "",
+    "CRITICAL FAIL VS NEEDS_PATCH RULES:",
+    "- Use fail when there is no real observable textual mechanism.",
+    "- Use fail for unsupported Greek/Hebrew/original-language claims.",
+    "- Use fail for theological or lexical interpretation that cannot be grounded in the supplied text.",
+    "- Use fail for pretty-but-empty wording even if it sounds beautiful.",
+    "- Use needs_patch when a real observable mechanism exists, but the wording is too absolute, too broad, or overstates the conclusion.",
+    "- A real mechanism with overstrong wording should normally be needs_patch, not fail, if a safer wording could preserve the same mechanism.",
+    "- A signal with any true risk_assessment flag cannot have overall: pass.",
+    "- Day-1 forbids Greek lexical claims because Greek canonical anchor/source work is deferred.",
+    "- If core_observation and reader_surprise_sentence.ru are not aligned, consistency_check must be false.",
+    "",
+    "OUTPUT JSON ONLY:",
+    stringifyForPrompt({
+      signal_id: args.signal.signal_id,
+      discovery_present: true,
+      anchor_precise: true,
+      evidence_supports_claim: true,
+      consistency_check: true,
+      risk_assessment: {
+        lexical_overclaim: false,
+        intertext_speculative: false,
+        historical_overclaim: false,
+        theological_overreach: false,
+        meaningful_absence_unsafe: false,
+        self_generated_echo: false,
+      },
+      pretty_but_empty: false,
+      overall: "pass | fail | needs_patch",
+      patch_instruction: null,
+      rejection_reason: null,
+    }),
+  ].join("\n");
+}
+
 async function processSignal(args: {
   signal: DiscoverySignal;
   existingCards: ExistingCoverageCard[];
@@ -1423,7 +1421,6 @@ async function processSignal(args: {
   verifierProvider: Provider;
   verseTextRu: string;
   passageTextRu: string;
-  scopeDecision: ScopeDecision;
 }): Promise<{
   queueItem: ModeratorQueueItem;
   diagnostic: Day1DiagnosticItem;
@@ -1552,7 +1549,7 @@ async function processSignal(args: {
   }
 
   if (!verifierVerdict) {
-    const verifierPrompt = buildVerifierPrompt({
+    const verifierPrompt = buildScopedVerifierPrompt({
       signal: args.signal,
       sameAngleVerdict,
       verseTextRu: args.verseTextRu,
@@ -1591,7 +1588,6 @@ async function processSignal(args: {
     verifier_raw_response: verifierRawResponse,
     normalized_same_angle_verdict: sameAngleVerdict,
     normalized_verifier_verdict: verifierVerdict,
-    scope_decision: args.scopeDecision,
   };
 
   return {
@@ -1678,6 +1674,20 @@ function isAllowedFlexibleCalibrationVariant(
     return isStrongerVersion || isConservativeOverlap;
   }
 
+  if (result.case_id.startsWith("case_06_")) {
+    if (actual.hash_match_before_judge !== false) return false;
+    if (actual.verifier_pretty_but_empty !== false) return false;
+    if (!hasNoVerifierRisks(actual)) return false;
+
+    const isRepairableOverstatement =
+      (actual.same_angle_verdict === "new_angle" ||
+        actual.same_angle_verdict === "partial_overlap" ||
+        actual.same_angle_verdict === "risky_overclaim") &&
+      actual.verifier_overall === "needs_patch";
+
+    return isRepairableOverstatement;
+  }
+
   return false;
 }
 
@@ -1690,6 +1700,136 @@ function compareCalibrationResult(result: Day1CalibrationResult): boolean {
   );
 }
 
+function countActions(
+  queue: ModeratorQueueItem[],
+): Day15VersePreviewResult["action_counts"] {
+  return {
+    approve_reserve: queue.filter(
+      (item) => item.suggested_action === "approve_reserve",
+    ).length,
+    approve_active: queue.filter(
+      (item) => item.suggested_action === "approve_active",
+    ).length,
+    rewrite: queue.filter((item) => item.suggested_action === "rewrite")
+      .length,
+    replace_existing: queue.filter(
+      (item) => item.suggested_action === "replace_existing",
+    ).length,
+    discard: queue.filter((item) => item.suggested_action === "discard")
+      .length,
+    send_back: queue.filter((item) => item.suggested_action === "send_back")
+      .length,
+    mark_for_external_research: queue.filter(
+      (item) => item.suggested_action === "mark_for_external_research",
+    ).length,
+  };
+}
+
+function countTiers(
+  queue: ModeratorQueueItem[],
+): Day15VersePreviewResult["tier_counts"] {
+  return {
+    A_routine: queue.filter((item) => item.tier === "A_routine").length,
+    B_conflict: queue.filter((item) => item.tier === "B_conflict").length,
+    C_risk_escalation: queue.filter(
+      (item) => item.tier === "C_risk_escalation",
+    ).length,
+  };
+}
+
+function inferIncludedVersesFromPassageId(passageId: string): string[] {
+  const match = passageId.match(/_(\d+)_(\d+)-(\d+)$/);
+  if (!match) return [];
+
+  const chapter = match[1];
+  const start = Number(match[2]);
+  const end = Number(match[3]);
+
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) {
+    return [];
+  }
+
+  const verses: string[] = [];
+
+  for (let verse = start; verse <= end; verse += 1) {
+    verses.push(`${chapter}:${verse}`);
+  }
+
+  return verses;
+}
+
+function createScopeDecision(args: {
+  passageId: string;
+  includedVerses?: string[];
+  calibration?: boolean;
+}): ScopeDecision {
+  if (args.calibration) {
+    return {
+      passage_id: "unknown",
+      included_verses: [],
+      authorized_scope:
+        "No detector scope was used for this result. This calibration checks routing and verifier behavior, not live passage discovery.",
+      excluded_context:
+        "All external context not explicitly included in the calibration signal is out of scope.",
+      rationale:
+        "Calibration uses prebuilt signals and does not run the text-first detector.",
+    };
+  }
+
+  return {
+    passage_id: args.passageId,
+    included_verses:
+      args.includedVerses && args.includedVerses.length > 0
+        ? args.includedVerses
+        : inferIncludedVersesFromPassageId(args.passageId),
+    authorized_scope:
+      "Detector and Verifier may use only the supplied verse text and supplied passage text.",
+    excluded_context:
+      "Other verses from the chapter, cross-references, later/earlier events, historical background, and original-language claims are excluded unless explicitly supplied.",
+    rationale:
+      "Day-1.5 prioritizes safe textual signals. Broader lexical, theological, historical, or intertextual interpretation is deferred until sourced evidence is attached.",
+  };
+}
+
+function createSignalFlow(args: {
+  detectorOutputStatus: DetectorOutputStatus;
+  detectorDeclaredNoSignals: boolean;
+  parsedSignalCount: number;
+  queue: ModeratorQueueItem[];
+  noSignalsReason?: string | null;
+}): SignalFlow {
+  const actionCounts = countActions(args.queue);
+
+  return {
+    detector_output_status: args.detectorOutputStatus,
+    detector_declared_no_signals: args.detectorDeclaredNoSignals,
+    parsed_signal_count: args.parsedSignalCount,
+    queue_item_count: args.queue.length,
+    discarded_count: actionCounts.discard,
+    rewrite_count: actionCounts.rewrite,
+    approved_count: actionCounts.approve_reserve + actionCounts.approve_active,
+    all_parsed_signals_discarded:
+      args.parsedSignalCount > 0 &&
+      args.queue.length > 0 &&
+      actionCounts.discard === args.queue.length,
+    no_signals_reason: args.noSignalsReason ?? null,
+  };
+}
+
+function getDetectorOutputStatus(args: {
+  detectorRawText: string | null;
+  detectorFailed?: boolean;
+  signalCount: number;
+}): DetectorOutputStatus {
+  if (args.detectorFailed) return "detector_failed";
+  if (!args.detectorRawText) return "not_run";
+  if (detectorDeclaredNoSignals(args.detectorRawText)) {
+    return "declared_no_signals";
+  }
+  if (args.signalCount > 0) return "signals_parsed";
+  return "unparseable_text";
+}
+
 export async function runDay1Calibration(args?: {
   judgeProvider?: Provider;
   verifierProvider?: Provider;
@@ -1697,7 +1837,6 @@ export async function runDay1Calibration(args?: {
   const judgeProvider = args?.judgeProvider ?? "openai";
   const verifierProvider = args?.verifierProvider ?? "openai";
   const existingCards = getMatthew1129ExistingCardsForJudge();
-  const scopeDecision = EMPTY_SCOPE_DECISION;
 
   const calibration: Day1CalibrationResult[] = [];
   const diagnostics: Day1DiagnosticItem[] = [];
@@ -1712,7 +1851,6 @@ export async function runDay1Calibration(args?: {
         verifierProvider,
         verseTextRu: DAY1_VERSE_TEXT_RU,
         passageTextRu: DAY1_PASSAGE_TEXT_RU,
-        scopeDecision,
       });
 
       diagnostics.push(processed.diagnostic);
@@ -1769,6 +1907,15 @@ export async function runDay1Calibration(args?: {
     .map((item) => item.queue_item)
     .filter((item): item is ModeratorQueueItem => item !== null);
 
+  const signalFlow = createSignalFlow({
+    detectorOutputStatus: "not_run",
+    detectorDeclaredNoSignals: false,
+    parsedSignalCount: 0,
+    queue,
+    noSignalsReason:
+      "Calibration uses prebuilt signals and does not run the detector.",
+  });
+
   return {
     ok: calibration.every((item) => item.passed) && errors.length === 0,
     mode: "calibration",
@@ -1780,14 +1927,11 @@ export async function runDay1Calibration(args?: {
     detector_output_status: "not_run",
     detector_declared_no_signals: false,
     detector_signal_count: 0,
-    signal_flow: createSignalFlowSummary({
-      detectorRawText: null,
-      parsedSignalCount: 0,
-      queue,
-      noSignalsReason:
-        "Calibration uses prebuilt signals and does not run the live detector.",
+    signal_flow: signalFlow,
+    scope_decision: createScopeDecision({
+      passageId: "unknown",
+      calibration: true,
     }),
-    scope_decision: scopeDecision,
     queue,
     diagnostics,
     calibration,
@@ -1889,14 +2033,6 @@ export async function runDay1DetectorPreview(args?: {
   const snapshot = getMatthew1129Day1Snapshot();
   const existingCards = getMatthew1129ExistingCardsForJudge();
 
-  const scopeDecision = createScopeDecision({
-    passageId: "matt_11_28-30",
-    verseTextRu: DAY1_VERSE_TEXT_RU,
-    passageTextRu: DAY1_PASSAGE_TEXT_RU,
-    rationale:
-      "Matthew 11:29 detector preview intentionally authorizes Matthew 11:28-30 because the fixture tests discourse movement across the immediate saying while excluding broader chapter context and external cross-references.",
-  });
-
   const prompt = buildTextFirstDetectorPrompt({
     reference: DAY1_REFERENCE,
     verseTextRu: DAY1_VERSE_TEXT_RU,
@@ -1923,6 +2059,13 @@ export async function runDay1DetectorPreview(args?: {
     detectorRawText = await runAI(detectorProvider, prompt, "ru", false);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    const signalFlow = createSignalFlow({
+      detectorOutputStatus: "detector_failed",
+      detectorDeclaredNoSignals: false,
+      parsedSignalCount: 0,
+      queue: [],
+      noSignalsReason: `Detector failed: ${message}`,
+    });
 
     return {
       ok: false,
@@ -1932,16 +2075,13 @@ export async function runDay1DetectorPreview(args?: {
       judge_provider: judgeProvider,
       verifier_provider: verifierProvider,
       detector_raw_text: null,
-      detector_output_status: "not_run",
+      detector_output_status: "detector_failed",
       detector_declared_no_signals: false,
       detector_signal_count: 0,
-      signal_flow: createSignalFlowSummary({
-        detectorRawText: null,
-        parsedSignalCount: 0,
-        queue: [],
-        noSignalsReason: `Detector failed before returning output: ${message}`,
+      signal_flow: signalFlow,
+      scope_decision: createScopeDecision({
+        passageId: "matt_11_28-30",
       }),
-      scope_decision: scopeDecision,
       queue: [],
       diagnostics: [],
       errors: [`Detector failed: ${message}`],
@@ -1970,7 +2110,6 @@ export async function runDay1DetectorPreview(args?: {
         verifierProvider,
         verseTextRu: DAY1_VERSE_TEXT_RU,
         passageTextRu: DAY1_PASSAGE_TEXT_RU,
-        scopeDecision,
       });
 
       queue.push(processed.queueItem);
@@ -1984,17 +2123,18 @@ export async function runDay1DetectorPreview(args?: {
     }
   }
 
-  const noSignalsReason = detectorDeclaredNoSignals(detectorRawText)
-    ? "Detector explicitly returned НЕТ_СИГНАЛОВ for the supplied scope."
-    : signals.length === 0
-      ? "Detector returned text, but no parseable signal blocks were found."
-      : null;
+  const declaredNoSignals = detectorDeclaredNoSignals(detectorRawText);
 
-  if (signals.length === 0 && !detectorDeclaredNoSignals(detectorRawText)) {
+  if (signals.length === 0 && !declaredNoSignals) {
     errors.push(
       "Detector returned text, but no parseable signal blocks were found.",
     );
   }
+
+  const detectorOutputStatus = getDetectorOutputStatus({
+    detectorRawText,
+    signalCount: signals.length,
+  });
 
   return {
     ok: errors.length === 0,
@@ -2004,19 +2144,21 @@ export async function runDay1DetectorPreview(args?: {
     judge_provider: judgeProvider,
     verifier_provider: verifierProvider,
     detector_raw_text: detectorRawText,
-    detector_output_status: getDetectorOutputStatus(
-      detectorRawText,
-      signals.length,
-    ),
-    detector_declared_no_signals: detectorDeclaredNoSignals(detectorRawText),
+    detector_output_status: detectorOutputStatus,
+    detector_declared_no_signals: declaredNoSignals,
     detector_signal_count: signals.length,
-    signal_flow: createSignalFlowSummary({
-      detectorRawText,
+    signal_flow: createSignalFlow({
+      detectorOutputStatus,
+      detectorDeclaredNoSignals: declaredNoSignals,
       parsedSignalCount: signals.length,
       queue,
-      noSignalsReason,
+      noSignalsReason: declaredNoSignals
+        ? "Detector explicitly returned НЕТ_СИГНАЛОВ."
+        : null,
     }),
-    scope_decision: scopeDecision,
+    scope_decision: createScopeDecision({
+      passageId: "matt_11_28-30",
+    }),
     queue,
     diagnostics,
     errors,
@@ -2033,43 +2175,6 @@ function getExistingCardsForFixture(
   return [];
 }
 
-function countActions(
-  queue: ModeratorQueueItem[],
-): Day15VersePreviewResult["action_counts"] {
-  return {
-    approve_reserve: queue.filter(
-      (item) => item.suggested_action === "approve_reserve",
-    ).length,
-    approve_active: queue.filter(
-      (item) => item.suggested_action === "approve_active",
-    ).length,
-    rewrite: queue.filter((item) => item.suggested_action === "rewrite")
-      .length,
-    replace_existing: queue.filter(
-      (item) => item.suggested_action === "replace_existing",
-    ).length,
-    discard: queue.filter((item) => item.suggested_action === "discard")
-      .length,
-    send_back: queue.filter((item) => item.suggested_action === "send_back")
-      .length,
-    mark_for_external_research: queue.filter(
-      (item) => item.suggested_action === "mark_for_external_research",
-    ).length,
-  };
-}
-
-function countTiers(
-  queue: ModeratorQueueItem[],
-): Day15VersePreviewResult["tier_counts"] {
-  return {
-    A_routine: queue.filter((item) => item.tier === "A_routine").length,
-    B_conflict: queue.filter((item) => item.tier === "B_conflict").length,
-    C_risk_escalation: queue.filter(
-      (item) => item.tier === "C_risk_escalation",
-    ).length,
-  };
-}
-
 async function runDay15VersePreview(args: {
   fixture: Day15VerseFixture;
   detectorProvider: Provider;
@@ -2077,16 +2182,6 @@ async function runDay15VersePreview(args: {
   verifierProvider: Provider;
 }): Promise<Day15VersePreviewResult> {
   const existingCards = getExistingCardsForFixture(args.fixture);
-
-  const scopeDecision = createScopeDecision({
-    passageId: args.fixture.passage_id,
-    verseTextRu: args.fixture.verse_text_ru,
-    passageTextRu: args.fixture.passage_text_ru,
-    rationale:
-      args.fixture.expected_richness === "low"
-        ? "This low-richness fixture intentionally limits the detector to the supplied verse/passage so the system can learn to return no signal or discard forced discoveries instead of importing richer outside context."
-        : "This fixture authorizes only the supplied verse/passage text so detector, judge, and verifier behavior can be evaluated without hidden cross-reference or chapter-level assumptions.",
-  });
 
   const prompt = buildTextFirstDetectorPrompt({
     reference: args.fixture.reference,
@@ -2116,6 +2211,14 @@ async function runDay15VersePreview(args: {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
 
+    const signalFlow = createSignalFlow({
+      detectorOutputStatus: "detector_failed",
+      detectorDeclaredNoSignals: false,
+      parsedSignalCount: 0,
+      queue: [],
+      noSignalsReason: `Detector failed: ${message}`,
+    });
+
     return {
       ok: false,
       mode: "day15_fixture_preview",
@@ -2132,16 +2235,13 @@ async function runDay15VersePreview(args: {
       judge_provider: args.judgeProvider,
       verifier_provider: args.verifierProvider,
       detector_raw_text: null,
-      detector_output_status: "not_run",
+      detector_output_status: "detector_failed",
       detector_declared_no_signals: false,
       detector_signal_count: 0,
-      signal_flow: createSignalFlowSummary({
-        detectorRawText: null,
-        parsedSignalCount: 0,
-        queue: [],
-        noSignalsReason: `Detector failed before returning output: ${message}`,
+      signal_flow: signalFlow,
+      scope_decision: createScopeDecision({
+        passageId: args.fixture.passage_id,
       }),
-      scope_decision: scopeDecision,
       queue: [],
       diagnostics: [],
       errors: [`Detector failed: ${message}`],
@@ -2172,7 +2272,6 @@ async function runDay15VersePreview(args: {
         verifierProvider: args.verifierProvider,
         verseTextRu: args.fixture.verse_text_ru,
         passageTextRu: args.fixture.passage_text_ru,
-        scopeDecision,
       });
 
       queue.push(processed.queueItem);
@@ -2186,17 +2285,18 @@ async function runDay15VersePreview(args: {
     }
   }
 
-  const noSignalsReason = detectorDeclaredNoSignals(detectorRawText)
-    ? "Detector explicitly returned НЕТ_СИГНАЛОВ for the supplied scope."
-    : signals.length === 0
-      ? "Detector returned text, but no parseable signal blocks were found."
-      : null;
+  const declaredNoSignals = detectorDeclaredNoSignals(detectorRawText);
 
-  if (signals.length === 0 && !detectorDeclaredNoSignals(detectorRawText)) {
+  if (signals.length === 0 && !declaredNoSignals) {
     errors.push(
       "Detector returned text, but no parseable signal blocks were found.",
     );
   }
+
+  const detectorOutputStatus = getDetectorOutputStatus({
+    detectorRawText,
+    signalCount: signals.length,
+  });
 
   return {
     ok: errors.length === 0,
@@ -2214,19 +2314,21 @@ async function runDay15VersePreview(args: {
     judge_provider: args.judgeProvider,
     verifier_provider: args.verifierProvider,
     detector_raw_text: detectorRawText,
-    detector_output_status: getDetectorOutputStatus(
-      detectorRawText,
-      signals.length,
-    ),
-    detector_declared_no_signals: detectorDeclaredNoSignals(detectorRawText),
+    detector_output_status: detectorOutputStatus,
+    detector_declared_no_signals: declaredNoSignals,
     detector_signal_count: signals.length,
-    signal_flow: createSignalFlowSummary({
-      detectorRawText,
+    signal_flow: createSignalFlow({
+      detectorOutputStatus,
+      detectorDeclaredNoSignals: declaredNoSignals,
       parsedSignalCount: signals.length,
       queue,
-      noSignalsReason,
+      noSignalsReason: declaredNoSignals
+        ? "Detector explicitly returned НЕТ_СИГНАЛОВ."
+        : null,
     }),
-    scope_decision: scopeDecision,
+    scope_decision: createScopeDecision({
+      passageId: args.fixture.passage_id,
+    }),
     queue,
     diagnostics,
     errors,
@@ -2355,7 +2457,7 @@ export async function runDay15MultiVersePreview(args?: {
       boundary:
         "No Supabase writes, no Studio moderation, no Card Crafter. Diagnostic JSON only.",
       next:
-        "Review aggregate distribution, scope_decision, signal_flow, and per-verse diagnostics before deciding whether to design durable run logging.",
+        "Review aggregate distribution and per-verse diagnostics before deciding whether to tune prompts or design persistence.",
     },
   };
 }
