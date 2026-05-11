@@ -284,6 +284,11 @@ export default function PearlsV2LabPage() {
   }
 
   async function runTopup() {
+    if (!result) {
+      setTopupError("Run Pearls v2 first.");
+      return;
+    }
+
     setTopupLoading(true);
     setTopupError(null);
     setTopupResult(null);
@@ -299,12 +304,13 @@ export default function PearlsV2LabPage() {
             "x-admin-secret": adminSecret,
           },
           body: JSON.stringify({
-            reference,
+            reference: result.reference ?? reference,
             lang: "ru",
             targetCount: 12,
-            processLimit: 12,
+            processLimit: 3,
             force: false,
             includeStrongNonPublic: false,
+            cards,
           }),
         },
       );
@@ -368,15 +374,15 @@ export default function PearlsV2LabPage() {
         <div>
           <h2>V2 top-up through old pipeline</h2>
           <p className="subtitleSmall">
-            Runs Pearls v2, sends public-ready candidates into process-angle-candidate, then old Scriptura decides save/skip/rewrite.
+            Sends current public-ready Pearls v2 cards into process-angle-candidate. It does not rerun Pearls v2.
           </p>
         </div>
         <button
-          disabled={topupLoading || !reference.trim() || !adminSecret.trim()}
+          disabled={topupLoading || !reference.trim() || !adminSecret.trim() || !result}
           onClick={runTopup}
           type="button"
         >
-          {topupLoading ? "Running top-up..." : "Run V2 top-up"}
+          {topupLoading ? "Sending..." : "Send current V2 cards to old pipeline"}
         </button>
         {topupError ? <p className="topupError">{topupError}</p> : null}
         {topupResult ? (
