@@ -179,31 +179,97 @@ function summarizeQueue(queue: QueueItem[] | undefined): string {
   return `${items.length} queue items · ${approve} approve_reserve · ${rewrite} rewrite · ${discard} discard`;
 }
 
+function summarizeIntakeQueue(
+  queue: QueueItem[] | undefined,
+  actionCounts?: Record<string, number>,
+): string {
+  const items = queue ?? [];
+
+  const keep =
+    typeof actionCounts?.keep_total === "number"
+      ? actionCounts.keep_total
+      : items.filter((item) => item.suggested_action?.startsWith("keep_"))
+          .length;
+
+  const discard =
+    typeof actionCounts?.discard_total === "number"
+      ? actionCounts.discard_total
+      : items.filter((item) => item.suggested_action?.startsWith("discard_"))
+          .length;
+
+  const evidence = actionCounts?.keep_needs_evidence ?? 0;
+  const surface = actionCounts?.keep_surface_hypothesis ?? 0;
+  const duplicate = actionCounts?.keep_possible_duplicate ?? 0;
+
+  const details = [
+    evidence ? `${evidence} needs evidence` : null,
+    surface ? `${surface} surface hypothesis` : null,
+    duplicate ? `${duplicate} possible duplicate` : null,
+  ].filter(Boolean);
+
+  return `${items.length} intake items · ${keep} keep · ${discard} discard${
+    details.length ? ` · ${details.join(" · ")}` : ""
+  }`;
+}
+
 function formatJson(value: unknown): string {
   return JSON.stringify(value, null, 2);
 }
 
 function actionBadgeClass(action?: string): string {
-  if (action === "approve_reserve" || action === "approve_active") {
+  if (
+    action === "approve_reserve" ||
+    action === "approve_active" ||
+    action === "keep_raw"
+  ) {
     return "good";
   }
 
   if (
     action === "rewrite" ||
     action === "replace_existing" ||
-    action === "mark_for_external_research"
+    action === "mark_for_external_research" ||
+    action === "keep_cautious" ||
+    action === "keep_needs_evidence" ||
+    action === "keep_possible_duplicate" ||
+    action === "keep_surface_hypothesis"
   ) {
     return "warn";
   }
 
-  if (action === "discard") return "bad";
+  if (
+    action === "discard" ||
+    action === "discard_pretty_empty" ||
+    action === "discard_clear_fail"
+  ) {
+    return "bad";
+  }
 
   return "";
 }
 
+function isRuleBasedIntakeItem(item: QueueItem): boolean {
+  return (
+    item.verdicts?.same_angle?.verdict === "not_run" &&
+    item.verdicts?.verifier?.overall === "not_run"
+  );
+}
+
+function getQueueMeta(item: QueueItem): string {
+  if (isRuleBasedIntakeItem(item)) {
+    return `Tier: ${
+      item.tier ?? "—"
+    } · Heavy reviewer: skipped at intake · Classifier: rule-based v0`;
+  }
+
+  return `Tier: ${item.tier ?? "—"} · Judge: ${
+    item.verdicts?.same_angle?.verdict ?? "—"
+  } · Verifier: ${item.verdicts?.verifier?.overall ?? "—"}`;
+}
+
 function QueuePreview({ queue }: { queue: QueueItem[] }) {
   if (queue.length === 0) {
-    return <p className="empty">No queue items.</p>;
+    return <p className="empty">No items.</p>;
   }
 
   return (
@@ -215,11 +281,7 @@ function QueuePreview({ queue }: { queue: QueueItem[] }) {
               <div className="row-title">
                 {index + 1}. {item.suggested_action ?? "—"}
               </div>
-              <div className="row-meta">
-                Tier: {item.tier ?? "—"} · Judge:{" "}
-                {item.verdicts?.same_angle?.verdict ?? "—"} · Verifier:{" "}
-                {item.verdicts?.verifier?.overall ?? "—"}
-              </div>
+              <div className="row-meta">{getQueueMeta(item)}</div>
             </div>
             <span className={`badge ${actionBadgeClass(item.suggested_action)}`}>
               {item.signal?.evidence_level ?? "—"}
@@ -299,7 +361,7 @@ export default function Day1DiscoveryRefineryPage() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-admin-secret": adminSecret,
+          "x-admin-secret": adminSecret.trim(),
         },
         body: JSON.stringify({
           action,
@@ -353,7 +415,7 @@ export default function Day1DiscoveryRefineryPage() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-admin-secret": adminSecret,
+          "x-admin-secret": adminSecret.trim(),
         },
         body: JSON.stringify({
           reference,
@@ -739,6 +801,17 @@ export default function Day1DiscoveryRefineryPage() {
           font-size: 13px;
           line-height: 1.45;
         }
+
+        .info-note {
+          border: 1px solid rgba(51, 120, 82, 0.18);
+          background: rgba(51, 120, 82, 0.07);
+          color: #2f6546;
+          border-radius: 14px;
+          padding: 10px 12px;
+          font-size: 13px;
+          line-height: 1.45;
+          margin-bottom: 10px;
+        }
       `}</style>
 
       <div className="shell">
@@ -746,9 +819,10 @@ export default function Day1DiscoveryRefineryPage() {
           <div className="eyebrow">Scriptura AI · Discovery Refinery</div>
           <h1>Day-1 / Day-1.5 Console</h1>
           <p className="subtitle">
-            Diagnostic preview. Fixture runs test calibration behavior. Real
-            verse text-only runs save diagnostic run-log rows for the 10-run
-            forcing function before Source Packet work resumes.
+            Diagnostic console. Fixture runs keep the older Judge/Verifier
+            calibration flow. Real verse runs now use rule-based intake v0:
+            Detector → lightweight classifier → run-log, with heavy reviewer
+            skipped until promotion/public decisions.
           </p>
         </section>
 
@@ -830,7 +904,7 @@ export default function Day1DiscoveryRefineryPage() {
 
           <div className="real-section">
             <div className="section-label">
-              Real text-only run — saves Supabase diagnostic run-log
+              Real text-only intake run — saves Supabase diagnostic run-log
             </div>
             <div className="real-row">
               <label htmlFor="real-reference">Reference</label>
@@ -930,10 +1004,15 @@ export default function Day1DiscoveryRefineryPage() {
                   <li className="summary-item">
                     <strong>Detector signals:</strong>{" "}
                     {realResult.result?.detector_signal_count ?? 0}
+                    {"\n"}
+                    <strong>Heavy reviewer:</strong> skipped at intake
+                    {"\n"}
+                    <strong>Intake engine:</strong> rule-based classifier v0
                   </li>
 
                   <li className="summary-item">
-                    <strong>Queue:</strong> {summarizeQueue(realQueue)}
+                    <strong>Intake:</strong>{" "}
+                    {summarizeIntakeQueue(realQueue, realActionCounts)}
                   </li>
 
                   {realActionCounts && (
@@ -956,7 +1035,12 @@ export default function Day1DiscoveryRefineryPage() {
                   </li>
                 </ul>
 
-                <h3>Moderator Queue Preview</h3>
+                <h3>Intake Classification Preview</h3>
+                <div className="info-note">
+                  Heavy Judge/Verifier are not called here. These rows show
+                  cheap intake labels only: keep_* means “save as research
+                  material,” not “publish.”
+                </div>
                 <QueuePreview queue={realQueue} />
               </>
             )}
