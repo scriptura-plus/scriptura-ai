@@ -1,0 +1,393 @@
+import { NextResponse } from "next/server";
+import { isProvider, defaultProvider, type Provider } from "@/lib/ai/providers";
+import { getVerseText } from "@/lib/bible/getVerseText";
+import { normalizeReference } from "@/lib/bible/normalizeReference";
+import { getAngleCards } from "@/lib/cache/angleCards";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const maxDuration = 240;
+
+type Lang = "ru";
+type JsonRecord = Record<string, unknown>;
+
+type TopupBody = {
+  reference?: unknown;
+  lang?: unknown;
+  targetCount?: unknown;
+  force?: unknown;
+  processLimit?: unknown;
+  includeStrongNonPublic?: unknown;
+  provider?: unknown;
+  harvesterProvider?: unknown;
+  writerProvider?: unknown;
+  evaluatorProvider?: unknown;
+};
+
+type V2Card = {
+  card_id?: string;
+  title?: string;
+  anchor?: string | null;
+  teaser?: string | null;
+  why_it_matters?: string | null;
+  score_total?: number | null;
+  public_ready?: boolean;
+  public_status?: string | null;
+  risk_flags?: string[];
+  public_blockers?: string[];
+  verdict?: string | null;
+};
+
+function isRecord(value: unknown): value is JsonRecord {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function getString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function getNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function getBoolean(value: unknown): boolean | null {
+  return typeof value === "boolean" ? value : null;
+}
+
+function isAdminRequest(req: Request): boolean {
+  const expected = process.env.ADMIN_SECRET;
+
+  if (!expected) {
+    console.error("[PEARLS_V2_TOPUP] ADMIN_SECRET is not configured");
+    return false;
+  }
+
+  return req.headers.get("x-admin-secret") === expected;
+}
+
+function chooseProvider(value: unknown, fallback: Provider): Provider {
+  if (isProvider(value)) return value;
+
+  const envProvider = process.env.DISCOVERY_TOPUP_PROVIDER;
+  if (isProvider(envProvider)) return envProvider;
+
+  return fallback;
+}
+
+function normalizeV2Card(value: unknown): V2Card | null {
+  if (!isRecord(value)) return null;
+
+  const title = getString(value.title);
+  const teaser = getString(value.teaser);
+
+  if (!title || !teaser) return null;
+
+  const riskFlags = Array.isArray(value.risk_flags)
+    ? value.risk_flags
+        .map((item) => (typeof item === "string" ? item.trim() : ""))
+        .filter(Boolean)
+    : [];
+
+  const publicBlockers = Array.isArray(value.public_blockers)
+    ? value.public_blockers
+        .map((item) => (typeof item === "string" ? item.trim() : ""))
+        .filter(Boolean)
+    : [];
+
+  return {
+    card_id: getString(value.card_id) ?? undefined,
+    title,
+    anchor: getString(value.anchor),
+    teaser,
+    why_it_matters: getString(value.why_it_matters),
+    score_total: getNumber(value.score_total),
+    public_ready: value.public_ready === true,
+    public_status: getString(value.public_status),
+    risk_flags: riskFlags,
+    public_blockers: publicBlockers,
+    verdict: getString(value.verdict),
+  };
+}
+
+function getRecommendedCards(v2Result: unknown): V2Card[] {
+  if (!isRecord(v2Result)) return [];
+
+  const result = isRecord(v2Result.result) ? v2Result.result : {};
+  const rawCards = Array.isArray(result.recommended_cards)
+    ? result.recommended_cards
+    : Array.isArray(result.evaluated_cards)
+      ? result.evaluated_cards
+      : [];
+
+  return rawCards
+    .map(normalizeV2Card)
+    .filter((item): item is V2Card => item !== null);
+}
+
+function shouldSendToOldPipeline(
+  card: V2Card,
+  includeStrongNonPublic: boolean,
+): boolean {
+  const score = card.score_total ?? 0;
+
+  if (card.public_ready === true && score >= 82) return true;
+
+  if (!includeStrongNonPublic) return false;
+
+  if (score < 82) return false;
+
+  const hardRiskFlags = new Set([
+    "lexical_check",
+    "translation_check",
+    "syntax_check",
+    "historical_check",
+    "intertextual_check",
+    "theological_overreach",
+    "overclaim",
+    "pretty_empty",
+    "duplicate_risk",
+  ]);
+
+  if ((card.risk_flags ?? []).some((flag) => hardRiskFlags.has(flag))) {
+    return false;
+  }
+
+  if ((card.public_blockers ?? []).length > 0) return false;
+
+  return true;
+}
+
+function makeCandidate(card: V2Card) {
+  return {
+    id: card.card_id ?? undefined,
+    title: card.title ?? "",
+    anchor: card.anchor ?? null,
+    teaser: card.teaser ?? "",
+    why_it_matters: card.why_it_matters ?? null,
+  };
+}
+
+async function postJson(args: {
+  url: string;
+  adminSecret: string;
+  body: unknown;
+}): Promise<{ ok: boolean; status: number; data: unknown }> {
+  const response = await fetch(args.url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-admin-secret": args.adminSecret,
+    },
+    body: JSON.stringify(args.body),
+  });
+
+  const data = await response.json().catch(() => null);
+
+  return {
+    ok: response.ok,
+    status: response.status,
+    data,
+  };
+}
+
+export async function POST(req: Request) {
+  try {
+    if (!isAdminRequest(req)) {
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    }
+
+    const adminSecret = process.env.ADMIN_SECRET;
+    if (!adminSecret) {
+      return NextResponse.json(
+        { ok: false, error: "ADMIN_SECRET is not configured" },
+        { status: 500 },
+      );
+    }
+
+    const body = (await req.json().catch(() => ({}))) as TopupBody;
+    const reference = getString(body.reference);
+    const lang: Lang = "ru";
+
+    if (!reference) {
+      return NextResponse.json(
+        { ok: false, error: "reference is required" },
+        { status: 400 },
+      );
+    }
+
+    if (body.lang && body.lang !== "ru") {
+      return NextResponse.json(
+        { ok: false, error: "Only lang=ru is supported now" },
+        { status: 400 },
+      );
+    }
+
+    const targetCount = Math.min(Math.max(getNumber(body.targetCount) ?? 12, 1), 100);
+    const processLimit = Math.min(Math.max(getNumber(body.processLimit) ?? 12, 1), 24);
+    const force = getBoolean(body.force) ?? false;
+    const includeStrongNonPublic = getBoolean(body.includeStrongNonPublic) ?? false;
+
+    const provider = chooseProvider(body.provider, defaultProvider());
+    const harvesterProvider = chooseProvider(body.harvesterProvider, provider);
+    const writerProvider = chooseProvider(body.writerProvider, provider);
+    const evaluatorProvider = chooseProvider(body.evaluatorProvider, provider);
+
+    const normalized = normalizeReference(reference);
+    const canonicalRef = normalized.canonical_ref ?? reference;
+
+    const existing = await getAngleCards({
+      reference,
+      lang,
+      statuses: ["featured", "reserve"],
+      limit: 200,
+    });
+
+    if (!existing.ok) {
+      return NextResponse.json(
+        { ok: false, error: existing.error ?? "Failed to read existing cards" },
+        { status: 500 },
+      );
+    }
+
+    const existingCount = existing.cards.length;
+
+    if (!force && existingCount >= targetCount) {
+      return NextResponse.json({
+        ok: true,
+        skipped: true,
+        reason: "target_count_already_met",
+        changed_database: false,
+        reference,
+        canonical_ref: canonicalRef,
+        existing_count: existingCount,
+        target_count: targetCount,
+        processed_count: 0,
+        saved_count: 0,
+        results: [],
+      });
+    }
+
+    const verse = await getVerseText(reference, lang, provider);
+    const verseText = verse.text.trim();
+
+    if (!verseText) {
+      return NextResponse.json(
+        { ok: false, error: "Could not load verse text" },
+        { status: 500 },
+      );
+    }
+
+    const origin = new URL(req.url).origin;
+
+    const v2 = await postJson({
+      url: `${origin}/api/admin/discovery-refinery/two-stage-pearls-preview`,
+      adminSecret,
+      body: {
+        reference,
+        lang,
+        maxCards: processLimit,
+        harvesterProvider,
+        writerProvider,
+        evaluatorProvider,
+      },
+    });
+
+    if (!v2.ok) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: `Pearls v2 generation failed with status ${v2.status}`,
+          v2_result: v2.data,
+        },
+        { status: 500 },
+      );
+    }
+
+    const allCards = getRecommendedCards(v2.data);
+    const selectedCards = allCards
+      .filter((card) => shouldSendToOldPipeline(card, includeStrongNonPublic))
+      .slice(0, processLimit);
+
+    const results = [];
+
+    for (const card of selectedCards) {
+      const candidate = makeCandidate(card);
+
+      const processed = await postJson({
+        url: `${origin}/api/admin/process-angle-candidate`,
+        adminSecret,
+        body: {
+          reference,
+          verseText,
+          lang,
+          provider,
+          source_provider: "pearls_v2",
+          source_model: "pearls_v2_topup_v1",
+          editor_provider: evaluatorProvider,
+          targetFeaturedCount: targetCount,
+          sourceArticle: JSON.stringify({
+            source: "pearls_v2_topup",
+            canonical_ref: canonicalRef,
+            v2_card: card,
+          }),
+          candidate,
+        },
+      });
+
+      const processedRecord = isRecord(processed.data) ? processed.data : {};
+
+      results.push({
+        candidate_title: candidate.title,
+        candidate_score_v2: card.score_total ?? null,
+        candidate_public_ready_v2: card.public_ready ?? false,
+        ok: processed.ok,
+        status: processed.status,
+        skipped: processedRecord.skipped === true,
+        skip_reason: getString(processedRecord.skip_reason),
+        saved_id: getString(processedRecord.saved_id),
+        saved_ids: Array.isArray(processedRecord.saved_ids)
+          ? processedRecord.saved_ids
+          : [],
+        final_score: getNumber(processedRecord.score_total),
+        old_pipeline_status: getString(processedRecord.status),
+        response: processed.data,
+      });
+    }
+
+    return NextResponse.json({
+      ok: true,
+      skipped: false,
+      changed_database: results.some((item) => Boolean(item.saved_id)),
+      reference,
+      canonical_ref: canonicalRef,
+      lang,
+      existing_count_before: existingCount,
+      target_count: targetCount,
+      process_limit: processLimit,
+      include_strong_non_public: includeStrongNonPublic,
+
+      v2_summary: isRecord(v2.data) && isRecord(v2.data.summary)
+        ? v2.data.summary
+        : null,
+
+      v2_cards_total: allCards.length,
+      selected_for_old_pipeline: selectedCards.length,
+
+      processed_count: results.length,
+      saved_count: results.filter((item) => Boolean(item.saved_id)).length,
+      skipped_count: results.filter((item) => item.skipped).length,
+      failed_count: results.filter((item) => !item.ok).length,
+
+      results,
+    });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error:
+          error instanceof Error ? error.message : "Pearls v2 top-up failed",
+      },
+      { status: 500 },
+    );
+  }
+}
