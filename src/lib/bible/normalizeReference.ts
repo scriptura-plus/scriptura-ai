@@ -5,8 +5,8 @@ export type NormalizedReference = {
   canonical_ref: string | null;
   passage_id: string | null;
   book: string | null;
-  chapter: number | null;
-  verse: number | null;
+  chapter: number;
+  verse: number;
   end_verse: number | null;
 };
 
@@ -755,8 +755,8 @@ function resolveBookKey(rawBook: string): string | null {
 function makeCanonicalRef(args: {
   bookKey: string | null;
   rawBook: string;
-  chapter: number | null;
-  verse: number | null;
+  chapter: number;
+  verse: number;
   endVerse: number | null;
 }): string | null {
   if (!args.chapter) return null;
@@ -791,8 +791,8 @@ export function normalizeReference(reference: string): NormalizedReference {
       canonical_ref: null,
       passage_id: null,
       book: null,
-      chapter: null,
-      verse: null,
+      chapter: 0,
+      verse: 0,
       end_verse: null,
     };
   }
@@ -809,8 +809,8 @@ export function normalizeReference(reference: string): NormalizedReference {
       canonical_ref: fallback,
       passage_id: makePassageId(fallback),
       book: null,
-      chapter: null,
-      verse: null,
+      chapter: 0,
+      verse: 0,
       end_verse: null,
     };
   }
@@ -832,7 +832,7 @@ export function normalizeReference(reference: string): NormalizedReference {
     passage_id: makePassageId(canonicalRef),
     book: bookKey ?? parsed.rawBook,
     chapter: parsed.chapter,
-    verse: parsed.verse,
+    verse: parsed.verse ?? 0,
     end_verse: parsed.endVerse,
   };
 }
