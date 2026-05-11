@@ -59,6 +59,11 @@ type EvaluatedCard = DraftCard & {
   evaluator_note: string | null;
 };
 
+type RewrittenCard = DraftCard & {
+  original_card_id: string;
+  rewrite_note: string | null;
+};
+
 function isRecord(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -308,6 +313,161 @@ function mergeEvaluations(cards: DraftCard[], evaluations: JsonRecord[]): Evalua
       evaluator_note: getString(match.evaluator_note) || null,
     };
   });
+}
+
+function shouldRewriteCard(card: EvaluatedCard): boolean {
+  const score = card.score_total ?? 0;
+  const verdict = card.verdict ?? "";
+  const hasRisk = card.risk_flags.length > 0;
+
+  if (score < 70) return false;
+  if (verdict === "rewrite_needed" || verdict === "needs_evidence") return true;
+  if (hasRisk && score >= 74) return true;
+
+  return false;
+}
+
+function normalizeRewrittenCard(value: unknown, index: number): RewrittenCard | null {
+  if (!isRecord(value)) return null;
+
+  const originalCardId = getString(value.original_card_id);
+  const title = getString(value.title);
+  const anchor = getString(value.anchor);
+  const teaser = getString(value.teaser);
+  const why = getString(value.why_it_matters);
+
+  if (!originalCardId || !title || !anchor || !teaser) return null;
+
+  const sourceAngleIds = Array.isArray(value.source_angle_ids)
+    ? value.source_angle_ids
+        .map((item) => (typeof item === "string" ? item.trim() : ""))
+        .filter(Boolean)
+    : [];
+
+  return {
+    original_card_id: originalCardId,
+    card_id: getString(value.card_id, `rewrite_${index + 1}`),
+    title,
+    anchor,
+    teaser,
+    why_it_matters: why,
+    source_angle_ids: sourceAngleIds,
+    rewrite_note: getString(value.rewrite_note) || null,
+  };
+}
+
+function parseRewrites(text: string): {
+  rewrites: RewrittenCard[];
+  parsed_json: unknown;
+  error: string | null;
+} {
+  const parsed = extractFirstJson(text);
+
+  if (!parsed) {
+    return { rewrites: [], parsed_json: null, error: "No JSON parsed from rewriter." };
+  }
+
+  const raw =
+    isRecord(parsed) && Array.isArray(parsed.rewrites)
+      ? parsed.rewrites
+      : Array.isArray(parsed)
+        ? parsed
+        : [];
+
+  return {
+    rewrites: raw
+      .map(normalizeRewrittenCard)
+      .filter((item): item is RewrittenCard => item !== null),
+    parsed_json: parsed,
+    error: null,
+  };
+}
+
+function buildRewritePrompt(args: {
+  reference: string;
+  verseTextRu: string;
+  rewriteCandidates: EvaluatedCard[];
+  angles: HarvestedAngle[];
+}): string {
+  return [
+    "Ты — Scriptura AI Rewrite Editor.",
+    "",
+    "Тебе дали сильные карточки, которые evaluator отметил как рискованные или требующие смягчения.",
+    "Задача: НЕ убить wow-effect. Переписать так, чтобы карточка осталась сильной, но стала осторожнее и точнее.",
+    "",
+    "Правила:",
+    "- не превращай в сухую справку;",
+    "- не добавляй новых фактов;",
+    "- убери overclaim;",
+    "- если была лексическая/переводческая проверка — не утверждай её как факт без источника;",
+    "- сохрани главный угол;",
+    "- title короткий;",
+    "- teaser 2–3 предложения;",
+    "- why_it_matters 1 предложение.",
+    "",
+    "СТИХ:",
+    args.reference,
+    "",
+    "ТЕКСТ:",
+    args.verseTextRu,
+    "",
+    "ANGLE POOL:",
+    JSON.stringify(args.angles, null, 2),
+    "",
+    "CARDS TO REWRITE:",
+    JSON.stringify(args.rewriteCandidates, null, 2),
+    "",
+    "JSON ONLY:",
+    JSON.stringify(
+      {
+        rewrites: [
+          {
+            original_card_id: "card_1",
+            card_id: "rewrite_card_1",
+            title: "short title",
+            anchor: "short anchor",
+            teaser: "2-3 sentences",
+            why_it_matters: "one sentence",
+            source_angle_ids: ["structure_1"],
+            rewrite_note: "what was softened",
+          },
+        ],
+      },
+      null,
+      2,
+    ),
+  ].join("\n");
+}
+
+function buildRecommendedCards(args: {
+  originalCards: EvaluatedCard[];
+  rewrittenCards: EvaluatedCard[];
+}): EvaluatedCard[] {
+  const rewritesByOriginal = new Map<string, EvaluatedCard>();
+
+  for (const rewritten of args.rewrittenCards) {
+    const originalId = getString((rewritten as unknown as JsonRecord).original_card_id);
+    if (!originalId) continue;
+    rewritesByOriginal.set(originalId, rewritten);
+  }
+
+  const merged = args.originalCards.map((original) => {
+    const rewrite = rewritesByOriginal.get(original.card_id);
+    if (!rewrite) return original;
+
+    const originalScore = original.score_total ?? 0;
+    const rewriteScore = rewrite.score_total ?? 0;
+    const originalSafety = original.safety_score ?? 0;
+    const rewriteSafety = rewrite.safety_score ?? 0;
+
+    if (rewriteScore >= originalScore - 8 && rewriteSafety >= originalSafety) {
+      return rewrite;
+    }
+
+    return original;
+  });
+
+  return merged.sort((a, b) => (b.score_total ?? 0) - (a.score_total ?? 0));
 }
 
 function summarizeExistingCard(card: AngleCardRow) {
@@ -671,6 +831,67 @@ export async function POST(req: Request) {
       (a, b) => (b.score_total ?? 0) - (a.score_total ?? 0),
     );
 
+    const rewriteCandidates = sortedCards.filter(shouldRewriteCard).slice(0, 4);
+
+    let rewritePrompt: string | null = null;
+    let rewriteRawText: string | null = null;
+    let parsedRewrites: ReturnType<typeof parseRewrites> = {
+      rewrites: [],
+      parsed_json: null,
+      error: null,
+    };
+    let rewrittenEvaluationsRawText: string | null = null;
+    let parsedRewrittenEvaluations: ReturnType<typeof parseEvaluations> = {
+      evaluations: [],
+      parsed_json: null,
+      error: null,
+    };
+    let evaluatedRewrites: EvaluatedCard[] = [];
+
+    if (rewriteCandidates.length > 0) {
+      rewritePrompt = buildRewritePrompt({
+        reference,
+        verseTextRu,
+        rewriteCandidates,
+        angles: allAngles,
+      });
+
+      rewriteRawText = await runAI(writerProvider, rewritePrompt, "ru", true);
+      parsedRewrites = parseRewrites(rewriteRawText);
+
+      if (parsedRewrites.rewrites.length > 0) {
+        const rewrittenEvaluatorPrompt = buildEvaluatorPrompt({
+          reference,
+          verseTextRu,
+          angles: allAngles,
+          cards: parsedRewrites.rewrites,
+          existingCards,
+        });
+
+        rewrittenEvaluationsRawText = await runAI(
+          evaluatorProvider,
+          rewrittenEvaluatorPrompt,
+          "ru",
+          true,
+        );
+
+        parsedRewrittenEvaluations = parseEvaluations(rewrittenEvaluationsRawText);
+        evaluatedRewrites = mergeEvaluations(
+          parsedRewrites.rewrites,
+          parsedRewrittenEvaluations.evaluations,
+        );
+      }
+    }
+
+    const sortedRewrites = [...evaluatedRewrites].sort(
+      (a, b) => (b.score_total ?? 0) - (a.score_total ?? 0),
+    );
+
+    const recommendedCards = buildRecommendedCards({
+      originalCards: sortedCards,
+      rewrittenCards: sortedRewrites,
+    });
+
     return NextResponse.json({
       ok: true,
       mode: "pearls_v2_lab",
@@ -699,16 +920,21 @@ export async function POST(req: Request) {
         angle_count: allAngles.length,
         draft_card_count: parsedCards.cards.length,
         evaluated_card_count: evaluatedCards.length,
-        strong_count: evaluatedCards.filter(
+        rewrite_candidate_count: rewriteCandidates.length,
+        rewritten_card_count: evaluatedRewrites.length,
+        recommended_card_count: recommendedCards.length,
+        strong_count: recommendedCards.filter(
           (card) => (card.score_total ?? 0) >= 82,
         ).length,
-        usable_count: evaluatedCards.filter(
+        usable_count: recommendedCards.filter(
           (card) => (card.score_total ?? 0) >= 74,
         ).length,
         errors: [
           ...harvestRuns.map((run) => run.error).filter(Boolean),
           parsedCards.error,
           parsedEvaluations.error,
+          parsedRewrites.error,
+          parsedRewrittenEvaluations.error,
         ].filter(Boolean),
       },
 
@@ -716,6 +942,9 @@ export async function POST(req: Request) {
         angles: allAngles,
         draft_cards: parsedCards.cards,
         evaluated_cards: sortedCards,
+        rewrite_candidates: rewriteCandidates,
+        rewritten_cards: sortedRewrites,
+        recommended_cards: recommendedCards,
         existing_cards: existingCards,
       },
 
@@ -727,6 +956,11 @@ export async function POST(req: Request) {
         evaluator_prompt: evaluatorPrompt,
         evaluator_raw_text: evaluatorRawText,
         evaluator_parsed_json: parsedEvaluations.parsed_json,
+        rewrite_prompt: rewritePrompt,
+        rewrite_raw_text: rewriteRawText,
+        rewrite_parsed_json: parsedRewrites.parsed_json,
+        rewritten_evaluator_raw_text: rewrittenEvaluationsRawText,
+        rewritten_evaluator_parsed_json: parsedRewrittenEvaluations.parsed_json,
       },
     });
   } catch (error) {
