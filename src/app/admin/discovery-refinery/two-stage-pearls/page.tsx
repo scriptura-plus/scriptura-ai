@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 
 type PreviewResponse = {
   ok?: boolean;
@@ -84,7 +84,7 @@ function JsonDetails({ title, value }: { title: string; value: unknown }) {
   );
 }
 
-function StatusPill({ children }: { children: string }) {
+function StatusPill({ children }: { children: ReactNode }) {
   return <span className="pill">{children}</span>;
 }
 
