@@ -7,58 +7,57 @@ import {
   getAllStudioCardsForVerse,
   type AngleCardRow,
 } from "@/lib/cache/angleCards";
-import {
-  runRealVerseTextOnlyPreview,
-  type RealVerseTextOnlyResult,
-} from "@/lib/discovery-refinery/realVerseTextOnly/runRealVerseTextOnly";
-import type { ExistingCoverageCard } from "@/lib/discovery-refinery/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 160;
+export const maxDuration = 180;
 
 type Lang = "ru";
-
 type JsonRecord = Record<string, unknown>;
 
 type RequestBody = {
   reference?: unknown;
-  canonical_ref?: unknown;
-  canonicalRef?: unknown;
   lang?: unknown;
-  detectorProvider?: unknown;
-  detector_provider?: unknown;
-  crafterProvider?: unknown;
-  crafter_provider?: unknown;
-  judgeProvider?: unknown;
-  judge_provider?: unknown;
-  verifierProvider?: unknown;
-  verifier_provider?: unknown;
-  genre?: unknown;
+  harvesterProvider?: unknown;
+  harvester_provider?: unknown;
+  writerProvider?: unknown;
+  writer_provider?: unknown;
+  evaluatorProvider?: unknown;
+  evaluator_provider?: unknown;
+  maxAngles?: unknown;
   maxCards?: unknown;
 };
 
-type SignalSummary = {
-  signal_id: string;
-  intake_status: string;
-  tier: string | null;
-  evidence_level: string | null;
-  reader_surprise_ru: string;
-  core_observation: string;
-  anchor_text: string | null;
-  risk_flags: string[];
-  suggested_lane: "public_preview_ok" | "research_only" | "discarded" | "unknown";
-  raw: unknown;
+type HarvestedAngle = {
+  angle_id: string;
+  title: string;
+  anchor: string;
+  discovery: string;
+  why_surprising: string;
+  angle_type: string;
+  evidence_need: string;
+  risk_note: string | null;
 };
 
-type DraftPearlCard = {
+type DraftCard = {
+  card_id: string;
   title: string;
-  anchor: string | null;
+  anchor: string;
   teaser: string;
-  why_it_matters: string | null;
-  source_signal_id: string | null;
-  score_estimate: number | null;
-  editor_note: string | null;
+  why_it_matters: string;
+  source_angle_ids: string[];
+};
+
+type EvaluatedCard = DraftCard & {
+  score_total: number | null;
+  wow_score: number | null;
+  textual_anchor_score: number | null;
+  freshness_score: number | null;
+  safety_score: number | null;
+  verdict: string | null;
+  risk_flags: string[];
+  rewrite_instruction: string | null;
+  evaluator_note: string | null;
 };
 
 function isRecord(value: unknown): value is JsonRecord {
@@ -67,6 +66,10 @@ function isRecord(value: unknown): value is JsonRecord {
 
 function asRecord(value: unknown): JsonRecord {
   return isRecord(value) ? value : {};
+}
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
 }
 
 function getString(value: unknown, fallback = ""): string {
@@ -85,12 +88,11 @@ function isAdminRequest(req: Request): boolean {
   const expected = process.env.ADMIN_SECRET;
 
   if (!expected) {
-    console.error("[TWO_STAGE_PEARLS_PREVIEW] ADMIN_SECRET is not configured");
+    console.error("[PEARLS_V2_LAB] ADMIN_SECRET is not configured");
     return false;
   }
 
-  const provided = req.headers.get("x-admin-secret");
-  return provided === expected;
+  return req.headers.get("x-admin-secret") === expected;
 }
 
 function chooseProvider(
@@ -114,11 +116,8 @@ function buildPassageId(canonicalRef: string): string {
 }
 
 function stripCodeFence(text: string): string {
-  const trimmed = text.trim();
-
-  if (!trimmed.startsWith("```")) return trimmed;
-
-  return trimmed
+  return text
+    .trim()
     .replace(/^```(?:json)?\s*/i, "")
     .replace(/\s*```$/i, "")
     .trim();
@@ -130,7 +129,7 @@ function extractFirstJson(text: string): unknown | null {
   try {
     return JSON.parse(stripped);
   } catch {
-    // Continue to best-effort extraction.
+    // Continue.
   }
 
   const objectStart = stripped.indexOf("{");
@@ -140,7 +139,7 @@ function extractFirstJson(text: string): unknown | null {
     try {
       return JSON.parse(stripped.slice(objectStart, objectEnd + 1));
     } catch {
-      // Continue to array extraction.
+      // Continue.
     }
   }
 
@@ -158,103 +157,163 @@ function extractFirstJson(text: string): unknown | null {
   return null;
 }
 
-function getNestedRecord(value: unknown, key: string): JsonRecord {
-  return asRecord(asRecord(value)[key]);
-}
+function normalizeAngle(value: unknown, index: number): HarvestedAngle | null {
+  if (!isRecord(value)) return null;
 
-function getNestedString(value: unknown, path: string[]): string | null {
-  let current: unknown = value;
+  const title = getString(value.title);
+  const anchor = getString(value.anchor);
+  const discovery = getString(value.discovery);
+  const why = getString(value.why_surprising);
 
-  for (const key of path) {
-    if (!isRecord(current)) return null;
-    current = current[key];
-  }
-
-  const text = getString(current);
-  return text || null;
-}
-
-function getFingerprintHash(card: AngleCardRow): string | null {
-  return (
-    getNestedString(card.evaluation, ["angle_fingerprint", "hash"]) ||
-    getNestedString(card.evaluation, ["fingerprint", "hash"]) ||
-    getNestedString(card.battle, ["angle_fingerprint", "hash"]) ||
-    getNestedString(card.original_card, ["angle_fingerprint", "hash"]) ||
-    getNestedString(card.original_card, ["signal", "angle_fingerprint", "hash"])
-  );
-}
-
-function getFingerprintComponents(card: AngleCardRow): Record<string, unknown> | null {
-  const evaluation = asRecord(card.evaluation);
-  const battle = asRecord(card.battle);
-  const originalCard = asRecord(card.original_card);
-  const originalSignal = getNestedRecord(card.original_card, "signal");
-
-  const candidates = [
-    asRecord(evaluation.angle_fingerprint),
-    asRecord(battle.angle_fingerprint),
-    asRecord(originalCard.angle_fingerprint),
-    asRecord(originalSignal.angle_fingerprint),
-  ];
-
-  const fingerprint = candidates.find((item) => getString(item.hash));
-
-  if (fingerprint) {
-    return {
-      anchor:
-        getNestedString(fingerprint, ["anchor_canonical", "text"]) ??
-        card.anchor ??
-        null,
-      phenomenon: getString(fingerprint.phenomenon) || null,
-      interpretive_move: getString(fingerprint.interpretive_move) || null,
-      angle_family: getString(fingerprint.angle_family) || null,
-    };
-  }
+  if (!title || !anchor || !discovery) return null;
 
   return {
-    anchor: card.anchor,
-    phenomenon: null,
-    interpretive_move: card.angle_summary ?? card.title,
-    angle_family: card.coverage_type ?? "other",
+    angle_id: getString(value.angle_id, `angle_${index + 1}`),
+    title,
+    anchor,
+    discovery,
+    why_surprising: why,
+    angle_type: getString(value.angle_type, "textual"),
+    evidence_need: getString(value.evidence_need, "none"),
+    risk_note: getString(value.risk_note) || null,
   };
 }
 
-function toExistingCoverageCard(card: AngleCardRow): ExistingCoverageCard {
-  const fingerprintComponents = getFingerprintComponents(card);
+function parseAngles(text: string): {
+  angles: HarvestedAngle[];
+  parsed_json: unknown;
+  error: string | null;
+} {
+  const parsed = extractFirstJson(text);
+
+  if (!parsed) {
+    return { angles: [], parsed_json: null, error: "No JSON parsed from angle harvester." };
+  }
+
+  const rawAngles =
+    isRecord(parsed) && Array.isArray(parsed.angles)
+      ? parsed.angles
+      : Array.isArray(parsed)
+        ? parsed
+        : [];
 
   return {
-    card_id: card.id,
-    id: card.id,
+    angles: rawAngles
+      .map(normalizeAngle)
+      .filter((item): item is HarvestedAngle => item !== null),
+    parsed_json: parsed,
+    error: null,
+  };
+}
 
-    reference: card.reference,
-    canonical_ref: card.canonical_ref,
-    lang: card.lang,
+function normalizeCard(value: unknown, index: number): DraftCard | null {
+  if (!isRecord(value)) return null;
 
-    status: card.status,
-    title: card.title,
-    anchor_surface: card.anchor,
-    anchor_canonical: card.anchor,
-    teaser: card.teaser,
-    why_it_matters: card.why_it_matters,
-    angle_summary: card.angle_summary,
-    coverage_type: card.coverage_type,
+  const title = getString(value.title);
+  const anchor = getString(value.anchor);
+  const teaser = getString(value.teaser);
+  const why = getString(value.why_it_matters);
 
-    score_total: card.score_total,
-    effective_score: (card.score_total ?? 0) + (card.moderator_boost ?? 0),
+  if (!title || !anchor || !teaser) return null;
 
-    angle_family:
-      getString(fingerprintComponents?.angle_family) ??
-      card.coverage_type ??
-      "other",
-    fingerprint_hash: getFingerprintHash(card),
-    fingerprint_components: fingerprintComponents,
+  const sourceAngleIds = Array.isArray(value.source_angle_ids)
+    ? value.source_angle_ids
+        .map((item) => (typeof item === "string" ? item.trim() : ""))
+        .filter(Boolean)
+    : [];
 
-    source_type: card.source_type,
-    source_model: card.source_model,
+  return {
+    card_id: getString(value.card_id, `card_${index + 1}`),
+    title,
+    anchor,
+    teaser,
+    why_it_matters: why,
+    source_angle_ids: sourceAngleIds,
+  };
+}
 
-    created_at: card.created_at,
-    updated_at: card.updated_at,
-  } as unknown as ExistingCoverageCard;
+function parseCards(text: string): {
+  cards: DraftCard[];
+  parsed_json: unknown;
+  error: string | null;
+} {
+  const parsed = extractFirstJson(text);
+
+  if (!parsed) {
+    return { cards: [], parsed_json: null, error: "No JSON parsed from card writer." };
+  }
+
+  const rawCards =
+    isRecord(parsed) && Array.isArray(parsed.cards)
+      ? parsed.cards
+      : Array.isArray(parsed)
+        ? parsed
+        : [];
+
+  return {
+    cards: rawCards
+      .map(normalizeCard)
+      .filter((item): item is DraftCard => item !== null),
+    parsed_json: parsed,
+    error: null,
+  };
+}
+
+function parseEvaluations(text: string): {
+  evaluations: JsonRecord[];
+  parsed_json: unknown;
+  error: string | null;
+} {
+  const parsed = extractFirstJson(text);
+
+  if (!parsed) {
+    return {
+      evaluations: [],
+      parsed_json: null,
+      error: "No JSON parsed from evaluator.",
+    };
+  }
+
+  const raw =
+    isRecord(parsed) && Array.isArray(parsed.evaluations)
+      ? parsed.evaluations
+      : Array.isArray(parsed)
+        ? parsed
+        : [];
+
+  return {
+    evaluations: raw.filter(isRecord),
+    parsed_json: parsed,
+    error: null,
+  };
+}
+
+function mergeEvaluations(cards: DraftCard[], evaluations: JsonRecord[]): EvaluatedCard[] {
+  return cards.map((card, index) => {
+    const match =
+      evaluations.find((item) => getString(item.card_id) === card.card_id) ??
+      evaluations.find((item) => getNumber(item.card_index, -1) === index + 1) ??
+      {};
+
+    const riskFlags = Array.isArray(match.risk_flags)
+      ? match.risk_flags
+          .map((item) => (typeof item === "string" ? item.trim() : ""))
+          .filter(Boolean)
+      : [];
+
+    return {
+      ...card,
+      score_total: getOptionalNumber(match.score_total),
+      wow_score: getOptionalNumber(match.wow_score),
+      textual_anchor_score: getOptionalNumber(match.textual_anchor_score),
+      freshness_score: getOptionalNumber(match.freshness_score),
+      safety_score: getOptionalNumber(match.safety_score),
+      verdict: getString(match.verdict) || null,
+      risk_flags: riskFlags,
+      rewrite_instruction: getString(match.rewrite_instruction) || null,
+      evaluator_note: getString(match.evaluator_note) || null,
+    };
+  });
 }
 
 function summarizeExistingCard(card: AngleCardRow) {
@@ -268,195 +327,69 @@ function summarizeExistingCard(card: AngleCardRow) {
     score_total: card.score_total,
     coverage_type: card.coverage_type,
     source_type: card.source_type,
-    updated_at: card.updated_at,
   };
 }
 
-function getReaderSurprise(signal: JsonRecord): string {
-  const readerSurprise = asRecord(signal.reader_surprise_sentence);
-
-  return (
-    getString(readerSurprise.ru) ||
-    getString(signal.reader_surprise_sentence) ||
-    ""
-  );
-}
-
-function getAnchorText(signal: JsonRecord): string | null {
-  const textualAnchor = asRecord(signal.textual_anchor);
-  const canonical = asRecord(textualAnchor.canonical);
-  const surfaces = asRecord(textualAnchor.surfaces);
-  const ru = asRecord(surfaces.ru);
-
-  return (
-    getString(canonical.quote) ||
-    getString(canonical.text) ||
-    getString(ru.quote) ||
-    null
-  );
-}
-
-function getRiskFlags(signal: JsonRecord): string[] {
-  const riskFlags = signal.risk_flags;
-
-  if (!Array.isArray(riskFlags)) return [];
-
-  return riskFlags
-    .map((item) => (typeof item === "string" ? item.trim() : ""))
-    .filter(Boolean);
-}
-
-function getIntakeStatus(queueItem: JsonRecord, signal: JsonRecord): string {
-  const direct =
-    getString(queueItem.intake_status) ||
-    getString(queueItem.suggested_action) ||
-    getString(signal.suggested_next_action);
-
-  if (direct) return direct;
-
-  const directClassification = asRecord(queueItem.intake_classification);
-  const signalClassification = asRecord(signal.intake_classification);
-  const metadata = asRecord(signal.metadata);
-  const metadataClassification = asRecord(metadata.intake_classification);
-
-  return (
-    getString(directClassification.intake_status) ||
-    getString(directClassification.status) ||
-    getString(signalClassification.intake_status) ||
-    getString(signalClassification.status) ||
-    getString(metadataClassification.intake_status) ||
-    getString(metadataClassification.status) ||
-    "unknown"
-  );
-}
-
-function getTier(queueItem: JsonRecord): string | null {
-  return getString(queueItem.tier) || null;
-}
-
-function getSuggestedLane(status: string): SignalSummary["suggested_lane"] {
-  if (status === "keep_raw" || status === "keep_cautious") {
-    return "public_preview_ok";
-  }
-
-  if (
-    status === "keep_surface_hypothesis" ||
-    status === "keep_needs_evidence" ||
-    status === "keep_possible_duplicate"
-  ) {
-    return "research_only";
-  }
-
-  if (status.startsWith("discard")) {
-    return "discarded";
-  }
-
-  return "unknown";
-}
-
-function summarizeSignal(queueItemRaw: unknown): SignalSummary {
-  const queueItem = asRecord(queueItemRaw);
-  const signal = asRecord(queueItem.signal);
-  const status = getIntakeStatus(queueItem, signal);
-
-  return {
-    signal_id: getString(signal.signal_id, "unknown_signal"),
-    intake_status: status,
-    tier: getTier(queueItem),
-    evidence_level: getString(signal.evidence_level) || null,
-    reader_surprise_ru: getReaderSurprise(signal),
-    core_observation: getString(signal.core_observation),
-    anchor_text: getAnchorText(signal),
-    risk_flags: getRiskFlags(signal),
-    suggested_lane: getSuggestedLane(status),
-    raw: {
-      queue_item_id: getString(queueItem.queue_item_id) || null,
-      signal,
-      intake_classification:
-        queueItem.intake_classification ??
-        signal.intake_classification ??
-        asRecord(signal.metadata).intake_classification ??
-        null,
-    },
-  };
-}
-
-function buildCrafterPrompt(args: {
+function buildAngleHarvesterPrompt(args: {
   reference: string;
   verseTextRu: string;
-  eligibleSignals: SignalSummary[];
-  researchOnlySignals: SignalSummary[];
   existingCards: ReturnType<typeof summarizeExistingCard>[];
-  maxCards: number;
+  maxAngles: number;
 }): string {
   return [
-    "Ты — Card Crafter для Scriptura AI.",
+    "Ты — Angle Harvester для Scriptura AI.",
     "",
-    "Задача Scriptura:",
-    "показать читателю короткие «Жемчужины» по стиху — не комментарий, не проповедь, а открытие: «Я раньше этого не замечал».",
+    "Твоя задача — НЕ писать карточки.",
+    "Твоя задача — найти как можно больше сильных углов открытия по стиху.",
     "",
-    "ВАЖНО:",
-    "Углы уже найдены другим этапом. Ты НЕ ищешь новые углы.",
-    "Ты превращаешь только разрешённые сигналы в красивые карточки.",
+    "Что такое хороший угол:",
+    "читатель должен подумать: «Я раньше этого не замечал».",
     "",
-    "СТРОГОЕ ПРАВИЛО:",
-    "Пиши публичные draft-карточки ТОЛЬКО из ELIGIBLE SIGNALS.",
-    "Не делай карточки из RESEARCH ONLY SIGNALS.",
-    "Research-only сигналы могут быть сильными, но требуют проверки оригинала, синтаксиса, перевода или модератора.",
+    "Ищи разные типы углов:",
+    "- структура фразы;",
+    "- порядок мыслей;",
+    "- повтор;",
+    "- контраст;",
+    "- причинная связь;",
+    "- вопрос-ответ;",
+    "- неожиданная логика;",
+    "- напряжение повествования;",
+    "- видимое отсутствие;",
+    "- переводческая поверхность;",
+    "- возможная лексическая зацепка;",
+    "- необычное движение мысли.",
     "",
-    "ТОН:",
-    "- спокойное точное наблюдение;",
-    "- без академической тяжести;",
-    "- без церковных клише;",
-    "- без фраз «в оригинале означает», если этого нет в eligible signal;",
-    "- без новых утверждений, которых нет в сигнале;",
-    "- не превращай карточку в объяснение всего стиха.",
+    "НЕ пиши проповедь.",
+    "НЕ объясняй стих целиком.",
+    "НЕ делай готовые карточки.",
+    "НЕ повторяй existing cards, если они уже закрывают этот же угол.",
     "",
-    "ФОРМАТ КАРТОЧКИ:",
-    "- title: короткий заголовок, 4–9 слов;",
-    "- anchor: короткая фраза из стиха;",
-    "- teaser: 1–2 предложения, желательно с духом «Я не замечал, что...»;",
-    "- why_it_matters: почему это меняет чтение стиха, без проповеди;",
-    "- source_signal_id: id сигнала;",
-    "- score_estimate: примерная сила открытия от 1 до 100;",
-    "- editor_note: коротко, почему карточка пригодна для preview.",
-    "",
-    "НЕ ДЕЛАЙ ДУБЛИ существующих карточек.",
-    "Если eligible signal повторяет existing card, лучше не пиши по нему карточку.",
+    "Если угол требует проверки оригинала/лексики/переводов — всё равно сохрани его, но поставь evidence_need.",
     "",
     "СТИХ:",
     args.reference,
     "",
-    "ТЕКСТ СТИХА:",
+    "ТЕКСТ:",
     args.verseTextRu,
     "",
-    "EXISTING SCRIPTURA CARDS / OLD QUALITY REFERENCE:",
+    "EXISTING CARDS ДЛЯ ИЗБЕЖАНИЯ ДУБЛЕЙ:",
     JSON.stringify(args.existingCards, null, 2),
-    "",
-    "ELIGIBLE SIGNALS — можно делать публичные draft-карточки для редакционного preview:",
-    JSON.stringify(args.eligibleSignals, null, 2),
-    "",
-    "RESEARCH ONLY SIGNALS — НЕ писать из них публичные карточки сейчас:",
-    JSON.stringify(args.researchOnlySignals, null, 2),
     "",
     "ВЕРНИ JSON ONLY:",
     JSON.stringify(
       {
-        cards: [
+        angles: [
           {
-            title: "short title",
-            anchor: "short verse phrase",
-            teaser: "Я не замечал, что ...",
-            why_it_matters: "why this changes how the verse is read",
-            source_signal_id: "signal_id",
-            score_estimate: 85,
-            editor_note: "why this is safe enough for preview",
-          },
-        ],
-        skipped_eligible_signals: [
-          {
-            signal_id: "signal_id",
-            reason: "duplicate / too weak / not enough substance",
+            angle_id: "angle_1",
+            title: "short angle name",
+            anchor: "short exact phrase from verse",
+            discovery: "Я не замечал, что ...",
+            why_surprising: "why this may create wow-effect",
+            angle_type:
+              "structural | narrative | rhetorical | translation | lexical | syntax | contextual | other",
+            evidence_need:
+              "none | light_caution | lexical_check | translation_check | syntax_check | moderator_check",
+            risk_note: null,
           },
         ],
       },
@@ -464,84 +397,144 @@ function buildCrafterPrompt(args: {
       2,
     ),
     "",
-    `Верни максимум ${args.maxCards} карточек.`,
+    `Найди до ${args.maxAngles} углов. Лучше 12 хороших разных углов, чем 3 осторожных.`,
   ].join("\n");
 }
 
-function normalizeDraftCard(value: unknown): DraftPearlCard | null {
-  if (!isRecord(value)) return null;
-
-  const title = getString(value.title);
-  const teaser = getString(value.teaser);
-
-  if (!title || !teaser) return null;
-
-  return {
-    title,
-    anchor: getString(value.anchor) || null,
-    teaser,
-    why_it_matters: getString(value.why_it_matters) || null,
-    source_signal_id: getString(value.source_signal_id) || null,
-    score_estimate: getOptionalNumber(value.score_estimate),
-    editor_note: getString(value.editor_note) || null,
-  };
+function buildCardWriterPrompt(args: {
+  reference: string;
+  verseTextRu: string;
+  angles: HarvestedAngle[];
+  existingCards: ReturnType<typeof summarizeExistingCard>[];
+  maxCards: number;
+}): string {
+  return [
+    "Ты — главный writer карточек «Жемчужины» для Scriptura AI.",
+    "",
+    "Старая ошибка: сразу просить AI придумать карточки.",
+    "Новый подход: тебе уже дали найденные углы. Пиши сильные карточки из них.",
+    "",
+    "Цель карточки:",
+    "серьёзный читатель должен почувствовать: «Я читал этот стих, но не замечал этого».",
+    "",
+    "Пиши свободно, сильно, красиво, но не выдумывай новые факты сверх угла.",
+    "Если угол требует проверки — не убивай его, а формулируй осторожно на уровне наблюдения по тексту.",
+    "Не пиши «в оригинале», если angle этого не доказывает.",
+    "Не превращай карточку в лексический справочник.",
+    "Не превращай карточку в проповедь.",
+    "Не повторяй existing cards.",
+    "",
+    "Формат карточки:",
+    "- title: 4–9 слов;",
+    "- anchor: точная короткая опора из стиха;",
+    "- teaser: 2–3 предложения, с настоящим открытием;",
+    "- why_it_matters: 1 предложение, почему это меняет чтение;",
+    "- source_angle_ids: какие углы использованы.",
+    "",
+    "СТИХ:",
+    args.reference,
+    "",
+    "ТЕКСТ:",
+    args.verseTextRu,
+    "",
+    "ANGLE POOL:",
+    JSON.stringify(args.angles, null, 2),
+    "",
+    "EXISTING CARDS ДЛЯ ИЗБЕЖАНИЯ ДУБЛЕЙ:",
+    JSON.stringify(args.existingCards, null, 2),
+    "",
+    "ВЕРНИ JSON ONLY:",
+    JSON.stringify(
+      {
+        cards: [
+          {
+            card_id: "card_1",
+            title: "short title",
+            anchor: "short phrase",
+            teaser: "2-3 sentences",
+            why_it_matters: "one sentence",
+            source_angle_ids: ["angle_1"],
+          },
+        ],
+      },
+      null,
+      2,
+    ),
+    "",
+    `Напиши до ${args.maxCards} лучших карточек. Отбирай по wow-effect, не по осторожности.`,
+  ].join("\n");
 }
 
-function parseCrafterCards(text: string): {
-  cards: DraftPearlCard[];
-  parsed_json: unknown;
-  parse_error: string | null;
-} {
-  const parsed = extractFirstJson(text);
-
-  if (!parsed) {
-    return {
-      cards: [],
-      parsed_json: null,
-      parse_error: "Crafter returned no parseable JSON.",
-    };
-  }
-
-  const cardsRaw = Array.isArray(parsed)
-    ? parsed
-    : isRecord(parsed) && Array.isArray(parsed.cards)
-      ? parsed.cards
-      : [];
-
-  const cards = cardsRaw
-    .map(normalizeDraftCard)
-    .filter((card): card is DraftPearlCard => card !== null);
-
-  return {
-    cards,
-    parsed_json: parsed,
-    parse_error: null,
-  };
-}
-
-function countByStatus(signals: SignalSummary[]): Record<string, number> {
-  const counts: Record<string, number> = {};
-
-  for (const signal of signals) {
-    counts[signal.intake_status] = (counts[signal.intake_status] ?? 0) + 1;
-  }
-
-  return counts;
-}
-
-function getDetectorSummary(result: RealVerseTextOnlyResult, signals: SignalSummary[]) {
-  return {
-    detector_signal_count: result.detector_signal_count,
-    queue_item_count: result.queue.length,
-    action_counts: result.action_counts,
-    tier_counts: result.tier_counts,
-    errors: result.errors,
-    status_counts: countByStatus(signals),
-    keep_total: signals.filter((signal) => signal.intake_status.startsWith("keep_"))
-      .length,
-    discard_total: signals.filter((signal) => signal.intake_status.startsWith("discard"))
-      .length,
-  };
+function buildEvaluatorPrompt(args: {
+  reference: string;
+  verseTextRu: string;
+  cards: DraftCard[];
+  angles: HarvestedAngle[];
+  existingCards: ReturnType<typeof summarizeExistingCard>[];
+}): string {
+  return [
+    "Ты — evaluator Scriptura AI.",
+    "",
+    "Оцени готовые карточки. Не убивай сильную мысль только потому, что её надо смягчить.",
+    "Твоя задача — отделить сильные карточки от слабых, найти риски и дать rewrite instruction, если карточку можно спасти.",
+    "",
+    "Критерий качества:",
+    "главное — wow-effect: «Я раньше этого не замечал».",
+    "",
+    "Оцени по шкале 1–100:",
+    "- wow_score: сила открытия;",
+    "- textual_anchor_score: насколько точно держится за текст;",
+    "- freshness_score: насколько не банально;",
+    "- safety_score: риск overclaim;",
+    "- score_total: общий балл.",
+    "",
+    "verdict:",
+    "strong_candidate | usable_candidate | rewrite_needed | needs_evidence | duplicate_risk | weak_reject",
+    "",
+    "risk_flags:",
+    "lexical_check | translation_check | syntax_check | historical_check | theological_overreach | duplicate_risk | pretty_empty | overclaim",
+    "",
+    "Если карточка сильная, но рискованная, verdict = rewrite_needed или needs_evidence, не weak_reject.",
+    "rewrite_instruction должен сохранять вау-эффект, а не превращать карточку в сухую справку.",
+    "",
+    "СТИХ:",
+    args.reference,
+    "",
+    "ТЕКСТ:",
+    args.verseTextRu,
+    "",
+    "ANGLE POOL:",
+    JSON.stringify(args.angles, null, 2),
+    "",
+    "DRAFT CARDS:",
+    JSON.stringify(args.cards, null, 2),
+    "",
+    "EXISTING CARDS ДЛЯ ДУБЛЕЙ:",
+    JSON.stringify(args.existingCards, null, 2),
+    "",
+    "ВЕРНИ JSON ONLY:",
+    JSON.stringify(
+      {
+        evaluations: [
+          {
+            card_id: "card_1",
+            card_index: 1,
+            score_total: 88,
+            wow_score: 90,
+            textual_anchor_score: 85,
+            freshness_score: 88,
+            safety_score: 86,
+            verdict: "strong_candidate",
+            risk_flags: [],
+            rewrite_instruction: null,
+            evaluator_note: "short note",
+          },
+        ],
+      },
+      null,
+      2,
+    ),
+  ].join("\n");
 }
 
 export async function POST(req: Request) {
@@ -550,9 +543,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
-    const bodyRaw = (await req.json().catch(() => ({}))) as RequestBody;
-    const body = asRecord(bodyRaw);
-
+    const body = asRecord((await req.json().catch(() => ({}))) as RequestBody);
     const reference = getString(body.reference);
     const lang: Lang = "ru";
 
@@ -565,61 +556,40 @@ export async function POST(req: Request) {
 
     if (body.lang && body.lang !== "ru") {
       return NextResponse.json(
-        {
-          ok: false,
-          error:
-            "Only lang=ru is supported in the current two-stage Pearls preview.",
-        },
+        { ok: false, error: "Only lang=ru is supported now." },
         { status: 400 },
       );
     }
 
-    const detectorProvider = chooseProvider(
-      body.detectorProvider ?? body.detector_provider,
-      "DISCOVERY_SIGNAL_PROVIDER",
+    const harvesterProvider = chooseProvider(
+      body.harvesterProvider ?? body.harvester_provider,
+      "DISCOVERY_HARVESTER_PROVIDER",
       "claude",
     );
-
-    const crafterProvider = chooseProvider(
-      body.crafterProvider ?? body.crafter_provider,
-      "DISCOVERY_CRAFTER_PROVIDER",
+    const writerProvider = chooseProvider(
+      body.writerProvider ?? body.writer_provider,
+      "DISCOVERY_WRITER_PROVIDER",
       "claude",
     );
-
-    const judgeProvider = chooseProvider(
-      body.judgeProvider ?? body.judge_provider,
-      "DISCOVERY_JUDGE_PROVIDER",
+    const evaluatorProvider = chooseProvider(
+      body.evaluatorProvider ?? body.evaluator_provider,
+      "DISCOVERY_EVALUATOR_PROVIDER",
       "openai",
     );
 
-    const verifierProvider = chooseProvider(
-      body.verifierProvider ?? body.verifier_provider,
-      "DISCOVERY_VERIFIER_PROVIDER",
-      "openai",
-    );
+    const maxAngles = Math.min(Math.max(getNumber(body.maxAngles, 14), 6), 20);
+    const maxCards = Math.min(Math.max(getNumber(body.maxCards, 8), 3), 12);
 
     const normalized = normalizeReference(reference);
-    const canonicalRef =
-      getString(body.canonical_ref) ||
-      getString(body.canonicalRef) ||
-      normalized.canonical_ref ||
-      reference;
-
+    const canonicalRef = normalized.canonical_ref || reference;
     const passageId = buildPassageId(canonicalRef);
-    const genre = getString(body.genre);
-    const maxCards = Math.min(Math.max(getNumber(body.maxCards, 6), 1), 12);
 
-    const verseResult = await getVerseText(reference, lang, detectorProvider);
+    const verseResult = await getVerseText(reference, lang, harvesterProvider);
     const verseTextRu = verseResult.text.trim();
 
     if (!verseTextRu) {
       return NextResponse.json(
-        {
-          ok: false,
-          error: "Could not load Russian verse text.",
-          reference,
-          canonical_ref: canonicalRef,
-        },
+        { ok: false, error: "Could not load Russian verse text.", reference },
         { status: 500 },
       );
     }
@@ -628,90 +598,73 @@ export async function POST(req: Request) {
       reference,
       canonical_ref: canonicalRef,
       lang,
-      limit: 140,
+      limit: 80,
     });
 
     if (!cardsResult.ok) {
       return NextResponse.json(
         {
           ok: false,
-          error: cardsResult.error ?? "Failed to read existing Studio cards.",
-          reference,
-          canonical_ref: canonicalRef,
+          error: cardsResult.error ?? "Failed to load existing cards.",
         },
         { status: 500 },
       );
     }
 
-    const existingCards = cardsResult.cards.map(toExistingCoverageCard);
+    const existingCards = cardsResult.cards.map(summarizeExistingCard);
 
-    const detectorResult = await runRealVerseTextOnlyPreview({
+    const harvesterPrompt = buildAngleHarvesterPrompt({
       reference,
-      canonicalRef,
-      passageId,
       verseTextRu,
-      passageTextRu: verseTextRu,
       existingCards,
-      detectorProvider,
-      judgeProvider,
-      verifierProvider,
-      genre,
+      maxAngles,
     });
 
-    const signals = detectorResult.queue.map(summarizeSignal);
-    const eligibleSignals = signals.filter(
-      (signal) => signal.suggested_lane === "public_preview_ok",
-    );
-    const researchOnlySignals = signals.filter(
-      (signal) => signal.suggested_lane === "research_only",
-    );
-    const discardedSignals = signals.filter(
-      (signal) => signal.suggested_lane === "discarded",
-    );
-    const unknownSignals = signals.filter(
-      (signal) => signal.suggested_lane === "unknown",
-    );
+    const harvesterRawText = await runAI(harvesterProvider, harvesterPrompt, "ru", true);
+    const parsedAngles = parseAngles(harvesterRawText);
 
-    let crafterPrompt: string | null = null;
-    let crafterRawText: string | null = null;
-    let draftCards: DraftPearlCard[] = [];
-    let parsedCrafterJson: unknown = null;
-    let crafterParseError: string | null = null;
+    const writerPrompt = buildCardWriterPrompt({
+      reference,
+      verseTextRu,
+      angles: parsedAngles.angles,
+      existingCards,
+      maxCards,
+    });
 
-    if (eligibleSignals.length > 0) {
-      crafterPrompt = buildCrafterPrompt({
-        reference,
-        verseTextRu,
-        eligibleSignals,
-        researchOnlySignals,
-        existingCards: cardsResult.cards.map(summarizeExistingCard),
-        maxCards,
-      });
+    const writerRawText = await runAI(writerProvider, writerPrompt, "ru", true);
+    const parsedCards = parseCards(writerRawText);
 
-      crafterRawText = await runAI(crafterProvider, crafterPrompt, "ru", true);
+    const evaluatorPrompt = buildEvaluatorPrompt({
+      reference,
+      verseTextRu,
+      angles: parsedAngles.angles,
+      cards: parsedCards.cards,
+      existingCards,
+    });
 
-      const parsed = parseCrafterCards(crafterRawText);
-      draftCards = parsed.cards;
-      parsedCrafterJson = parsed.parsed_json;
-      crafterParseError = parsed.parse_error;
-    }
+    const evaluatorRawText = await runAI(evaluatorProvider, evaluatorPrompt, "ru", true);
+    const parsedEvaluations = parseEvaluations(evaluatorRawText);
+    const evaluatedCards = mergeEvaluations(parsedCards.cards, parsedEvaluations.evaluations);
+
+    const sortedCards = [...evaluatedCards].sort(
+      (a, b) => (b.score_total ?? 0) - (a.score_total ?? 0),
+    );
 
     return NextResponse.json({
-      ok: detectorResult.ok && !crafterParseError,
-      mode: "two_stage_pearls_editorial_preview",
+      ok: true,
+      mode: "pearls_v2_lab",
       changed_database: false,
 
       reference,
       canonical_ref: canonicalRef,
-      book_key: normalized.book_key ?? null,
       passage_id: passageId,
+      book_key: normalized.book_key ?? null,
       lang,
 
       providers: {
-        detector: detectorProvider,
-        crafter: crafterProvider,
-        judge: judgeProvider,
-        verifier: verifierProvider,
+        harvester: harvesterProvider,
+        writer: writerProvider,
+        evaluator: evaluatorProvider,
       },
 
       source: {
@@ -720,40 +673,51 @@ export async function POST(req: Request) {
         surface_translation: "rstj_yahweh",
       },
 
-      existing_card_count: cardsResult.cards.length,
-      active_or_reserve_count: cardsResult.cards.filter(
-        (card) => card.status === "featured" || card.status === "reserve",
-      ).length,
+      summary: {
+        existing_card_count: existingCards.length,
+        angle_count: parsedAngles.angles.length,
+        draft_card_count: parsedCards.cards.length,
+        evaluated_card_count: evaluatedCards.length,
+        strong_count: evaluatedCards.filter(
+          (card) => (card.score_total ?? 0) >= 82,
+        ).length,
+        usable_count: evaluatedCards.filter(
+          (card) => (card.score_total ?? 0) >= 74,
+        ).length,
+        errors: [
+          parsedAngles.error,
+          parsedCards.error,
+          parsedEvaluations.error,
+        ].filter(Boolean),
+      },
 
-      detector_summary: getDetectorSummary(detectorResult, signals),
-
-      editorial_preview: {
-        draft_cards: draftCards,
-        eligible_signals: eligibleSignals,
-        research_only_signals: researchOnlySignals,
-        discarded_signals: discardedSignals,
-        unknown_signals: unknownSignals,
-        existing_cards: cardsResult.cards.map(summarizeExistingCard),
+      result: {
+        angles: parsedAngles.angles,
+        draft_cards: parsedCards.cards,
+        evaluated_cards: sortedCards,
+        existing_cards: existingCards,
       },
 
       raw: {
-        detector_result: detectorResult,
-        crafter_prompt: crafterPrompt,
-        crafter_raw_text: crafterRawText,
-        crafter_parsed_json: parsedCrafterJson,
-        crafter_parse_error: crafterParseError,
+        harvester_prompt: harvesterPrompt,
+        harvester_raw_text: harvesterRawText,
+        harvester_parsed_json: parsedAngles.parsed_json,
+        writer_prompt: writerPrompt,
+        writer_raw_text: writerRawText,
+        writer_parsed_json: parsedCards.parsed_json,
+        evaluator_prompt: evaluatorPrompt,
+        evaluator_raw_text: evaluatorRawText,
+        evaluator_parsed_json: parsedEvaluations.parsed_json,
       },
     });
   } catch (error) {
-    console.error("[TWO_STAGE_PEARLS_PREVIEW] failed", error);
+    console.error("[PEARLS_V2_LAB] failed", error);
 
     return NextResponse.json(
       {
         ok: false,
         error:
-          error instanceof Error
-            ? error.message
-            : "Failed to run two-stage Pearls preview.",
+          error instanceof Error ? error.message : "Failed to run Pearls v2 Lab.",
       },
       { status: 500 },
     );
