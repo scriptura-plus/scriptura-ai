@@ -1020,7 +1020,6 @@ function createQueueItem(args: {
   const tier = getTierFromClassification(args.classification);
   const signalWithClassification = {
     ...args.signal,
-    suggested_next_action: args.classification.intake_status,
     intake_classification: args.classification,
     metadata: {
       ...(isRecord((args.signal as unknown as JsonRecord).metadata)
