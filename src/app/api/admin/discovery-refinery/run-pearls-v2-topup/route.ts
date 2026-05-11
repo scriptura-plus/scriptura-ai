@@ -8,6 +8,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 240;
 
+const MIN_OLD_PIPELINE_SAVE_SCORE = 74;
+
 type Lang = "ru";
 type JsonRecord = Record<string, unknown>;
 
@@ -243,6 +245,56 @@ function keyOf(title: string | null | undefined, anchor: string | null | undefin
     .toLowerCase()}`;
 }
 
+function getNestedRecord(record: JsonRecord, key: string): JsonRecord | null {
+  const value = record[key];
+  return isRecord(value) ? value : null;
+}
+
+function getPreviewDuplicateExistingId(previewRecord: JsonRecord): string | null {
+  const duplicate = getNestedRecord(previewRecord, "duplicate");
+  if (!duplicate) return null;
+
+  const existingCard = getNestedRecord(duplicate, "existing_card");
+  return getString(existingCard?.id);
+}
+
+function buildProcessBody(args: {
+  reference: string;
+  verseText: string;
+  lang: Lang;
+  provider: Provider;
+  editorProvider: Provider;
+  targetCount: number;
+  canonicalRef: string;
+  card: V2Card;
+  candidate: ReturnType<typeof makeCandidate>;
+  previewOnly?: boolean;
+}) {
+  const forcedStatus = chooseForceStatus(args.card);
+
+  return {
+    reference: args.reference,
+    verseText: args.verseText,
+    lang: args.lang,
+    provider: args.provider,
+    source_provider: "pearls_v2",
+    source_model: "pearls_v2_current_result_topup_v6_preview_gate",
+    editor_provider: args.editorProvider,
+    targetFeaturedCount: args.targetCount,
+    ...(forcedStatus ? { force_status: forcedStatus } : {}),
+    ...(args.previewOnly ? { preview_only: true } : {}),
+    sourceArticle: JSON.stringify({
+      source: "pearls_v2_current_result_topup_v6_preview_gate",
+      canonical_ref: args.canonicalRef,
+      v2_card: args.card,
+      forced_status: forcedStatus,
+      has_evidence_risk: hasEvidenceRisk(args.card),
+      min_old_pipeline_save_score: MIN_OLD_PIPELINE_SAVE_SCORE,
+    }),
+    candidate: args.candidate,
+  };
+}
+
 async function postJson(args: {
   url: string;
   adminSecret: string;
@@ -384,29 +436,91 @@ export async function POST(req: Request) {
 
     for (const card of selectedCards) {
       const candidate = makeCandidate(card);
+      const processUrl = `${origin}/api/admin/process-angle-candidate`;
 
-      const processed = await postJson({
-        url: `${origin}/api/admin/process-angle-candidate`,
+      const preview = await postJson({
+        url: processUrl,
         adminSecret,
-        body: {
+        body: buildProcessBody({
           reference,
           verseText,
           lang,
           provider,
-          source_provider: "pearls_v2",
-          source_model: "pearls_v2_current_result_topup_v5_hidden_risks",
-          editor_provider: editorProvider,
-          targetFeaturedCount: targetCount,
-          force_status: chooseForceStatus(card),
-          sourceArticle: JSON.stringify({
-            source: "pearls_v2_current_result_topup_v5_hidden_risks",
-            canonical_ref: canonicalRef,
-            v2_card: card,
-            forced_status: chooseForceStatus(card),
-            has_evidence_risk: hasEvidenceRisk(card),
-          }),
+          editorProvider,
+          targetCount,
+          canonicalRef,
+          card,
           candidate,
-        },
+          previewOnly: true,
+        }),
+      });
+
+      const previewRecord = isRecord(preview.data) ? preview.data : {};
+      const previewScore = getNumber(previewRecord.score_total);
+      const previewDuplicateExistingId =
+        getPreviewDuplicateExistingId(previewRecord);
+
+      if (!preview.ok) {
+        results.push({
+          candidate_title: candidate.title,
+          candidate_score_v2: card.score_total ?? null,
+          candidate_public_ready_v2: card.public_ready ?? false,
+          ok: false,
+          status: preview.status,
+          skipped: true,
+          skip_reason: "preview_failed",
+          saved_id: null,
+          saved_ids: [],
+          final_score: previewScore,
+          preview_score: previewScore,
+          preview_duplicate_existing_id: previewDuplicateExistingId,
+          old_pipeline_status: getString(previewRecord.status),
+          forced_status: chooseForceStatus(card),
+          has_evidence_risk: hasEvidenceRisk(card),
+          preview_response: preview.data,
+          response: null,
+        });
+        continue;
+      }
+
+      if (typeof previewScore === "number" && previewScore < MIN_OLD_PIPELINE_SAVE_SCORE) {
+        results.push({
+          candidate_title: candidate.title,
+          candidate_score_v2: card.score_total ?? null,
+          candidate_public_ready_v2: card.public_ready ?? false,
+          ok: true,
+          status: preview.status,
+          skipped: true,
+          skip_reason: "old_preview_score_below_74",
+          saved_id: null,
+          saved_ids: [],
+          final_score: previewScore,
+          preview_score: previewScore,
+          preview_duplicate_existing_id: previewDuplicateExistingId,
+          old_pipeline_status: getString(previewRecord.status),
+          forced_status: chooseForceStatus(card),
+          has_evidence_risk: hasEvidenceRisk(card),
+          preview_response: preview.data,
+          response: null,
+        });
+        continue;
+      }
+
+      const processed = await postJson({
+        url: processUrl,
+        adminSecret,
+        body: buildProcessBody({
+          reference,
+          verseText,
+          lang,
+          provider,
+          editorProvider,
+          targetCount,
+          canonicalRef,
+          card,
+          candidate,
+          previewOnly: false,
+        }),
       });
 
       const processedRecord = isRecord(processed.data) ? processed.data : {};
@@ -424,9 +538,12 @@ export async function POST(req: Request) {
           ? processedRecord.saved_ids
           : [],
         final_score: getNumber(processedRecord.score_total),
+        preview_score: previewScore,
+        preview_duplicate_existing_id: previewDuplicateExistingId,
         old_pipeline_status: getString(processedRecord.status),
         forced_status: chooseForceStatus(card),
         has_evidence_risk: hasEvidenceRisk(card),
+        preview_response: preview.data,
         response: processed.data,
       });
     }
