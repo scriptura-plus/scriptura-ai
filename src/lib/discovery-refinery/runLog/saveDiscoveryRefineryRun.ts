@@ -83,6 +83,47 @@ function getJsonArray(value: unknown): JsonValue[] {
   return Array.isArray(json) ? json : [];
 }
 
+function hasCyrillic(value: string | null | undefined): boolean {
+  return Boolean(value && /[А-Яа-яЁё]/.test(value));
+}
+
+function isSafeCanonicalRef(value: string | null | undefined): value is string {
+  if (!value) return false;
+  if (hasCyrillic(value)) return false;
+  if (value.includes(":")) return false;
+
+  return /^[a-z0-9]+(?:-[a-z0-9]+)*-\d+(?:-\d+){0,2}$/.test(value);
+}
+
+function isSafePassageId(value: string | null | undefined): value is string {
+  if (!value) return false;
+  if (hasCyrillic(value)) return false;
+  if (value.includes(":")) return false;
+
+  return /^[a-z0-9]+(?:_[a-z0-9]+)*_\d+(?:_\d+){0,2}$/.test(value);
+}
+
+function buildPassageIdFromCanonicalRef(canonicalRef: string): string {
+  return canonicalRef
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function sanitizeCanonicalRef(value: unknown, fallback: string | null = null): string | null {
+  const candidate = getString(value);
+  if (isSafeCanonicalRef(candidate)) return candidate;
+  if (isSafeCanonicalRef(fallback)) return fallback;
+  return null;
+}
+
+function sanitizePassageId(value: unknown, canonicalRef: string | null): string | null {
+  const candidate = getString(value);
+  if (isSafePassageId(candidate)) return candidate;
+  if (isSafeCanonicalRef(canonicalRef)) return buildPassageIdFromCanonicalRef(canonicalRef);
+  return null;
+}
+
 function getActionCounts(result: JsonRecord): Record<string, number> {
   const actionCounts = asRecord(result.action_counts);
   const aggregate = asRecord(result.aggregate);
@@ -128,7 +169,10 @@ function getRunId(result: JsonRecord): string {
 
   if (signalRunId) return signalRunId;
 
-  const reference = getString(result.canonical_ref) || getString(result.reference) || "unknown";
+  const reference =
+    sanitizeCanonicalRef(result.canonical_ref) ||
+    getString(result.reference) ||
+    "unknown";
   const created = getString(result.created_at) || new Date().toISOString();
 
   return `runlog_${reference
@@ -144,11 +188,14 @@ function buildScopeDecision(result: JsonRecord, mode: string): Record<string, Js
     return getJsonObject(existing);
   }
 
+  const canonicalRef = sanitizeCanonicalRef(result.canonical_ref);
+  const passageId = sanitizePassageId(result.passage_id, canonicalRef);
+
   return {
     mode: mode === "real_text_only" || mode === "fixture_preview" ? "text_only" : mode,
     reference: getString(result.reference),
-    canonical_ref: getString(result.canonical_ref) || getString(result.reference),
-    passage_id: getString(result.passage_id),
+    canonical_ref: canonicalRef,
+    passage_id: passageId,
     detector_may_use: ["verse_text", "allowed_passage", "genre_scope_metadata"],
     detector_may_not_use: [
       "Research Lake",
@@ -170,11 +217,13 @@ function buildInputContextSnapshot(result: JsonRecord): Record<string, JsonValue
 
   const diagnostics = asArray(result.diagnostics);
   const firstDiagnostic = asRecord(diagnostics[0]);
+  const canonicalRef = sanitizeCanonicalRef(result.canonical_ref);
+  const passageId = sanitizePassageId(result.passage_id, canonicalRef);
 
   return {
     reference: getString(result.reference),
-    canonical_ref: getString(result.canonical_ref) || getString(result.reference),
-    passage_id: getString(result.passage_id),
+    canonical_ref: canonicalRef,
+    passage_id: passageId,
     genre: getString(result.genre),
     expected_richness: getString(result.expected_richness),
     existing_coverage_mode: getString(result.existing_coverage_mode),
@@ -283,7 +332,10 @@ function getAngleFamily(signal: JsonRecord): string | null {
   return angleFamily || null;
 }
 
-function getSignalEvidenceJson(signal: JsonRecord, key: "verifiable_claims" | "evidence_checks"): JsonValue[] {
+function getSignalEvidenceJson(
+  signal: JsonRecord,
+  key: "verifiable_claims" | "evidence_checks",
+): JsonValue[] {
   const direct = signal[key];
 
   if (Array.isArray(direct)) {
@@ -343,6 +395,8 @@ function buildRunRow(args: SaveDiscoveryRefineryRunArgs, result: JsonRecord) {
   const runId = getRunId(result);
   const actionCounts = getActionCounts(result);
   const queue = asArray(result.queue);
+  const canonicalRef = sanitizeCanonicalRef(result.canonical_ref);
+  const passageId = sanitizePassageId(result.passage_id, canonicalRef);
 
   return {
     run_id: runId,
@@ -355,10 +409,8 @@ function buildRunRow(args: SaveDiscoveryRefineryRunArgs, result: JsonRecord) {
 
     mode,
     reference: getString(result.reference, "Unknown"),
-    canonical_ref:
-      getString(result.canonical_ref) ||
-      getString(result.reference, "Unknown"),
-    passage_id: getString(result.passage_id) || null,
+    canonical_ref: canonicalRef ?? "INVALID_CANONICAL_REF",
+    passage_id: passageId,
     fixture_id: args.fixtureId ?? getString(result.fixture_id) ?? null,
     is_fixture: args.isFixture ?? Boolean(getString(result.fixture_id)),
 
@@ -382,13 +434,21 @@ function buildRunRow(args: SaveDiscoveryRefineryRunArgs, result: JsonRecord) {
   };
 }
 
-function buildSignalRows(result: JsonRecord, runId: string) {
+function buildSignalRows(result: JsonRecord, runId: string, runCanonicalRef: string) {
   const queue = asArray(result.queue);
+  const runPassageId = sanitizePassageId(result.passage_id, runCanonicalRef);
 
   return queue.map((queueItemRaw, index) => {
     const queueItem = asRecord(queueItemRaw);
     const signal = getSignalFromQueueItem(queueItemRaw);
     const verdicts = getQueueItemVerdicts(queueItem, signal);
+
+    const signalCanonicalRef =
+      sanitizeCanonicalRef(signal.canonical_ref, runCanonicalRef) ?? runCanonicalRef;
+    const signalPassageId =
+      sanitizePassageId(signal.passage_id, signalCanonicalRef) ??
+      runPassageId ??
+      buildPassageIdFromCanonicalRef(runCanonicalRef);
 
     return {
       signal_id: getString(signal.signal_id, `signal_${index + 1}`),
@@ -398,14 +458,8 @@ function buildSignalRows(result: JsonRecord, runId: string) {
       signal_index: index,
 
       reference: getString(signal.reference) || getString(result.reference, "Unknown"),
-      canonical_ref:
-        getString(signal.canonical_ref) ||
-        getString(result.canonical_ref) ||
-        getString(result.reference, "Unknown"),
-      passage_id:
-        getString(signal.passage_id) ||
-        getString(result.passage_id) ||
-        null,
+      canonical_ref: signalCanonicalRef,
+      passage_id: signalPassageId,
 
       anchor_text: getAnchorText(signal),
       reader_surprise_ru: getReaderSurpriseRu(signal),
@@ -428,9 +482,79 @@ function buildSignalRows(result: JsonRecord, runId: string) {
       full_signal_json: getJsonObject({
         queue_item: queueItem,
         signal,
+        run_log_normalization: {
+          original_signal_canonical_ref: getString(signal.canonical_ref) || null,
+          saved_signal_canonical_ref: signalCanonicalRef,
+          original_signal_passage_id: getString(signal.passage_id) || null,
+          saved_signal_passage_id: signalPassageId,
+        },
       }),
     };
   });
+}
+
+function hasUnsafeCanonicalInJson(value: JsonValue): boolean {
+  if (typeof value === "string") return false;
+
+  if (Array.isArray(value)) {
+    return value.some((item) => hasUnsafeCanonicalInJson(item));
+  }
+
+  if (isRecord(value)) {
+    for (const [key, item] of Object.entries(value)) {
+      if (
+        (key === "canonical_ref" || key === "canonicalRef") &&
+        typeof item === "string" &&
+        !isSafeCanonicalRef(item)
+      ) {
+        return true;
+      }
+
+      if (
+        (key === "passage_id" || key === "passageId") &&
+        typeof item === "string" &&
+        item &&
+        !isSafePassageId(item)
+      ) {
+        return true;
+      }
+
+      if (hasUnsafeCanonicalInJson(item as JsonValue)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+function validateRunLogRows(args: {
+  runRow: ReturnType<typeof buildRunRow>;
+  signalRows: ReturnType<typeof buildSignalRows>;
+}): string | null {
+  if (!isSafeCanonicalRef(args.runRow.canonical_ref)) {
+    return `Unsafe run canonical_ref: ${args.runRow.canonical_ref}`;
+  }
+
+  if (args.runRow.passage_id && !isSafePassageId(args.runRow.passage_id)) {
+    return `Unsafe run passage_id: ${args.runRow.passage_id}`;
+  }
+
+  for (const row of args.signalRows) {
+    if (!isSafeCanonicalRef(row.canonical_ref)) {
+      return `Unsafe signal canonical_ref: ${row.canonical_ref}`;
+    }
+
+    if (row.passage_id && !isSafePassageId(row.passage_id)) {
+      return `Unsafe signal passage_id: ${row.passage_id}`;
+    }
+  }
+
+  if (hasUnsafeCanonicalInJson(args.runRow.full_result_json)) {
+    return "Unsafe canonical_ref or passage_id still exists inside full_result_json.";
+  }
+
+  return null;
 }
 
 async function supabaseRestRequest(args: {
@@ -484,7 +608,39 @@ export async function saveDiscoveryRefineryRun(
 
   const result = asRecord(args.result);
   const runRow = buildRunRow(args, result);
-  const signalRows = buildSignalRows(result, runRow.run_id);
+
+  if (!isSafeCanonicalRef(runRow.canonical_ref)) {
+    console.error("[DISCOVERY_REFINERY_RUN_LOG] skipped unsafe canonical_ref", {
+      reference: runRow.reference,
+      canonical_ref: runRow.canonical_ref,
+      passage_id: runRow.passage_id,
+    });
+
+    return {
+      run_id: runRow.run_id,
+      signal_count: 0,
+      skipped: true,
+    };
+  }
+
+  const signalRows = buildSignalRows(result, runRow.run_id, runRow.canonical_ref);
+  const validationError = validateRunLogRows({ runRow, signalRows });
+
+  if (validationError) {
+    console.error("[DISCOVERY_REFINERY_RUN_LOG] skipped unsafe run-log payload", {
+      validationError,
+      reference: runRow.reference,
+      canonical_ref: runRow.canonical_ref,
+      passage_id: runRow.passage_id,
+      run_id: runRow.run_id,
+    });
+
+    return {
+      run_id: runRow.run_id,
+      signal_count: 0,
+      skipped: true,
+    };
+  }
 
   await supabaseRestRequest({
     path: "discovery_refinery_runs",
