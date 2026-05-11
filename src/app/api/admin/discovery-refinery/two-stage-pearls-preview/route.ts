@@ -24,7 +24,6 @@ type RequestBody = {
   writer_provider?: unknown;
   evaluatorProvider?: unknown;
   evaluator_provider?: unknown;
-  maxAngles?: unknown;
   maxCards?: unknown;
 };
 
@@ -33,10 +32,10 @@ type HarvestedAngle = {
   title: string;
   anchor: string;
   discovery: string;
-  why_surprising: string;
   angle_type: string;
   evidence_need: string;
   risk_note: string | null;
+  focus: string;
 };
 
 type DraftCard = {
@@ -66,10 +65,6 @@ function isRecord(value: unknown): value is JsonRecord {
 
 function asRecord(value: unknown): JsonRecord {
   return isRecord(value) ? value : {};
-}
-
-function asArray(value: unknown): unknown[] {
-  return Array.isArray(value) ? value : [];
 }
 
 function getString(value: unknown, fallback = ""): string {
@@ -129,7 +124,7 @@ function extractFirstJson(text: string): unknown | null {
   try {
     return JSON.parse(stripped);
   } catch {
-    // Continue.
+    // continue
   }
 
   const objectStart = stripped.indexOf("{");
@@ -139,7 +134,7 @@ function extractFirstJson(text: string): unknown | null {
     try {
       return JSON.parse(stripped.slice(objectStart, objectEnd + 1));
     } catch {
-      // Continue.
+      // continue
     }
   }
 
@@ -150,36 +145,35 @@ function extractFirstJson(text: string): unknown | null {
     try {
       return JSON.parse(stripped.slice(arrayStart, arrayEnd + 1));
     } catch {
-      // Ignore.
+      // ignore
     }
   }
 
   return null;
 }
 
-function normalizeAngle(value: unknown, index: number): HarvestedAngle | null {
+function normalizeAngle(value: unknown, index: number, focus: string): HarvestedAngle | null {
   if (!isRecord(value)) return null;
 
   const title = getString(value.title);
   const anchor = getString(value.anchor);
   const discovery = getString(value.discovery);
-  const why = getString(value.why_surprising);
 
   if (!title || !anchor || !discovery) return null;
 
   return {
-    angle_id: getString(value.angle_id, `angle_${index + 1}`),
+    angle_id: getString(value.angle_id, `${focus}_${index + 1}`),
     title,
     anchor,
     discovery,
-    why_surprising: why,
-    angle_type: getString(value.angle_type, "textual"),
+    angle_type: getString(value.angle_type, focus),
     evidence_need: getString(value.evidence_need, "none"),
     risk_note: getString(value.risk_note) || null,
+    focus,
   };
 }
 
-function parseAngles(text: string): {
+function parseAngles(text: string, focus: string): {
   angles: HarvestedAngle[];
   parsed_json: unknown;
   error: string | null;
@@ -187,7 +181,7 @@ function parseAngles(text: string): {
   const parsed = extractFirstJson(text);
 
   if (!parsed) {
-    return { angles: [], parsed_json: null, error: "No JSON parsed from angle harvester." };
+    return { angles: [], parsed_json: null, error: `No JSON parsed from ${focus}.` };
   }
 
   const rawAngles =
@@ -199,7 +193,7 @@ function parseAngles(text: string): {
 
   return {
     angles: rawAngles
-      .map(normalizeAngle)
+      .map((item, index) => normalizeAngle(item, index, focus))
       .filter((item): item is HarvestedAngle => item !== null),
     parsed_json: parsed,
     error: null,
@@ -330,41 +324,44 @@ function summarizeExistingCard(card: AngleCardRow) {
   };
 }
 
+function dedupeAngles(angles: HarvestedAngle[]): HarvestedAngle[] {
+  const seen = new Set<string>();
+  const out: HarvestedAngle[] = [];
+
+  for (const angle of angles) {
+    const key = `${angle.anchor.toLowerCase()}|${angle.discovery.toLowerCase().slice(0, 90)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(angle);
+  }
+
+  return out;
+}
+
 function buildAngleHarvesterPrompt(args: {
   reference: string;
   verseTextRu: string;
   existingCards: ReturnType<typeof summarizeExistingCard>[];
-  maxAngles: number;
+  focus: string;
+  focusInstruction: string;
 }): string {
   return [
     "Ты — Angle Harvester для Scriptura AI.",
+    "НЕ пиши карточки. Найди только углы открытия.",
+    "Каждый угол должен давать чувство: «Я раньше этого не замечал».",
+    "Пиши КОРОТКО. JSON должен быть компактным.",
     "",
-    "Твоя задача — НЕ писать карточки.",
-    "Твоя задача — найти как можно больше сильных углов открытия по стиху.",
+    `ФОКУС: ${args.focus}`,
+    args.focusInstruction,
     "",
-    "Что такое хороший угол:",
-    "читатель должен подумать: «Я раньше этого не замечал».",
-    "",
-    "Ищи разные типы углов:",
-    "- структура фразы;",
-    "- порядок мыслей;",
-    "- повтор;",
-    "- контраст;",
-    "- причинная связь;",
-    "- вопрос-ответ;",
-    "- неожиданная логика;",
-    "- напряжение повествования;",
-    "- видимое отсутствие;",
-    "- переводческая поверхность;",
-    "- возможная лексическая зацепка;",
-    "- необычное движение мысли.",
-    "",
-    "НЕ пиши проповедь.",
-    "НЕ объясняй стих целиком.",
-    "НЕ делай готовые карточки.",
-    "НЕ повторяй existing cards, если они уже закрывают этот же угол.",
-    "",
-    "Если угол требует проверки оригинала/лексики/переводов — всё равно сохрани его, но поставь evidence_need.",
+    "Правила:",
+    "- не проповедуй;",
+    "- не объясняй весь стих;",
+    "- не повторяй existing cards;",
+    "- если нужна проверка, всё равно сохрани угол и поставь evidence_need;",
+    "- discovery максимум 170 символов;",
+    "- title максимум 8 слов;",
+    "- anchor короткая точная фраза из стиха.",
     "",
     "СТИХ:",
     args.reference,
@@ -372,32 +369,13 @@ function buildAngleHarvesterPrompt(args: {
     "ТЕКСТ:",
     args.verseTextRu,
     "",
-    "EXISTING CARDS ДЛЯ ИЗБЕЖАНИЯ ДУБЛЕЙ:",
-    JSON.stringify(args.existingCards, null, 2),
+    "EXISTING CARDS:",
+    JSON.stringify(args.existingCards.slice(0, 8)),
     "",
-    "ВЕРНИ JSON ONLY:",
-    JSON.stringify(
-      {
-        angles: [
-          {
-            angle_id: "angle_1",
-            title: "short angle name",
-            anchor: "short exact phrase from verse",
-            discovery: "Я не замечал, что ...",
-            why_surprising: "why this may create wow-effect",
-            angle_type:
-              "structural | narrative | rhetorical | translation | lexical | syntax | contextual | other",
-            evidence_need:
-              "none | light_caution | lexical_check | translation_check | syntax_check | moderator_check",
-            risk_note: null,
-          },
-        ],
-      },
-      null,
-      2,
-    ),
+    "JSON ONLY:",
+    '{"angles":[{"angle_id":"a1","title":"...","anchor":"...","discovery":"Я не замечал, что ...","angle_type":"structural","evidence_need":"none","risk_note":null}]}',
     "",
-    `Найди до ${args.maxAngles} углов. Лучше 12 хороших разных углов, чем 3 осторожных.`,
+    "Верни ровно 4 лучших угла.",
   ].join("\n");
 }
 
@@ -410,26 +388,14 @@ function buildCardWriterPrompt(args: {
 }): string {
   return [
     "Ты — главный writer карточек «Жемчужины» для Scriptura AI.",
+    "Тебе дали найденные углы. Напиши из них сильные карточки.",
     "",
-    "Старая ошибка: сразу просить AI придумать карточки.",
-    "Новый подход: тебе уже дали найденные углы. Пиши сильные карточки из них.",
+    "Цель: читатель думает «Я читал стих, но не замечал этого».",
     "",
-    "Цель карточки:",
-    "серьёзный читатель должен почувствовать: «Я читал этот стих, но не замечал этого».",
-    "",
-    "Пиши свободно, сильно, красиво, но не выдумывай новые факты сверх угла.",
-    "Если угол требует проверки — не убивай его, а формулируй осторожно на уровне наблюдения по тексту.",
-    "Не пиши «в оригинале», если angle этого не доказывает.",
-    "Не превращай карточку в лексический справочник.",
-    "Не превращай карточку в проповедь.",
-    "Не повторяй existing cards.",
-    "",
-    "Формат карточки:",
-    "- title: 4–9 слов;",
-    "- anchor: точная короткая опора из стиха;",
-    "- teaser: 2–3 предложения, с настоящим открытием;",
-    "- why_it_matters: 1 предложение, почему это меняет чтение;",
-    "- source_angle_ids: какие углы использованы.",
+    "Пиши свободно и сильно.",
+    "Не добавляй фактов сверх угла.",
+    "Если угол требует проверки — формулируй как наблюдение по тексту, без фразы «в оригинале».",
+    "Не проповедуй. Не делай лексическую справку. Не повторяй existing cards.",
     "",
     "СТИХ:",
     args.reference,
@@ -440,10 +406,10 @@ function buildCardWriterPrompt(args: {
     "ANGLE POOL:",
     JSON.stringify(args.angles, null, 2),
     "",
-    "EXISTING CARDS ДЛЯ ИЗБЕЖАНИЯ ДУБЛЕЙ:",
-    JSON.stringify(args.existingCards, null, 2),
+    "EXISTING CARDS:",
+    JSON.stringify(args.existingCards.slice(0, 10), null, 2),
     "",
-    "ВЕРНИ JSON ONLY:",
+    "JSON ONLY:",
     JSON.stringify(
       {
         cards: [
@@ -453,7 +419,7 @@ function buildCardWriterPrompt(args: {
             anchor: "short phrase",
             teaser: "2-3 sentences",
             why_it_matters: "one sentence",
-            source_angle_ids: ["angle_1"],
+            source_angle_ids: ["a1"],
           },
         ],
       },
@@ -461,7 +427,7 @@ function buildCardWriterPrompt(args: {
       2,
     ),
     "",
-    `Напиши до ${args.maxCards} лучших карточек. Отбирай по wow-effect, не по осторожности.`,
+    `Напиши до ${args.maxCards} лучших карточек. Отбирай по wow-effect.`,
   ].join("\n");
 }
 
@@ -474,28 +440,17 @@ function buildEvaluatorPrompt(args: {
 }): string {
   return [
     "Ты — evaluator Scriptura AI.",
+    "Оцени готовые карточки по wow-effect и текстовой опоре.",
+    "Не убивай сильную мысль: если она рискованная, дай rewrite_instruction.",
     "",
-    "Оцени готовые карточки. Не убивай сильную мысль только потому, что её надо смягчить.",
-    "Твоя задача — отделить сильные карточки от слабых, найти риски и дать rewrite instruction, если карточку можно спасти.",
-    "",
-    "Критерий качества:",
-    "главное — wow-effect: «Я раньше этого не замечал».",
-    "",
-    "Оцени по шкале 1–100:",
-    "- wow_score: сила открытия;",
-    "- textual_anchor_score: насколько точно держится за текст;",
-    "- freshness_score: насколько не банально;",
-    "- safety_score: риск overclaim;",
-    "- score_total: общий балл.",
+    "Шкала 1-100:",
+    "wow_score, textual_anchor_score, freshness_score, safety_score, score_total.",
     "",
     "verdict:",
     "strong_candidate | usable_candidate | rewrite_needed | needs_evidence | duplicate_risk | weak_reject",
     "",
     "risk_flags:",
     "lexical_check | translation_check | syntax_check | historical_check | theological_overreach | duplicate_risk | pretty_empty | overclaim",
-    "",
-    "Если карточка сильная, но рискованная, verdict = rewrite_needed или needs_evidence, не weak_reject.",
-    "rewrite_instruction должен сохранять вау-эффект, а не превращать карточку в сухую справку.",
     "",
     "СТИХ:",
     args.reference,
@@ -509,10 +464,10 @@ function buildEvaluatorPrompt(args: {
     "DRAFT CARDS:",
     JSON.stringify(args.cards, null, 2),
     "",
-    "EXISTING CARDS ДЛЯ ДУБЛЕЙ:",
-    JSON.stringify(args.existingCards, null, 2),
+    "EXISTING CARDS:",
+    JSON.stringify(args.existingCards.slice(0, 12), null, 2),
     "",
-    "ВЕРНИ JSON ONLY:",
+    "JSON ONLY:",
     JSON.stringify(
       {
         evaluations: [
@@ -577,7 +532,6 @@ export async function POST(req: Request) {
       "openai",
     );
 
-    const maxAngles = Math.min(Math.max(getNumber(body.maxAngles, 14), 6), 20);
     const maxCards = Math.min(Math.max(getNumber(body.maxCards, 8), 3), 12);
 
     const normalized = normalizeReference(reference);
@@ -613,20 +567,87 @@ export async function POST(req: Request) {
 
     const existingCards = cardsResult.cards.map(summarizeExistingCard);
 
-    const harvesterPrompt = buildAngleHarvesterPrompt({
-      reference,
-      verseTextRu,
-      existingCards,
-      maxAngles,
-    });
+    const focusSpecs = [
+      {
+        focus: "structure",
+        focusInstruction:
+          "Ищи структуру, порядок слов, повтор, контраст, причинную связь, движение мысли.",
+      },
+      {
+        focus: "surprise",
+        focusInstruction:
+          "Ищи неожиданный поворот, скрытую логику, странность фразы, вопрос к тексту.",
+      },
+      {
+        focus: "language",
+        focusInstruction:
+          "Ищи переводческую поверхность, возможную лексическую зацепку, слова с риском проверки.",
+      },
+    ];
 
-    const harvesterRawText = await runAI(harvesterProvider, harvesterPrompt, "ru", true);
-    const parsedAngles = parseAngles(harvesterRawText);
+    const harvestRuns = await Promise.all(
+      focusSpecs.map(async (spec) => {
+        const prompt = buildAngleHarvesterPrompt({
+          reference,
+          verseTextRu,
+          existingCards,
+          focus: spec.focus,
+          focusInstruction: spec.focusInstruction,
+        });
+
+        const rawText = await runAI(harvesterProvider, prompt, "ru", true);
+        const parsed = parseAngles(rawText, spec.focus);
+
+        return {
+          focus: spec.focus,
+          prompt,
+          raw_text: rawText,
+          parsed_json: parsed.parsed_json,
+          error: parsed.error,
+          angles: parsed.angles.map((angle, index) => ({
+            ...angle,
+            angle_id: `${spec.focus}_${index + 1}`,
+          })),
+        };
+      }),
+    );
+
+    const allAngles = dedupeAngles(harvestRuns.flatMap((run) => run.angles));
+
+    if (allAngles.length === 0) {
+      return NextResponse.json({
+        ok: false,
+        mode: "pearls_v2_lab",
+        changed_database: false,
+        reference,
+        canonical_ref: canonicalRef,
+        passage_id: passageId,
+        summary: {
+          existing_card_count: existingCards.length,
+          angle_count: 0,
+          draft_card_count: 0,
+          evaluated_card_count: 0,
+          strong_count: 0,
+          usable_count: 0,
+          errors: harvestRuns.map((run) => run.error).filter(Boolean),
+        },
+        result: {
+          angles: [],
+          draft_cards: [],
+          evaluated_cards: [],
+          existing_cards: existingCards,
+        },
+        raw: {
+          harvest_runs: harvestRuns,
+        },
+        error: "No angles harvested.",
+      });
+    }
 
     const writerPrompt = buildCardWriterPrompt({
       reference,
       verseTextRu,
-      angles: parsedAngles.angles,
+      angles: allAngles,
       existingCards,
       maxCards,
     });
@@ -637,7 +658,7 @@ export async function POST(req: Request) {
     const evaluatorPrompt = buildEvaluatorPrompt({
       reference,
       verseTextRu,
-      angles: parsedAngles.angles,
+      angles: allAngles,
       cards: parsedCards.cards,
       existingCards,
     });
@@ -675,7 +696,7 @@ export async function POST(req: Request) {
 
       summary: {
         existing_card_count: existingCards.length,
-        angle_count: parsedAngles.angles.length,
+        angle_count: allAngles.length,
         draft_card_count: parsedCards.cards.length,
         evaluated_card_count: evaluatedCards.length,
         strong_count: evaluatedCards.filter(
@@ -685,23 +706,21 @@ export async function POST(req: Request) {
           (card) => (card.score_total ?? 0) >= 74,
         ).length,
         errors: [
-          parsedAngles.error,
+          ...harvestRuns.map((run) => run.error).filter(Boolean),
           parsedCards.error,
           parsedEvaluations.error,
         ].filter(Boolean),
       },
 
       result: {
-        angles: parsedAngles.angles,
+        angles: allAngles,
         draft_cards: parsedCards.cards,
         evaluated_cards: sortedCards,
         existing_cards: existingCards,
       },
 
       raw: {
-        harvester_prompt: harvesterPrompt,
-        harvester_raw_text: harvesterRawText,
-        harvester_parsed_json: parsedAngles.parsed_json,
+        harvest_runs: harvestRuns,
         writer_prompt: writerPrompt,
         writer_raw_text: writerRawText,
         writer_parsed_json: parsedCards.parsed_json,
