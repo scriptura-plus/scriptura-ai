@@ -37,6 +37,8 @@ type V2Card = {
   risk_flags?: string[];
   public_blockers?: string[];
   verdict?: string | null;
+  lexicon_claim_status?: string | null;
+  lexicon_note?: string | null;
 };
 
 function isRecord(value: unknown): value is JsonRecord {
@@ -107,6 +109,8 @@ function normalizeV2Card(value: unknown): V2Card | null {
     risk_flags: riskFlags,
     public_blockers: publicBlockers,
     verdict: getString(value.verdict),
+    lexicon_claim_status: getString(value.lexicon_claim_status),
+    lexicon_note: getString(value.lexicon_note),
   };
 }
 
@@ -124,6 +128,59 @@ function shouldSendToOldPipeline(
   return false;
 }
 
+function getCardTextForRisk(card: V2Card): string {
+  return [
+    card.title,
+    card.anchor,
+    card.teaser,
+    card.why_it_matters,
+    ...(card.risk_flags ?? []),
+    ...(card.public_blockers ?? []),
+    card.public_status,
+    card.verdict,
+    card.lexicon_claim_status,
+    card.lexicon_note,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function isLexiconClearedByV2(card: V2Card): boolean {
+  const publicStatus = (card.public_status ?? "").trim().toLowerCase();
+  const lexiconStatus = (card.lexicon_claim_status ?? "").trim().toLowerCase();
+  const flags = [...(card.risk_flags ?? []), ...(card.public_blockers ?? [])]
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
+
+  const hasEvidenceBlocker = flags.some((flag) => {
+    if (flag.includes("needs_evidence")) return true;
+    if (flag.includes("lexical_check")) return true;
+    if (flag.includes("translation_check")) return true;
+    if (flag.includes("syntax_check")) return true;
+    if (flag.includes("historical_check")) return true;
+    if (flag.includes("intertextual_check")) return true;
+    if (flag.includes("overclaim")) return true;
+    if (flag.includes("theological_overreach")) return true;
+    return false;
+  });
+
+  if (hasEvidenceBlocker) return false;
+
+  // New Pearls v2 route asks the evaluator to check language claims against the internal lexicon.
+  // If it came back public-ready, do not force-hide merely because the card contains words like
+  // Greek / syntax / imperfect / translation. Those words are now allowed when verified.
+  if (card.public_ready === true && (publicStatus === "public_ready" || !publicStatus)) {
+    return lexiconStatus === "supported" || lexiconStatus === "no_claim" || !lexiconStatus;
+  }
+
+  if (publicStatus === "public_ready") {
+    return lexiconStatus === "supported" || lexiconStatus === "no_claim" || !lexiconStatus;
+  }
+
+  return false;
+}
+
 function hasEvidenceRisk(card: V2Card): boolean {
   const hardRiskFlags = new Set([
     "lexical_check",
@@ -137,6 +194,13 @@ function hasEvidenceRisk(card: V2Card): boolean {
     "duplicate_risk",
     "needs_evidence_before_public",
     "needs_rewrite_or_moderator",
+    "needs_evidence:lexical_check",
+    "needs_evidence:translation_check",
+    "needs_evidence:syntax_check",
+    "needs_evidence:historical_check",
+    "needs_evidence:intertextual_check",
+    "needs_evidence:lexicon_unsupported",
+    "needs_evidence:lexicon_uncertain",
   ]);
 
   const flags = [
@@ -144,6 +208,8 @@ function hasEvidenceRisk(card: V2Card): boolean {
     ...(card.public_blockers ?? []),
     card.public_status ?? "",
     card.verdict ?? "",
+    card.lexicon_claim_status === "unsupported" ? "needs_evidence:lexicon_unsupported" : "",
+    card.lexicon_claim_status === "uncertain" ? "needs_evidence:lexicon_uncertain" : "",
   ]
     .map((item) => item.trim())
     .filter(Boolean);
@@ -163,10 +229,13 @@ function hasEvidenceRisk(card: V2Card): boolean {
 
   if (flagRisk) return true;
 
+  if (isLexiconClearedByV2(card)) return false;
+
   const text = getCardTextForRisk(card);
 
-  // Catch risky source-sensitive claims even when V2 forgot to flag them.
-  // These should be saved as hidden/research until checked.
+  // Catch source-sensitive claims only when V2 did NOT clear them through the lexicon-aware evaluator.
+  // This keeps the safety guard, but removes the old blunt behavior where any word like “Greek” or
+  // “imperfect” automatically forced hidden even when the internal lexicon supported the claim.
   const sourceSensitivePatterns = [
     "греческ",
     "еврейск",
@@ -206,22 +275,6 @@ function hasEvidenceRisk(card: V2Card): boolean {
   ];
 
   return sourceSensitivePatterns.some((pattern) => text.includes(pattern));
-}
-
-function getCardTextForRisk(card: V2Card): string {
-  return [
-    card.title,
-    card.anchor,
-    card.teaser,
-    card.why_it_matters,
-    ...(card.risk_flags ?? []),
-    ...(card.public_blockers ?? []),
-    card.public_status,
-    card.verdict,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
 }
 
 function chooseForceStatus(card: V2Card): "hidden" | null {
@@ -271,6 +324,7 @@ function buildProcessBody(args: {
   previewOnly?: boolean;
 }) {
   const forcedStatus = chooseForceStatus(args.card);
+  const hasEvidenceRiskValue = hasEvidenceRisk(args.card);
 
   return {
     reference: args.reference,
@@ -278,17 +332,20 @@ function buildProcessBody(args: {
     lang: args.lang,
     provider: args.provider,
     source_provider: "pearls_v2",
-    source_model: "pearls_v2_current_result_topup_v6_preview_gate",
+    source_model: "pearls_v2_current_result_topup_v7_lexicon_aware",
     editor_provider: args.editorProvider,
     targetFeaturedCount: args.targetCount,
     ...(forcedStatus ? { force_status: forcedStatus } : {}),
     ...(args.previewOnly ? { preview_only: true } : {}),
     sourceArticle: JSON.stringify({
-      source: "pearls_v2_current_result_topup_v6_preview_gate",
+      source: "pearls_v2_current_result_topup_v7_lexicon_aware",
       canonical_ref: args.canonicalRef,
       v2_card: args.card,
       forced_status: forcedStatus,
-      has_evidence_risk: hasEvidenceRisk(args.card),
+      has_evidence_risk: hasEvidenceRiskValue,
+      lexicon_claim_status: args.card.lexicon_claim_status ?? null,
+      lexicon_note: args.card.lexicon_note ?? null,
+      lexicon_cleared_by_v2: isLexiconClearedByV2(args.card),
       min_old_pipeline_save_score: MIN_OLD_PIPELINE_SAVE_SCORE,
     }),
     candidate: args.candidate,
@@ -465,6 +522,9 @@ export async function POST(req: Request) {
           candidate_title: candidate.title,
           candidate_score_v2: card.score_total ?? null,
           candidate_public_ready_v2: card.public_ready ?? false,
+          candidate_public_status_v2: card.public_status ?? null,
+          candidate_lexicon_claim_status_v2: card.lexicon_claim_status ?? null,
+          candidate_lexicon_note_v2: card.lexicon_note ?? null,
           ok: false,
           status: preview.status,
           skipped: true,
@@ -477,6 +537,7 @@ export async function POST(req: Request) {
           old_pipeline_status: getString(previewRecord.status),
           forced_status: chooseForceStatus(card),
           has_evidence_risk: hasEvidenceRisk(card),
+          lexicon_cleared_by_v2: isLexiconClearedByV2(card),
           preview_response: preview.data,
           response: null,
         });
@@ -488,10 +549,13 @@ export async function POST(req: Request) {
           candidate_title: candidate.title,
           candidate_score_v2: card.score_total ?? null,
           candidate_public_ready_v2: card.public_ready ?? false,
+          candidate_public_status_v2: card.public_status ?? null,
+          candidate_lexicon_claim_status_v2: card.lexicon_claim_status ?? null,
+          candidate_lexicon_note_v2: card.lexicon_note ?? null,
           ok: true,
           status: preview.status,
           skipped: true,
-          skip_reason: "old_preview_score_below_74",
+          skip_reason: `old_preview_score_below_${MIN_OLD_PIPELINE_SAVE_SCORE}`,
           saved_id: null,
           saved_ids: [],
           final_score: previewScore,
@@ -500,6 +564,7 @@ export async function POST(req: Request) {
           old_pipeline_status: getString(previewRecord.status),
           forced_status: chooseForceStatus(card),
           has_evidence_risk: hasEvidenceRisk(card),
+          lexicon_cleared_by_v2: isLexiconClearedByV2(card),
           preview_response: preview.data,
           response: null,
         });
@@ -529,6 +594,9 @@ export async function POST(req: Request) {
         candidate_title: candidate.title,
         candidate_score_v2: card.score_total ?? null,
         candidate_public_ready_v2: card.public_ready ?? false,
+        candidate_public_status_v2: card.public_status ?? null,
+        candidate_lexicon_claim_status_v2: card.lexicon_claim_status ?? null,
+        candidate_lexicon_note_v2: card.lexicon_note ?? null,
         ok: processed.ok,
         status: processed.status,
         skipped: processedRecord.skipped === true,
@@ -543,6 +611,7 @@ export async function POST(req: Request) {
         old_pipeline_status: getString(processedRecord.status),
         forced_status: chooseForceStatus(card),
         has_evidence_risk: hasEvidenceRisk(card),
+        lexicon_cleared_by_v2: isLexiconClearedByV2(card),
         preview_response: preview.data,
         response: processed.data,
       });
@@ -559,6 +628,7 @@ export async function POST(req: Request) {
       target_count: targetCount,
       process_limit: processLimit,
       include_strong_non_public: includeStrongNonPublic,
+      min_old_pipeline_save_score: MIN_OLD_PIPELINE_SAVE_SCORE,
 
       v2_cards_total: incomingCards.length,
       selected_for_old_pipeline: selectedCards.length,
