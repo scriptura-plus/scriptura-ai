@@ -83,18 +83,22 @@ function parseReference(reference: string): {
   verse: number;
 } {
   const normalized = normalizeReference(reference);
+  const normalizedChapter = normalized.chapter;
+  const normalizedVerse = normalized.verse;
 
   if (
     normalized.book &&
-    Number.isFinite(normalized.chapter) &&
-    Number.isFinite(normalized.verse) &&
-    normalized.chapter > 0 &&
-    normalized.verse > 0
+    typeof normalizedChapter === "number" &&
+    Number.isFinite(normalizedChapter) &&
+    normalizedChapter > 0 &&
+    typeof normalizedVerse === "number" &&
+    Number.isFinite(normalizedVerse) &&
+    normalizedVerse > 0
   ) {
     return {
       book: normalized.book,
-      chapter: normalized.chapter,
-      verse: normalized.verse,
+      chapter: normalizedChapter,
+      verse: normalizedVerse,
     };
   }
 
