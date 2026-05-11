@@ -19,16 +19,15 @@ type TopupBody = {
   processLimit?: unknown;
   includeStrongNonPublic?: unknown;
   provider?: unknown;
-  harvesterProvider?: unknown;
-  writerProvider?: unknown;
-  evaluatorProvider?: unknown;
+  editorProvider?: unknown;
+  cards?: unknown;
 };
 
 type V2Card = {
   card_id?: string;
-  title?: string;
+  title: string;
   anchor?: string | null;
-  teaser?: string | null;
+  teaser: string;
   why_it_matters?: string | null;
   score_total?: number | null;
   public_ready?: boolean;
@@ -109,21 +108,6 @@ function normalizeV2Card(value: unknown): V2Card | null {
   };
 }
 
-function getRecommendedCards(v2Result: unknown): V2Card[] {
-  if (!isRecord(v2Result)) return [];
-
-  const result = isRecord(v2Result.result) ? v2Result.result : {};
-  const rawCards = Array.isArray(result.recommended_cards)
-    ? result.recommended_cards
-    : Array.isArray(result.evaluated_cards)
-      ? result.evaluated_cards
-      : [];
-
-  return rawCards
-    .map(normalizeV2Card)
-    .filter((item): item is V2Card => item !== null);
-}
-
 function shouldSendToOldPipeline(
   card: V2Card,
   includeStrongNonPublic: boolean,
@@ -133,7 +117,6 @@ function shouldSendToOldPipeline(
   if (card.public_ready === true && score >= 82) return true;
 
   if (!includeStrongNonPublic) return false;
-
   if (score < 82) return false;
 
   const hardRiskFlags = new Set([
@@ -160,11 +143,17 @@ function shouldSendToOldPipeline(
 function makeCandidate(card: V2Card) {
   return {
     id: card.card_id ?? undefined,
-    title: card.title ?? "",
+    title: card.title,
     anchor: card.anchor ?? null,
-    teaser: card.teaser ?? "",
+    teaser: card.teaser,
     why_it_matters: card.why_it_matters ?? null,
   };
+}
+
+function keyOf(title: string | null | undefined, anchor: string | null | undefined) {
+  return `${(title ?? "").trim().toLowerCase()}|${(anchor ?? "")
+    .trim()
+    .toLowerCase()}`;
 }
 
 async function postJson(args: {
@@ -222,15 +211,28 @@ export async function POST(req: Request) {
       );
     }
 
+    const incomingCards = Array.isArray(body.cards)
+      ? body.cards.map(normalizeV2Card).filter((item): item is V2Card => item !== null)
+      : [];
+
+    if (incomingCards.length === 0) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "No cards were sent. Run Pearls v2 first, then click top-up.",
+        },
+        { status: 400 },
+      );
+    }
+
     const targetCount = Math.min(Math.max(getNumber(body.targetCount) ?? 12, 1), 100);
-    const processLimit = Math.min(Math.max(getNumber(body.processLimit) ?? 12, 1), 24);
+    const processLimit = Math.min(Math.max(getNumber(body.processLimit) ?? 3, 1), 8);
     const force = getBoolean(body.force) ?? false;
     const includeStrongNonPublic = getBoolean(body.includeStrongNonPublic) ?? false;
 
     const provider = chooseProvider(body.provider, defaultProvider());
-    const harvesterProvider = chooseProvider(body.harvesterProvider, provider);
-    const writerProvider = chooseProvider(body.writerProvider, provider);
-    const evaluatorProvider = chooseProvider(body.evaluatorProvider, provider);
+    const editorProvider = chooseProvider(body.editorProvider, provider);
 
     const normalized = normalizeReference(reference);
     const canonicalRef = normalized.canonical_ref ?? reference;
@@ -259,13 +261,26 @@ export async function POST(req: Request) {
         changed_database: false,
         reference,
         canonical_ref: canonicalRef,
-        existing_count: existingCount,
+        existing_count_before: existingCount,
         target_count: targetCount,
+        v2_cards_total: incomingCards.length,
+        selected_for_old_pipeline: 0,
         processed_count: 0,
         saved_count: 0,
+        skipped_count: 0,
+        failed_count: 0,
         results: [],
       });
     }
+
+    const existingKeys = new Set(
+      existing.cards.map((card) => keyOf(card.title, card.anchor)),
+    );
+
+    const selectedCards = incomingCards
+      .filter((card) => shouldSendToOldPipeline(card, includeStrongNonPublic))
+      .filter((card) => !existingKeys.has(keyOf(card.title, card.anchor ?? null)))
+      .slice(0, processLimit);
 
     const verse = await getVerseText(reference, lang, provider);
     const verseText = verse.text.trim();
@@ -278,36 +293,6 @@ export async function POST(req: Request) {
     }
 
     const origin = new URL(req.url).origin;
-
-    const v2 = await postJson({
-      url: `${origin}/api/admin/discovery-refinery/two-stage-pearls-preview`,
-      adminSecret,
-      body: {
-        reference,
-        lang,
-        maxCards: processLimit,
-        harvesterProvider,
-        writerProvider,
-        evaluatorProvider,
-      },
-    });
-
-    if (!v2.ok) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: `Pearls v2 generation failed with status ${v2.status}`,
-          v2_result: v2.data,
-        },
-        { status: 500 },
-      );
-    }
-
-    const allCards = getRecommendedCards(v2.data);
-    const selectedCards = allCards
-      .filter((card) => shouldSendToOldPipeline(card, includeStrongNonPublic))
-      .slice(0, processLimit);
-
     const results = [];
 
     for (const card of selectedCards) {
@@ -322,11 +307,12 @@ export async function POST(req: Request) {
           lang,
           provider,
           source_provider: "pearls_v2",
-          source_model: "pearls_v2_topup_v1",
-          editor_provider: evaluatorProvider,
+          source_model: "pearls_v2_current_result_topup_v2",
+          editor_provider: editorProvider,
           targetFeaturedCount: targetCount,
+          force_status: "reserve",
           sourceArticle: JSON.stringify({
-            source: "pearls_v2_topup",
+            source: "pearls_v2_current_result_topup",
             canonical_ref: canonicalRef,
             v2_card: card,
           }),
@@ -366,11 +352,7 @@ export async function POST(req: Request) {
       process_limit: processLimit,
       include_strong_non_public: includeStrongNonPublic,
 
-      v2_summary: isRecord(v2.data) && isRecord(v2.data.summary)
-        ? v2.data.summary
-        : null,
-
-      v2_cards_total: allCards.length,
+      v2_cards_total: incomingCards.length,
       selected_for_old_pipeline: selectedCards.length,
 
       processed_count: results.length,
