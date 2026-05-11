@@ -57,6 +57,9 @@ type EvaluatedCard = DraftCard & {
   risk_flags: string[];
   rewrite_instruction: string | null;
   evaluator_note: string | null;
+  public_ready?: boolean;
+  public_status?: string;
+  public_blockers?: string[];
 };
 
 type RewrittenCard = DraftCard & {
@@ -439,6 +442,71 @@ function buildRewritePrompt(args: {
   ].join("\n");
 }
 
+function getPublicReadiness(card: EvaluatedCard): {
+  public_ready: boolean;
+  public_status: string;
+  public_blockers: string[];
+} {
+  const score = card.score_total ?? 0;
+  const verdict = card.verdict ?? "";
+  const flags = card.risk_flags ?? [];
+  const blockers: string[] = [];
+
+  const evidenceFlags = new Set([
+    "lexical_check",
+    "translation_check",
+    "syntax_check",
+    "historical_check",
+    "intertextual_check",
+  ]);
+
+  const hardRiskFlags = new Set([
+    "theological_overreach",
+    "overclaim",
+    "pretty_empty",
+    "duplicate_risk",
+  ]);
+
+  if (score < 82) blockers.push("score_below_82");
+  if (verdict !== "strong_candidate") blockers.push(`verdict_${verdict || "unknown"}`);
+
+  for (const flag of flags) {
+    if (evidenceFlags.has(flag)) blockers.push(`needs_evidence:${flag}`);
+    if (hardRiskFlags.has(flag)) blockers.push(`risk:${flag}`);
+  }
+
+  if (card.rewrite_instruction) blockers.push("rewrite_instruction_present");
+
+  if (blockers.length === 0) {
+    return {
+      public_ready: true,
+      public_status: "public_ready",
+      public_blockers: [],
+    };
+  }
+
+  const needsEvidence = blockers.some((item) => item.startsWith("needs_evidence:"));
+  const hasRisk = blockers.some((item) => item.startsWith("risk:"));
+  const needsRewrite = blockers.includes("rewrite_instruction_present");
+
+  return {
+    public_ready: false,
+    public_status: needsEvidence
+      ? "needs_evidence_before_public"
+      : hasRisk || needsRewrite
+        ? "needs_rewrite_or_moderator"
+        : "not_public_ready",
+    public_blockers: blockers,
+  };
+}
+
+function attachPublicReadiness(cards: EvaluatedCard[]): EvaluatedCard[] {
+  return cards.map((card) => ({
+    ...card,
+    ...getPublicReadiness(card),
+  }));
+}
+
 function buildRecommendedCards(args: {
   originalCards: EvaluatedCard[];
   rewrittenCards: EvaluatedCard[];
@@ -467,7 +535,9 @@ function buildRecommendedCards(args: {
     return original;
   });
 
-  return merged.sort((a, b) => (b.score_total ?? 0) - (a.score_total ?? 0));
+  return attachPublicReadiness(
+    merged.sort((a, b) => (b.score_total ?? 0) - (a.score_total ?? 0)),
+  );
 }
 
 function summarizeExistingCard(card: AngleCardRow) {
@@ -827,8 +897,8 @@ export async function POST(req: Request) {
     const parsedEvaluations = parseEvaluations(evaluatorRawText);
     const evaluatedCards = mergeEvaluations(parsedCards.cards, parsedEvaluations.evaluations);
 
-    const sortedCards = [...evaluatedCards].sort(
-      (a, b) => (b.score_total ?? 0) - (a.score_total ?? 0),
+    const sortedCards = attachPublicReadiness(
+      [...evaluatedCards].sort((a, b) => (b.score_total ?? 0) - (a.score_total ?? 0)),
     );
 
     const rewriteCandidates = sortedCards.filter(shouldRewriteCard).slice(0, 4);
@@ -883,8 +953,8 @@ export async function POST(req: Request) {
       }
     }
 
-    const sortedRewrites = [...evaluatedRewrites].sort(
-      (a, b) => (b.score_total ?? 0) - (a.score_total ?? 0),
+    const sortedRewrites = attachPublicReadiness(
+      [...evaluatedRewrites].sort((a, b) => (b.score_total ?? 0) - (a.score_total ?? 0)),
     );
 
     const recommendedCards = buildRecommendedCards({
@@ -923,6 +993,10 @@ export async function POST(req: Request) {
         rewrite_candidate_count: rewriteCandidates.length,
         rewritten_card_count: evaluatedRewrites.length,
         recommended_card_count: recommendedCards.length,
+        public_ready_count: recommendedCards.filter((card) => card.public_ready).length,
+        needs_evidence_count: recommendedCards.filter(
+          (card) => card.public_status === "needs_evidence_before_public",
+        ).length,
         strong_count: recommendedCards.filter(
           (card) => (card.score_total ?? 0) >= 82,
         ).length,
