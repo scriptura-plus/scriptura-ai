@@ -13,6 +13,9 @@ type LabResponse = {
     angle_count?: number;
     draft_card_count?: number;
     evaluated_card_count?: number;
+    rewrite_candidate_count?: number;
+    rewritten_card_count?: number;
+    recommended_card_count?: number;
     strong_count?: number;
     usable_count?: number;
     errors?: string[];
@@ -20,6 +23,8 @@ type LabResponse = {
   result?: {
     angles?: Angle[];
     evaluated_cards?: EvaluatedCard[];
+    rewritten_cards?: EvaluatedCard[];
+    recommended_cards?: EvaluatedCard[];
     existing_cards?: ExistingCard[];
   };
   raw?: unknown;
@@ -52,6 +57,7 @@ type EvaluatedCard = {
   risk_flags?: string[];
   rewrite_instruction?: string | null;
   evaluator_note?: string | null;
+  original_card_id?: string;
 };
 
 type ExistingCard = {
@@ -109,6 +115,7 @@ function CardView({ card, index }: { card: EvaluatedCard; index: number }) {
         {card.verdict ? <Pill>{card.verdict}</Pill> : null}
         {typeof card.wow_score === "number" ? <Pill>wow {card.wow_score}</Pill> : null}
         {typeof card.safety_score === "number" ? <Pill>safety {card.safety_score}</Pill> : null}
+        {card.original_card_id ? <Pill>rewrite of {card.original_card_id}</Pill> : null}
         {(card.risk_flags ?? []).map((flag) => (
           <Pill key={flag}>{flag}</Pill>
         ))}
@@ -167,7 +174,12 @@ export default function PearlsV2LabPage() {
   const [error, setError] = useState<string | null>(null);
 
   const angles = result?.result?.angles ?? [];
-  const cards = result?.result?.evaluated_cards ?? [];
+  const cards =
+    result?.result?.recommended_cards ??
+    result?.result?.evaluated_cards ??
+    [];
+  const rewrittenCards = result?.result?.rewritten_cards ?? [];
+  const originalCards = result?.result?.evaluated_cards ?? [];
   const existing = result?.result?.existing_cards ?? [];
 
   const summary = useMemo(() => {
@@ -180,6 +192,9 @@ export default function PearlsV2LabPage() {
       `Angles harvested: ${result.summary?.angle_count ?? 0}`,
       `Cards written: ${result.summary?.draft_card_count ?? 0}`,
       `Cards evaluated: ${result.summary?.evaluated_card_count ?? 0}`,
+      `Rewrite candidates: ${result.summary?.rewrite_candidate_count ?? 0}`,
+      `Rewritten cards: ${result.summary?.rewritten_card_count ?? 0}`,
+      `Recommended cards: ${result.summary?.recommended_card_count ?? 0}`,
       `Strong 82+: ${result.summary?.strong_count ?? 0}`,
       `Usable 74+: ${result.summary?.usable_count ?? 0}`,
       `Errors: ${(result.summary?.errors ?? []).length}`,
@@ -268,7 +283,7 @@ export default function PearlsV2LabPage() {
       {result ? (
         <>
           <section className="panel">
-            <h2>New Pearls v2 cards</h2>
+            <h2>Recommended Pearls v2 cards</h2>
             <div className="cardGrid">
               {cards.length > 0 ? (
                 cards.map((card, index) => (
@@ -279,6 +294,23 @@ export default function PearlsV2LabPage() {
               )}
             </div>
           </section>
+
+          {rewrittenCards.length > 0 ? (
+            <section className="panel">
+              <h2>Rewritten cards</h2>
+              <div className="cardGrid">
+                {rewrittenCards.map((card, index) => (
+                  <CardView card={card} index={index} key={`rewrite_${card.card_id ?? index}`} />
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {rewrittenCards.length > 0 ? (
+            <section className="panel">
+              <JsonDetails title="Original evaluated cards" value={originalCards} />
+            </section>
+          ) : null}
 
           <section className="split">
             <div className="panel">
@@ -314,7 +346,7 @@ export default function PearlsV2LabPage() {
         </>
       ) : null}
 
-      <style jsx>{`
+      <style jsx global>{`
         .page {
           min-height: 100vh;
           padding: 28px;
@@ -457,6 +489,7 @@ export default function PearlsV2LabPage() {
           border-radius: 18px;
           padding: 15px;
           background: #fffaf0;
+          overflow-wrap: anywhere;
         }
 
         .smallCard {
@@ -477,12 +510,15 @@ export default function PearlsV2LabPage() {
         }
 
         .score {
+          display: inline-flex;
           min-width: 42px;
+          justify-content: center;
           text-align: center;
           border-radius: 999px;
           padding: 6px 9px;
           background: rgba(138, 90, 43, 0.1);
           color: #6f4720;
+          font: 800 12px/1 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         }
 
         .score.high {
