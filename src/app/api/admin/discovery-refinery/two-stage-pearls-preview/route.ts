@@ -4,6 +4,10 @@ import { isProvider, type Provider } from "@/lib/ai/providers";
 import { getVerseText } from "@/lib/bible/getVerseText";
 import { normalizeReference } from "@/lib/bible/normalizeReference";
 import {
+  formatOriginalLanguagePacketForPrompt,
+  getOriginalLanguagePacket,
+} from "@/lib/bible/getOriginalLanguagePacket";
+import {
   getAllStudioCardsForVerse,
   type AngleCardRow,
 } from "@/lib/cache/angleCards";
@@ -57,6 +61,8 @@ type EvaluatedCard = DraftCard & {
   risk_flags: string[];
   rewrite_instruction: string | null;
   evaluator_note: string | null;
+  lexicon_claim_status?: string | null;
+  lexicon_note?: string | null;
   public_ready?: boolean;
   public_status?: string;
   public_blockers?: string[];
@@ -158,6 +164,40 @@ function extractFirstJson(text: string): unknown | null {
   }
 
   return null;
+}
+
+function buildLexiconPacketForPrompt(reference: string): {
+  text: string;
+  present: boolean;
+} {
+  try {
+    const packet = getOriginalLanguagePacket(reference);
+    const formatted = formatOriginalLanguagePacketForPrompt(packet).trim();
+
+    if (!formatted) {
+      return {
+        text:
+          "[LEXICON PACKET EMPTY: no internal Greek/Hebrew/Aramaic packet was available for this reference. Do not make original-language claims.]",
+        present: false,
+      };
+    }
+
+    return {
+      text: formatted,
+      present: true,
+    };
+  } catch (error) {
+    console.warn("[PEARLS_V2_LAB] lexicon packet failed", {
+      reference,
+      error: error instanceof Error ? error.message : String(error),
+    });
+
+    return {
+      text:
+        "[LEXICON PACKET UNAVAILABLE: internal lexicon lookup failed. Do not make original-language claims.]",
+      present: false,
+    };
+  }
 }
 
 function normalizeAngle(value: unknown, index: number, focus: string): HarvestedAngle | null {
@@ -314,6 +354,8 @@ function mergeEvaluations(cards: DraftCard[], evaluations: JsonRecord[]): Evalua
       risk_flags: riskFlags,
       rewrite_instruction: getString(match.rewrite_instruction) || null,
       evaluator_note: getString(match.evaluator_note) || null,
+      lexicon_claim_status: getString(match.lexicon_claim_status) || null,
+      lexicon_note: getString(match.lexicon_note) || null,
     };
   });
 }
@@ -391,6 +433,7 @@ function buildRewritePrompt(args: {
   verseTextRu: string;
   rewriteCandidates: EvaluatedCard[];
   angles: HarvestedAngle[];
+  lexiconPacket: string;
 }): string {
   return [
     "Ты — Scriptura AI Rewrite Editor.",
@@ -398,11 +441,18 @@ function buildRewritePrompt(args: {
     "Тебе дали сильные карточки, которые evaluator отметил как рискованные или требующие смягчения.",
     "Задача: НЕ убить wow-effect. Переписать так, чтобы карточка осталась сильной, но стала осторожнее и точнее.",
     "",
+    "ВНУТРЕННИЙ ЛЕКСИКОН SCRIPTURA:",
+    "Этот блок можно использовать только для проверки и осторожного усиления языковых утверждений.",
+    "Если карточка делает греческое/еврейское/арамейское, переводческое, грамматическое или синтаксическое утверждение, сверяйся с этим блоком.",
+    "Если лексикон не подтверждает утверждение — убери или смягчи его.",
+    "Не превращай карточку в словарную справку.",
+    args.lexiconPacket,
+    "",
     "Правила:",
     "- не превращай в сухую справку;",
-    "- не добавляй новых фактов;",
+    "- не добавляй новых фактов сверх угла и лексикона;",
     "- убери overclaim;",
-    "- если была лексическая/переводческая проверка — не утверждай её как факт без источника;",
+    "- если была лексическая/переводческая проверка — не утверждай её как факт без поддержки лексикона;",
     "- сохрани главный угол;",
     "- title короткий;",
     "- teaser 2–3 предложения;",
@@ -473,6 +523,14 @@ function getPublicReadiness(card: EvaluatedCard): {
   for (const flag of flags) {
     if (evidenceFlags.has(flag)) blockers.push(`needs_evidence:${flag}`);
     if (hardRiskFlags.has(flag)) blockers.push(`risk:${flag}`);
+  }
+
+  if (card.lexicon_claim_status === "unsupported") {
+    blockers.push("needs_evidence:lexicon_unsupported");
+  }
+
+  if (card.lexicon_claim_status === "uncertain") {
+    blockers.push("needs_evidence:lexicon_uncertain");
   }
 
   if (card.rewrite_instruction) blockers.push("rewrite_instruction_present");
@@ -615,65 +673,35 @@ function buildCardWriterPrompt(args: {
   angles: HarvestedAngle[];
   existingCards: ReturnType<typeof summarizeExistingCard>[];
   maxCards: number;
+  lexiconPacket: string;
 }): string {
   return [
-    "Ты — главный Claude Writer карточек «Жемчужины» для Scriptura AI.",
+    "Ты — главный writer карточек «Жемчужины» для Scriptura AI.",
+    "Тебе дали найденные углы. Напиши из них сильные карточки.",
     "",
-    "Твоя задача — не просто пересказать найденный угол. Твоя задача — превратить сильный угол в одну читательскую жемчужину, которую хочется дочитать до конца.",
+    "Цель: читатель думает «Я читал стих, но не замечал этого». Но карточка должна ещё и читаться красиво: как сильный публицистический абзац, который хочется дочитать до конца.",
     "",
-    "Главный стандарт:",
-    "читатель должен почувствовать: «Я читал этот стих раньше, но никогда не видел его так».",
+    "ПИСАТЕЛЬСКИЙ СТАНДАРТ:",
+    "- Один teaser = один цельный, красивый абзац, обычно 3–6 коротких предложений.",
+    "- Начинай с крючка, а не с сухого объяснения.",
+    "- Допускается вопрос, пауза, резкий разворот, образ, ритм, повтор — если это служит тексту.",
+    "- Не пиши как словарная статья. Не пиши как проповедь. Не пиши как комментарий.",
+    "- Стиль: умный публицист, дорогой редактор, ясный рассказчик. Не академический конспект.",
+    "- Внутри абзаца должна быть мини-драматургия: что читатель обычно видит → что он пропускает → как стих теперь выглядит иначе.",
     "",
-    "ВАЖНО:",
-    "Harvester уже нашёл углы. Ты не исследователь и не evaluator.",
-    "Ты — writer-публицист: берёшь лучший угол и пишешь его так, чтобы он звучал живо, ясно, дорого и точно.",
+    "ВНУТРЕННИЙ ЛЕКСИКОН SCRIPTURA — ВСПОМОГАТЕЛЬНЫЙ СЛОЙ, НЕ ГЛАВНАЯ ТЕМА:",
+    "Используй этот блок только если он реально усиливает уже найденный угол или помогает сформулировать его точнее.",
+    "Не заставляй каждую карточку становиться лексической. Большинство хороших жемчужин могут быть структурными, риторическими, нарративными или контекстными.",
+    "Если угол связан с греческим/еврейским/арамейским словом, формой, переводом, синтаксисом или грамматикой — сверяйся с лексиконом и пиши только то, что он поддерживает.",
+    "Можно красиво показать оригинальную форму и русскую передачу/произношение, но только когда это действительно даёт wow-effect.",
+    "Не показывай технические слова вроде Strong, morphology, gloss, lemma, packet, dataset, STEPBible, Стронг, морфология, глосса, лемма.",
+    "Если лексикон не подтверждает языковую идею — не утверждай её. Сохрани угол как наблюдение по видимому тексту или выбери другой угол.",
+    args.lexiconPacket,
     "",
-    "СТИЛЬ:",
-    "- один сильный абзац, а не сухая заметка;",
-    "- как хорошая журнальная миниатюра: крючок → наблюдение → поворот → смысловой удар;",
-    "- не академично, не проповеднически, не поучительно;",
-    "- не используй канцелярит и религиозные клише;",
-    "- не начинай с вялого «В этом стихе...»;",
-    "- первая фраза должна сразу создавать напряжение, вопрос или неожиданность;",
-    "- текст должен быть приятен для чтения сам по себе, даже до нажатия «Развернуть».",
-    "",
-    "ФОРМА КАРТОЧКИ:",
-    "- title: короткий, цепляющий, до 9 слов;",
-    "- anchor: короткая точная опора из стиха;",
-    "- teaser: ОДИН цельный абзац, 4–7 предложений, примерно 80–140 слов;",
-    "- why_it_matters: одно сильное предложение, которое фиксирует сдвиг восприятия.",
-    "",
-    "КАК ПИСАТЬ TEASER:",
-    "1. Начни с неожиданного утверждения, а не с объяснения.",
-    "2. Затем покажи конкретную текстовую деталь.",
-    "3. Потом раскрой, почему эта деталь меняет чтение стиха.",
-    "4. Закончить абзац нужно фразой, после которой хочется нажать «Развернуть».",
-    "",
-    "ХОРОШИЙ TEASER НЕ ВЫГЛЯДИТ ТАК:",
-    "- «Стих показывает, что молитва важна».",
-    "- «Здесь говорится о вере и понимании».",
-    "- «Это учит нас быть внимательными».",
-    "",
-    "ХОРОШИЙ TEASER ВЫГЛЯДИТ ТАК:",
-    "- он берёт одну деталь текста и делает её видимой;",
-    "- он не объясняет всё, а открывает одну дверь;",
-    "- он звучит как находка, а не как комментарий;",
-    "- он держится на точной опоре, но читается как хорошая проза.",
-    "",
-    "ОГРАНИЧЕНИЯ:",
-    "- не добавляй новых фактов сверх ANGLE POOL;",
-    "- не выдумывай греческий, еврейский, историю, контекст или источники;",
-    "- если угол требует проверки, не утверждай спорный факт напрямую;",
-    "- если есть evidence_need или risk_note, формулируй осторожно: через видимую структуру текста, а не через неподтверждённый оригинал;",
-    "- не повторяй existing cards;",
-    "- не делай несколько карточек об одном и том же угле;",
-    "- не заполняй лимит ради количества.",
-    "",
-    "ОТБОР:",
-    "Выбирай только углы, которые могут стать настоящими публичными жемчужинами.",
-    "Лучше 4 сильные карточки, чем 8 средних.",
-    "Можно объединить два близких угла в одну карточку, если так получится сильнее.",
-    "Но нельзя терять точность: одна карточка = один главный поворот мысли.",
+    "Пиши свободно и сильно.",
+    "Не добавляй фактов сверх угла и лексикона.",
+    "Если угол требует проверки — формулируй как наблюдение по тексту, без фразы «в оригинале».",
+    "Не проповедуй. Не повторяй existing cards.",
     "",
     "СТИХ:",
     args.reference,
@@ -687,20 +715,17 @@ function buildCardWriterPrompt(args: {
     "EXISTING CARDS:",
     JSON.stringify(args.existingCards.slice(0, 10), null, 2),
     "",
-    "JSON ONLY.",
-    "Верни только валидный JSON. Без markdown. Без комментариев до или после.",
-    "",
+    "JSON ONLY:",
     JSON.stringify(
       {
         cards: [
           {
             card_id: "card_1",
-            title: "короткий цепляющий заголовок",
-            anchor: "короткая фраза из стиха",
-            teaser:
-              "Один цельный абзац на 4–7 предложений. Начни с неожиданного наблюдения. Покажи текстовую деталь. Раскрой, почему она меняет чтение стиха. Заверши так, чтобы хотелось нажать «Развернуть».",
-            why_it_matters: "одно предложение о том, как теперь иначе читается стих",
-            source_angle_ids: ["structure_1"],
+            title: "short title",
+            anchor: "short phrase",
+            teaser: "one strong polished paragraph, 3-6 short sentences",
+            why_it_matters: "one sentence",
+            source_angle_ids: ["a1"],
           },
         ],
       },
@@ -708,10 +733,7 @@ function buildCardWriterPrompt(args: {
       2,
     ),
     "",
-    `Напиши до ${args.maxCards} лучших карточек.`,
-    "Не обязан использовать все углы.",
-    "Не обязан доходить до максимума.",
-    "Отбирай по wow-effect, силе чтения и точности текстовой опоры.",
+    `Напиши до ${args.maxCards} лучших карточек. Отбирай по wow-effect и читательской силе.` ,
   ].join("\n");
 }
 
@@ -721,11 +743,20 @@ function buildEvaluatorPrompt(args: {
   cards: DraftCard[];
   angles: HarvestedAngle[];
   existingCards: ReturnType<typeof summarizeExistingCard>[];
+  lexiconPacket: string;
 }): string {
   return [
     "Ты — evaluator Scriptura AI.",
-    "Оцени готовые карточки по wow-effect и текстовой опоре.",
+    "Оцени готовые карточки по wow-effect, текстовой опоре, читательской силе и безопасности.",
     "Не убивай сильную мысль: если она рискованная, дай rewrite_instruction.",
+    "",
+    "ВНУТРЕННИЙ ЛЕКСИКОН SCRIPTURA:",
+    "Это контрольный источник для греческих, еврейских, арамейских, переводческих, грамматических, морфологических и синтаксических утверждений.",
+    "Если карточка делает языковое утверждение, проверь его по этому блоку.",
+    "Если утверждение подтверждается лексиконом — НЕ ставь lexical_check / syntax_check только потому, что в карточке есть греческое слово или грамматическая формулировка.",
+    "Если утверждение не подтверждается или выходит за пределы лексикона — ставь нужный risk_flag и объясни в lexicon_note.",
+    "Если карточка вообще не делает языковых утверждений — lexicon_claim_status = no_claim.",
+    args.lexiconPacket,
     "",
     "Шкала 1-100:",
     "wow_score, textual_anchor_score, freshness_score, safety_score, score_total.",
@@ -735,6 +766,13 @@ function buildEvaluatorPrompt(args: {
     "",
     "risk_flags:",
     "lexical_check | translation_check | syntax_check | historical_check | theological_overreach | duplicate_risk | pretty_empty | overclaim",
+    "",
+    "lexicon_claim_status:",
+    "no_claim | supported | unsupported | uncertain",
+    "",
+    "ОЦЕНКА ЧИТАТЕЛЬСКОЙ СИЛЫ:",
+    "Карточка может иметь хороший угол, но быть сухой. В таком случае не завышай score_total: Scriptura должна не только находить, но и красиво показывать находку.",
+    "Высокая карточка должна иметь цельный teaser-абзац с крючком, движением мысли и ясным финальным сдвигом.",
     "",
     "СТИХ:",
     args.reference,
@@ -765,6 +803,8 @@ function buildEvaluatorPrompt(args: {
             safety_score: 86,
             verdict: "strong_candidate",
             risk_flags: [],
+            lexicon_claim_status: "supported",
+            lexicon_note: "short note about lexicon support or no_claim",
             rewrite_instruction: null,
             evaluator_note: "short note",
           },
@@ -821,6 +861,7 @@ export async function POST(req: Request) {
     const normalized = normalizeReference(reference);
     const canonicalRef = normalized.canonical_ref || reference;
     const passageId = buildPassageId(canonicalRef);
+    const lexiconPacket = buildLexiconPacketForPrompt(reference);
 
     const verseResult = await getVerseText(reference, lang, harvesterProvider);
     const verseTextRu = verseResult.text.trim();
@@ -865,7 +906,7 @@ export async function POST(req: Request) {
       {
         focus: "language",
         focusInstruction:
-          "Ищи переводческую поверхность, возможную лексическую зацепку, слова с риском проверки.",
+          "Ищи переводческую поверхность, возможную лексическую зацепку, слова с риском проверки. Не превращай всё в лексикон.",
       },
     ];
 
@@ -906,6 +947,9 @@ export async function POST(req: Request) {
         reference,
         canonical_ref: canonicalRef,
         passage_id: passageId,
+        lexicon: {
+          present: lexiconPacket.present,
+        },
         summary: {
           existing_card_count: existingCards.length,
           angle_count: 0,
@@ -923,6 +967,7 @@ export async function POST(req: Request) {
         },
         raw: {
           harvest_runs: harvestRuns,
+          lexicon_packet: lexiconPacket.text,
         },
         error: "No angles harvested.",
       });
@@ -934,6 +979,7 @@ export async function POST(req: Request) {
       angles: allAngles,
       existingCards,
       maxCards,
+      lexiconPacket: lexiconPacket.text,
     });
 
     const writerRawText = await runAI(writerProvider, writerPrompt, "ru", true);
@@ -945,6 +991,7 @@ export async function POST(req: Request) {
       angles: allAngles,
       cards: parsedCards.cards,
       existingCards,
+      lexiconPacket: lexiconPacket.text,
     });
 
     const evaluatorRawText = await runAI(evaluatorProvider, evaluatorPrompt, "ru", true);
@@ -978,6 +1025,7 @@ export async function POST(req: Request) {
         verseTextRu,
         rewriteCandidates,
         angles: allAngles,
+        lexiconPacket: lexiconPacket.text,
       });
 
       rewriteRawText = await runAI(writerProvider, rewritePrompt, "ru", true);
@@ -990,6 +1038,7 @@ export async function POST(req: Request) {
           angles: allAngles,
           cards: parsedRewrites.rewrites,
           existingCards,
+          lexiconPacket: lexiconPacket.text,
         });
 
         rewrittenEvaluationsRawText = await runAI(
@@ -1039,6 +1088,11 @@ export async function POST(req: Request) {
         surface_translation: "rstj_yahweh",
       },
 
+      lexicon: {
+        present: lexiconPacket.present,
+        mode: "writer_and_evaluator_support_layer",
+      },
+
       summary: {
         existing_card_count: existingCards.length,
         angle_count: allAngles.length,
@@ -1078,6 +1132,7 @@ export async function POST(req: Request) {
 
       raw: {
         harvest_runs: harvestRuns,
+        lexicon_packet: lexiconPacket.text,
         writer_prompt: writerPrompt,
         writer_raw_text: writerRawText,
         writer_parsed_json: parsedCards.parsed_json,
