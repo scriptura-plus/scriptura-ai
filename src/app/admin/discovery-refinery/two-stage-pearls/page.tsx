@@ -76,6 +76,31 @@ type ExistingCard = {
   coverage_type?: string | null;
 };
 
+type TopupResponse = {
+  ok?: boolean;
+  error?: string;
+  skipped?: boolean;
+  reason?: string;
+  existing_count_before?: number;
+  target_count?: number;
+  v2_cards_total?: number;
+  selected_for_old_pipeline?: number;
+  processed_count?: number;
+  saved_count?: number;
+  skipped_count?: number;
+  failed_count?: number;
+  results?: Array<{
+    candidate_title?: string;
+    candidate_score_v2?: number | null;
+    candidate_public_ready_v2?: boolean;
+    skipped?: boolean;
+    skip_reason?: string | null;
+    saved_id?: string | null;
+    final_score?: number | null;
+    old_pipeline_status?: string | null;
+  }>;
+};
+
 function getStoredSecret(): string {
   if (typeof window === "undefined") return "";
   return window.localStorage.getItem("scriptura_admin_secret") ?? "";
@@ -182,6 +207,9 @@ export default function PearlsV2LabPage() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<LabResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [topupLoading, setTopupLoading] = useState(false);
+  const [topupResult, setTopupResult] = useState<TopupResponse | null>(null);
+  const [topupError, setTopupError] = useState<string | null>(null);
 
   const angles = result?.result?.angles ?? [];
   const cards =
@@ -217,6 +245,8 @@ export default function PearlsV2LabPage() {
     setLoading(true);
     setError(null);
     setResult(null);
+    setTopupResult(null);
+    setTopupError(null);
     storeSecret(adminSecret);
 
     try {
@@ -250,6 +280,48 @@ export default function PearlsV2LabPage() {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function runTopup() {
+    setTopupLoading(true);
+    setTopupError(null);
+    setTopupResult(null);
+    storeSecret(adminSecret);
+
+    try {
+      const response = await fetch(
+        "/api/admin/discovery-refinery/run-pearls-v2-topup",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-admin-secret": adminSecret,
+          },
+          body: JSON.stringify({
+            reference,
+            lang: "ru",
+            targetCount: 12,
+            processLimit: 12,
+            force: false,
+            includeStrongNonPublic: false,
+          }),
+        },
+      );
+
+      const data = (await response.json().catch(() => null)) as TopupResponse | null;
+
+      if (!response.ok || !data) {
+        throw new Error(data?.error || `Top-up failed with status ${response.status}`);
+      }
+
+      if (data.error) throw new Error(data.error);
+
+      setTopupResult(data);
+    } catch (err) {
+      setTopupError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setTopupLoading(false);
     }
   }
 
@@ -291,6 +363,40 @@ export default function PearlsV2LabPage() {
           <pre className="summary">{summary}</pre>
         </section>
       ) : null}
+
+      <section className="panel topupPanel">
+        <div>
+          <h2>V2 top-up through old pipeline</h2>
+          <p className="subtitleSmall">
+            Runs Pearls v2, sends public-ready candidates into process-angle-candidate, then old Scriptura decides save/skip/rewrite.
+          </p>
+        </div>
+        <button
+          disabled={topupLoading || !reference.trim() || !adminSecret.trim()}
+          onClick={runTopup}
+          type="button"
+        >
+          {topupLoading ? "Running top-up..." : "Run V2 top-up"}
+        </button>
+        {topupError ? <p className="topupError">{topupError}</p> : null}
+        {topupResult ? (
+          <pre className="topupResult">
+{`ok: ${topupResult.ok ? "yes" : "no"}
+skipped: ${topupResult.skipped ? "yes" : "no"}
+reason: ${topupResult.reason ?? "—"}
+existing before: ${topupResult.existing_count_before ?? "—"}
+v2 cards: ${topupResult.v2_cards_total ?? "—"}
+selected: ${topupResult.selected_for_old_pipeline ?? "—"}
+processed: ${topupResult.processed_count ?? 0}
+saved: ${topupResult.saved_count ?? 0}
+skipped by old pipeline: ${topupResult.skipped_count ?? 0}
+failed: ${topupResult.failed_count ?? 0}`}
+          </pre>
+        ) : null}
+        {topupResult?.results?.length ? (
+          <JsonDetails title="Top-up details" value={topupResult.results} />
+        ) : null}
+      </section>
 
       {result ? (
         <>
@@ -606,13 +712,43 @@ export default function PearlsV2LabPage() {
           line-height: 1.45;
         }
 
+        .topupPanel {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) auto;
+          gap: 14px;
+          align-items: center;
+        }
+
+        .subtitleSmall {
+          margin: 0;
+          color: #5a4a37;
+          font-size: 15px;
+        }
+
+        .topupResult,
+        .topupError {
+          grid-column: 1 / -1;
+          margin: 0;
+          padding: 12px;
+          border-radius: 14px;
+          background: rgba(95, 120, 90, 0.12);
+          color: #3d5a38;
+          white-space: pre-wrap;
+        }
+
+        .topupError {
+          background: #fff0ed;
+          color: #8a1f16;
+        }
+
         @media (max-width: 900px) {
           .page {
             padding: 18px;
           }
 
           .controls,
-          .split {
+          .split,
+          .topupPanel {
             grid-template-columns: 1fr;
           }
         }
