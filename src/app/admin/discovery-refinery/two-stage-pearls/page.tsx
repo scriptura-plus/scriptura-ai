@@ -16,6 +16,8 @@ type LabResponse = {
     rewrite_candidate_count?: number;
     rewritten_card_count?: number;
     recommended_card_count?: number;
+    public_ready_count?: number;
+    needs_evidence_count?: number;
     strong_count?: number;
     usable_count?: number;
     errors?: string[];
@@ -58,6 +60,9 @@ type EvaluatedCard = {
   rewrite_instruction?: string | null;
   evaluator_note?: string | null;
   original_card_id?: string;
+  public_ready?: boolean;
+  public_status?: string;
+  public_blockers?: string[];
 };
 
 type ExistingCard = {
@@ -115,7 +120,12 @@ function CardView({ card, index }: { card: EvaluatedCard; index: number }) {
         {card.verdict ? <Pill>{card.verdict}</Pill> : null}
         {typeof card.wow_score === "number" ? <Pill>wow {card.wow_score}</Pill> : null}
         {typeof card.safety_score === "number" ? <Pill>safety {card.safety_score}</Pill> : null}
+        {card.public_ready ? <Pill>public-ready</Pill> : null}
+        {!card.public_ready && card.public_status ? <Pill>{card.public_status}</Pill> : null}
         {card.original_card_id ? <Pill>rewrite of {card.original_card_id}</Pill> : null}
+        {(card.public_blockers ?? []).slice(0, 3).map((blocker) => (
+          <Pill key={blocker}>{blocker}</Pill>
+        ))}
         {(card.risk_flags ?? []).map((flag) => (
           <Pill key={flag}>{flag}</Pill>
         ))}
@@ -195,6 +205,8 @@ export default function PearlsV2LabPage() {
       `Rewrite candidates: ${result.summary?.rewrite_candidate_count ?? 0}`,
       `Rewritten cards: ${result.summary?.rewritten_card_count ?? 0}`,
       `Recommended cards: ${result.summary?.recommended_card_count ?? 0}`,
+      `Public-ready: ${result.summary?.public_ready_count ?? 0}`,
+      `Needs evidence: ${result.summary?.needs_evidence_count ?? 0}`,
       `Strong 82+: ${result.summary?.strong_count ?? 0}`,
       `Usable 74+: ${result.summary?.usable_count ?? 0}`,
       `Errors: ${(result.summary?.errors ?? []).length}`,
