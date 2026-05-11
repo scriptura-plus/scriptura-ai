@@ -110,34 +110,16 @@ function normalizeV2Card(value: unknown): V2Card | null {
 
 function shouldSendToOldPipeline(
   card: V2Card,
-  includeStrongNonPublic: boolean,
+  _includeStrongNonPublic: boolean,
 ): boolean {
   const score = card.score_total ?? 0;
 
-  if (card.public_ready === true && score >= 82) return true;
+  // V2 is only the factory. The old process-angle-candidate route is the final judge.
+  // So we send every strong V2 card to the old pipeline, even if V2 marked it not_public_ready.
+  // The old pipeline will decide save / rewrite / duplicate / reject.
+  if (score >= 82) return true;
 
-  if (!includeStrongNonPublic) return false;
-  if (score < 82) return false;
-
-  const hardRiskFlags = new Set([
-    "lexical_check",
-    "translation_check",
-    "syntax_check",
-    "historical_check",
-    "intertextual_check",
-    "theological_overreach",
-    "overclaim",
-    "pretty_empty",
-    "duplicate_risk",
-  ]);
-
-  if ((card.risk_flags ?? []).some((flag) => hardRiskFlags.has(flag))) {
-    return false;
-  }
-
-  if ((card.public_blockers ?? []).length > 0) return false;
-
-  return true;
+  return false;
 }
 
 function makeCandidate(card: V2Card) {
@@ -307,12 +289,12 @@ export async function POST(req: Request) {
           lang,
           provider,
           source_provider: "pearls_v2",
-          source_model: "pearls_v2_current_result_topup_v2",
+          source_model: "pearls_v2_current_result_topup_v3_strong82",
           editor_provider: editorProvider,
           targetFeaturedCount: targetCount,
           force_status: "reserve",
           sourceArticle: JSON.stringify({
-            source: "pearls_v2_current_result_topup",
+            source: "pearls_v2_current_result_topup_v3_strong82",
             canonical_ref: canonicalRef,
             v2_card: card,
           }),
