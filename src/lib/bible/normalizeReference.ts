@@ -756,7 +756,7 @@ function makeCanonicalRef(args: {
   bookKey: string | null;
   rawBook: string;
   chapter: number;
-  verse: number;
+  verse: number | null;
   endVerse: number | null;
 }): string | null {
   if (!args.chapter) return null;
