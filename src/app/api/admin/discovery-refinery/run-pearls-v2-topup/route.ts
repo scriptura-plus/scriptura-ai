@@ -122,6 +122,52 @@ function shouldSendToOldPipeline(
   return false;
 }
 
+function hasEvidenceRisk(card: V2Card): boolean {
+  const hardRiskFlags = new Set([
+    "lexical_check",
+    "translation_check",
+    "syntax_check",
+    "historical_check",
+    "intertextual_check",
+    "theological_overreach",
+    "overclaim",
+    "pretty_empty",
+    "duplicate_risk",
+    "needs_evidence_before_public",
+    "needs_rewrite_or_moderator",
+  ]);
+
+  const flags = [
+    ...(card.risk_flags ?? []),
+    ...(card.public_blockers ?? []),
+    card.public_status ?? "",
+    card.verdict ?? "",
+  ]
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  return flags.some((flag) => {
+    if (hardRiskFlags.has(flag)) return true;
+    if (flag.includes("lexical_check")) return true;
+    if (flag.includes("translation_check")) return true;
+    if (flag.includes("syntax_check")) return true;
+    if (flag.includes("historical_check")) return true;
+    if (flag.includes("intertextual_check")) return true;
+    if (flag.includes("theological_overreach")) return true;
+    if (flag.includes("overclaim")) return true;
+    if (flag.includes("needs_evidence")) return true;
+    return false;
+  });
+}
+
+function chooseForceStatus(card: V2Card): "reserve" | "hidden" {
+  if (card.public_ready === true && !hasEvidenceRisk(card)) {
+    return "reserve";
+  }
+
+  return "hidden";
+}
+
 function makeCandidate(card: V2Card) {
   return {
     id: card.card_id ?? undefined,
@@ -289,14 +335,16 @@ export async function POST(req: Request) {
           lang,
           provider,
           source_provider: "pearls_v2",
-          source_model: "pearls_v2_current_result_topup_v3_strong82",
+          source_model: "pearls_v2_current_result_topup_v4_safe_visibility",
           editor_provider: editorProvider,
           targetFeaturedCount: targetCount,
-          force_status: "reserve",
+          force_status: chooseForceStatus(card),
           sourceArticle: JSON.stringify({
-            source: "pearls_v2_current_result_topup_v3_strong82",
+            source: "pearls_v2_current_result_topup_v4_safe_visibility",
             canonical_ref: canonicalRef,
             v2_card: card,
+            forced_status: chooseForceStatus(card),
+            has_evidence_risk: hasEvidenceRisk(card),
           }),
           candidate,
         },
@@ -318,6 +366,8 @@ export async function POST(req: Request) {
           : [],
         final_score: getNumber(processedRecord.score_total),
         old_pipeline_status: getString(processedRecord.status),
+        forced_status: chooseForceStatus(card),
+        has_evidence_risk: hasEvidenceRisk(card),
         response: processed.data,
       });
     }
