@@ -146,7 +146,7 @@ function hasEvidenceRisk(card: V2Card): boolean {
     .map((item) => item.trim())
     .filter(Boolean);
 
-  return flags.some((flag) => {
+  const flagRisk = flags.some((flag) => {
     if (hardRiskFlags.has(flag)) return true;
     if (flag.includes("lexical_check")) return true;
     if (flag.includes("translation_check")) return true;
@@ -158,14 +158,73 @@ function hasEvidenceRisk(card: V2Card): boolean {
     if (flag.includes("needs_evidence")) return true;
     return false;
   });
+
+  if (flagRisk) return true;
+
+  const text = getCardTextForRisk(card);
+
+  // Catch risky source-sensitive claims even when V2 forgot to flag them.
+  // These should be saved as hidden/research until checked.
+  const sourceSensitivePatterns = [
+    "греческ",
+    "еврейск",
+    "арамейск",
+    "оригинал",
+    "original",
+    "greek",
+    "hebrew",
+    "aramaic",
+    "перевод",
+    "translation",
+    "лексич",
+    "lexical",
+    "синтакс",
+    "syntax",
+    "граммат",
+    "grammar",
+    "морфолог",
+    "morpholog",
+    "перфект",
+    "perfect",
+    "имперфект",
+    "imperfect",
+    "аорист",
+    "aorist",
+    "причаст",
+    "participle",
+    "падеж",
+    "case",
+    "форма незаверш",
+    "незавершённ",
+    "незавершенн",
+    "длительность",
+    "semantic",
+    "root",
+    "корень",
+  ];
+
+  return sourceSensitivePatterns.some((pattern) => text.includes(pattern));
 }
 
-function chooseForceStatus(card: V2Card): "reserve" | "hidden" {
-  if (card.public_ready === true && !hasEvidenceRisk(card)) {
-    return "reserve";
-  }
+function getCardTextForRisk(card: V2Card): string {
+  return [
+    card.title,
+    card.anchor,
+    card.teaser,
+    card.why_it_matters,
+    ...(card.risk_flags ?? []),
+    ...(card.public_blockers ?? []),
+    card.public_status,
+    card.verdict,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
 
-  return "hidden";
+function chooseForceStatus(card: V2Card): "hidden" | null {
+  if (hasEvidenceRisk(card)) return "hidden";
+  return null;
 }
 
 function makeCandidate(card: V2Card) {
@@ -335,12 +394,12 @@ export async function POST(req: Request) {
           lang,
           provider,
           source_provider: "pearls_v2",
-          source_model: "pearls_v2_current_result_topup_v4_safe_visibility",
+          source_model: "pearls_v2_current_result_topup_v5_hidden_risks",
           editor_provider: editorProvider,
           targetFeaturedCount: targetCount,
           force_status: chooseForceStatus(card),
           sourceArticle: JSON.stringify({
-            source: "pearls_v2_current_result_topup_v4_safe_visibility",
+            source: "pearls_v2_current_result_topup_v5_hidden_risks",
             canonical_ref: canonicalRef,
             v2_card: card,
             forced_status: chooseForceStatus(card),
