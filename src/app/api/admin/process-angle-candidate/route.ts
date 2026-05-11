@@ -8,7 +8,6 @@ import { buildEvaluateAnglePrompt } from "@/lib/prompts/buildEvaluateAnglePrompt
 import { buildRewriteAnglePrompt } from "@/lib/prompts/buildRewriteAnglePrompt";
 import {
   getAngleCards,
-  hideAngleCardThoughtGroupByCardId,
   saveAngleCard,
   type AngleCardInput,
   type AngleCardRow,
@@ -89,30 +88,15 @@ type SaveOneCardArgs = {
   rewritten: boolean;
   sourceProvider: string | null;
   sourceModel: string | null;
-  sourceType: string | null;
-  sourceTitle: string | null;
-  sourceLens: string | null;
   editorProvider: Provider;
   candidate: CandidateCard;
   replace_card_id: string | null;
   forceSaveDuplicate: boolean;
 };
 
-type DetectedReference = {
-  raw: string;
-  canonical_ref: string | null;
-  book_key: string | null;
-  book: string | null;
-  chapter: number | null;
-  verse: number | null;
-};
-
-type ReferenceMismatch = {
-  expected_reference: string;
-  expected_canonical_ref: string | null;
-  detected_reference: string;
-  detected_canonical_ref: string | null;
-  detected_references: DetectedReference[];
+type SkipDecision = {
+  skip: boolean;
+  reason: string;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -131,7 +115,8 @@ function isAdminRequest(req: Request): boolean {
     return false;
   }
 
-  return req.headers.get("x-admin-secret") === expected;
+  const provided = req.headers.get("x-admin-secret");
+  return provided === expected;
 }
 
 function getString(value: unknown): string | null {
@@ -186,7 +171,7 @@ function isCandidateCard(value: unknown): value is CandidateCard {
   if (!isRecord(value)) return false;
 
   const title = getString(value.title);
-  const teaser = getString(value.teaser);
+  const teaser = getString(value.teaser ?? value.body);
 
   return Boolean(title && teaser);
 }
@@ -241,75 +226,111 @@ function normalizePlacementValue(value: unknown): string | null {
   const normalized = raw.trim().toLowerCase();
 
   if (
+    normalized === "featured" ||
+    normalized === "featured_new" ||
+    normalized === "active" ||
+    normalized === "approve_active" ||
     normalized === "избранное" ||
     normalized === "новая_избранная" ||
-    normalized === "featured_new"
+    normalized === "активная"
   ) {
     return "featured_new";
   }
 
   if (
+    normalized === "replace_existing" ||
+    normalized === "replace" ||
     normalized === "заменить" ||
-    normalized === "заменить_существующую" ||
-    normalized === "replace_existing"
+    normalized === "заменить_существующую"
   ) {
     return "replace_existing";
   }
 
-  if (normalized === "резерв" || normalized === "в_резерв") {
+  if (
+    normalized === "reserve" ||
+    normalized === "approve_reserve" ||
+    normalized === "резерв" ||
+    normalized === "в_резерв" ||
+    normalized === "запас"
+  ) {
     return "reserve";
   }
 
-  if (normalized === "переписать") {
+  if (
+    normalized === "rewrite" ||
+    normalized === "needs_patch" ||
+    normalized === "needs_rewrite" ||
+    normalized === "доработать" ||
+    normalized === "на_доработку"
+  ) {
     return "rewrite";
   }
 
   if (
-    normalized === "скрыть" ||
-    normalized === "скрытая" ||
     normalized === "hidden" ||
     normalized === "hide" ||
-    normalized === "skip" ||
-    normalized === "skipped"
+    normalized === "скрыть" ||
+    normalized === "скрытая"
   ) {
     return "hidden";
   }
 
   if (
-    normalized === "отклонить" ||
-    normalized === "отклонено" ||
     normalized === "reject" ||
-    normalized === "rejected"
+    normalized === "rejected" ||
+    normalized === "discard" ||
+    normalized === "отклонить" ||
+    normalized === "отклоненная" ||
+    normalized === "отклонённая"
   ) {
     return "rejected";
   }
 
-  if (normalized === "ручная_проверка") {
+  if (
+    normalized === "needs_human_review" ||
+    normalized === "human_review" ||
+    normalized === "review"
+  ) {
     return "needs_human_review";
   }
 
-  return raw;
+  return normalized;
 }
 
 function normalizeForceStatus(value: unknown): AngleCardInput["status"] | null {
-  const raw = getString(value);
-  if (!raw) return null;
+  const normalized = normalizePlacementValue(value);
 
-  const normalized = raw.trim().toLowerCase();
-
-  if (
-    normalized === "featured" ||
-    normalized === "active" ||
-    normalized === "активная"
-  ) {
+  if (normalized === "featured_new" || normalized === "replace_existing") {
     return "featured";
   }
 
-  if (normalized === "reserve" || normalized === "запас") {
+  if (normalized === "reserve") return "reserve";
+  if (normalized === "rewrite") return "rewrite";
+  if (normalized === "hidden") return "hidden";
+  if (normalized === "reject" || normalized === "rejected") return "rejected";
+
+  return null;
+}
+
+function normalizeStatusFromPlacement(
+  placement: unknown,
+): AngleCardInput["status"] {
+  const normalized = normalizePlacementValue(placement);
+
+  if (normalized === "featured_new" || normalized === "replace_existing") {
+    return "featured";
+  }
+
+  if (normalized === "reserve") return "reserve";
+  if (normalized === "rewrite") return "rewrite";
+  if (normalized === "hidden") return "hidden";
+  if (normalized === "reject" || normalized === "rejected") return "rejected";
+
+  if (normalized === "needs_human_review") {
     return "reserve";
   }
 
-  return null;
+  return "reserve";
 }
 
 function normalizeBattleAction(value: unknown): string | null {
@@ -319,33 +340,30 @@ function normalizeBattleAction(value: unknown): string | null {
   const normalized = raw.trim().toLowerCase();
 
   if (
-    normalized === "оставить_старую_скрыть_новую" ||
-    normalized === "оставить_старую_пропустить_новую" ||
-    normalized === "hide_new" ||
-    normalized === "skip_new" ||
-    normalized === "keep_existing_hide_candidate"
+    normalized === "keep_existing" ||
+    normalized === "keep_existing_hide_candidate" ||
+    normalized === "оставить_старую" ||
+    normalized === "оставить_старую_скрыть_кандидата"
   ) {
     return "keep_existing_hide_candidate";
   }
 
   if (
-    normalized === "оставить_старую_в_резерв" ||
-    normalized === "keep_existing_send_candidate_to_reserve"
+    normalized === "keep_existing_send_candidate_to_reserve" ||
+    normalized === "оставить_старую_в_резерв"
   ) {
     return "keep_existing_send_candidate_to_reserve";
   }
 
   if (
-    normalized === "заменить_старую" ||
     normalized === "replace_existing" ||
-    normalized === "replace"
+    normalized === "заменить_старую" ||
+    normalized === "candidate_wins"
   ) {
     return "replace_existing";
   }
 
-  if (normalized === "none" || normalized === "нет") {
-    return "none";
-  }
+  if (normalized === "none" || normalized === "нет") return "none";
 
   return raw;
 }
@@ -411,7 +429,7 @@ function normalizeEvaluation(parsed: unknown): Evaluation {
 
   const battle = normalizeBattle(parsed.battle ?? parsed["сравнение"]);
 
-  return {
+  const evaluation: Evaluation = {
     angle_summary:
       firstString(parsed, ["angle_summary", "краткое_описание_угла"]) ?? null,
     coverage_type: normalizeCoverageType(
@@ -446,17 +464,37 @@ function normalizeEvaluation(parsed: unknown): Evaluation {
         "указание_для_переписывания",
       ]) ?? null,
   };
+
+  return evaluation;
 }
 
 function toRewriteEvaluation(evaluation: Evaluation): RewriteAngleEvaluation {
   const normalized: RewriteAngleEvaluation = {};
 
-  if (evaluation.angle_summary) normalized.angle_summary = evaluation.angle_summary;
-  if (evaluation.coverage_type) normalized.coverage_type = evaluation.coverage_type;
-  if (typeof evaluation.score_total === "number") normalized.score_total = evaluation.score_total;
-  if (evaluation.placement) normalized.placement = evaluation.placement;
-  if (evaluation.reason) normalized.reason = evaluation.reason;
-  if (evaluation.risk) normalized.risk = evaluation.risk;
+  if (evaluation.angle_summary) {
+    normalized.angle_summary = evaluation.angle_summary;
+  }
+
+  if (evaluation.coverage_type) {
+    normalized.coverage_type = evaluation.coverage_type;
+  }
+
+  if (typeof evaluation.score_total === "number") {
+    normalized.score_total = evaluation.score_total;
+  }
+
+  if (evaluation.placement) {
+    normalized.placement = evaluation.placement;
+  }
+
+  if (evaluation.reason) {
+    normalized.reason = evaluation.reason;
+  }
+
+  if (evaluation.risk) {
+    normalized.risk = evaluation.risk;
+  }
+
   if (evaluation.rewrite_instruction) {
     normalized.rewrite_instruction = evaluation.rewrite_instruction;
   }
@@ -470,18 +508,22 @@ function parseReferenceParts(reference: string): {
   verse: number;
 } {
   const normalized = normalizeReference(reference);
+  const normalizedChapter = normalized.chapter;
+  const normalizedVerse = normalized.verse;
 
   if (
     normalized.book &&
-    Number.isFinite(normalized.chapter) &&
-    Number.isFinite(normalized.verse) &&
-    normalized.chapter > 0 &&
-    normalized.verse > 0
+    typeof normalizedChapter === "number" &&
+    Number.isFinite(normalizedChapter) &&
+    normalizedChapter > 0 &&
+    typeof normalizedVerse === "number" &&
+    Number.isFinite(normalizedVerse) &&
+    normalizedVerse > 0
   ) {
     return {
       book: normalized.book,
-      chapter: normalized.chapter,
-      verse: normalized.verse,
+      chapter: normalizedChapter,
+      verse: normalizedVerse,
     };
   }
 
@@ -513,128 +555,20 @@ function stripCodeFence(text: string): string {
     .trim();
 }
 
-function extractJsonCandidate(text: string): string {
+function extractJsonObject(text: string): unknown {
   const stripped = stripCodeFence(text);
 
   try {
-    JSON.parse(stripped);
-    return stripped;
+    return JSON.parse(stripped);
   } catch {
-    // Continue to extraction attempts.
-  }
+    const start = stripped.indexOf("{");
+    const end = stripped.lastIndexOf("}");
 
-  const objectStart = stripped.indexOf("{");
-  const objectEnd = stripped.lastIndexOf("}");
+    if (start !== -1 && end !== -1 && end > start) {
+      return JSON.parse(stripped.slice(start, end + 1));
+    }
 
-  if (objectStart !== -1 && objectEnd !== -1 && objectEnd > objectStart) {
-    return stripped.slice(objectStart, objectEnd + 1);
-  }
-
-  const arrayStart = stripped.indexOf("[");
-  const arrayEnd = stripped.lastIndexOf("]");
-
-  if (arrayStart !== -1 && arrayEnd !== -1 && arrayEnd > arrayStart) {
-    return stripped.slice(arrayStart, arrayEnd + 1);
-  }
-
-  return stripped;
-}
-
-async function repairJsonWithAI(args: {
-  provider: Provider;
-  lang: Lang;
-  brokenJson: string;
-  parseError: string;
-  expectedShape: "evaluation" | "rewrite";
-}): Promise<unknown> {
-  const expectedShapeText =
-    args.expectedShape === "rewrite"
-      ? `{ "card": { "title": "...", "anchor": "...", "teaser": "...", "why_it_matters": "..." } }`
-      : `{
-  "angle_summary": "...",
-  "coverage_type": "lexical",
-  "same_angle": false,
-  "matched_card_id": null,
-  "similarity_confidence": 0,
-  "scores": {},
-  "score_total": 75,
-  "battle": {},
-  "placement": "reserve",
-  "replace_card_id": null,
-  "reason": "...",
-  "risk": "...",
-  "rewrite_instruction": null
-}`;
-
-  const prompt = `
-You are a JSON repair tool.
-
-The following text was supposed to be valid JSON, but JSON.parse failed.
-
-Parse error:
-${args.parseError}
-
-Broken JSON-like text:
-"""
-${args.brokenJson}
-"""
-
-Repair it into valid JSON.
-
-Rules:
-- Output valid JSON only.
-- Do not add new evaluation ideas.
-- Do not change the judgment unless syntax forces you.
-- Preserve Russian/English/Spanish user-visible text as much as possible.
-- Escape quotation marks correctly.
-- Remove markdown, code fences, trailing comments, and illegal control characters if needed.
-- Use this expected shape:
-${expectedShapeText}
-
-Output JSON only.
-`.trim();
-
-  const repaired = await runAI(args.provider, prompt, args.lang, true);
-  const candidate = extractJsonCandidate(repaired);
-
-  return JSON.parse(candidate);
-}
-
-async function extractJsonObjectWithRepair(args: {
-  text: string;
-  provider: Provider;
-  lang: Lang;
-  expectedShape: "evaluation" | "rewrite";
-}): Promise<{
-  parsed: unknown;
-  repaired: boolean;
-  parse_error: string | null;
-}> {
-  const candidate = extractJsonCandidate(args.text);
-
-  try {
-    return {
-      parsed: JSON.parse(candidate),
-      repaired: false,
-      parse_error: null,
-    };
-  } catch (error) {
-    const parseError =
-      error instanceof Error ? error.message : "Unknown JSON parse error";
-
-    const parsed = await repairJsonWithAI({
-      provider: args.provider,
-      lang: args.lang,
-      brokenJson: candidate,
-      parseError,
-      expectedShape: args.expectedShape,
-    });
-
-    return {
-      parsed,
-      repaired: true,
-      parse_error: parseError,
-    };
+    throw new Error("AI returned non-JSON response");
   }
 }
 
@@ -661,35 +595,11 @@ function toDuplicateCard(card: AngleCardRow | null) {
     anchor: card.anchor,
     teaser: card.teaser,
     why_it_matters: card.why_it_matters,
-    angle_summary: card.angle_summary,
-    coverage_type: card.coverage_type,
     score_total: card.score_total,
     status: card.status,
     is_locked: card.is_locked,
-    source_type: card.source_type,
-    source_provider: card.source_provider,
-    source_model: card.source_model,
-    editor_model: card.editor_model,
-    moderator_boost: card.moderator_boost ?? null,
+    angle_summary: card.angle_summary,
   };
-}
-
-function normalizeStatusFromPlacement(
-  placement: unknown,
-): AngleCardInput["status"] {
-  const normalized = normalizePlacementValue(placement);
-
-  if (normalized === "featured_new" || normalized === "replace_existing") {
-    return "featured";
-  }
-
-  if (normalized === "reserve") return "reserve";
-  if (normalized === "rewrite") return "rewrite";
-  if (normalized === "hidden") return "hidden";
-  if (normalized === "reject" || normalized === "rejected") return "rejected";
-  if (normalized === "needs_human_review") return "reserve";
-
-  return "reserve";
 }
 
 function shouldRewrite(evaluation: Evaluation): boolean {
@@ -774,58 +684,48 @@ function buildDuplicatePayload(args: {
 
 function shouldSkipMatchedDuplicate(evaluation: Evaluation): boolean {
   const battle = getBattle(evaluation);
-
-  if (!battle) return false;
-
-  const action = normalizeBattleAction(battle.battle_action);
-
-  if (evaluation.same_angle === true && battle.winner === "matched") {
-    return true;
-  }
+  const battleAction = getString(battle?.battle_action);
 
   if (
-    evaluation.same_angle === true &&
-    action === "keep_existing_hide_candidate"
+    battleAction === "keep_existing_hide_candidate" ||
+    battleAction === "keep_existing_send_candidate_to_reserve"
   ) {
     return true;
   }
 
-  return false;
+  const placement = normalizePlacementValue(evaluation.placement);
+
+  if (placement === "replace_existing") return false;
+
+  return (
+    evaluation.same_angle === true &&
+    typeof evaluation.similarity_confidence === "number" &&
+    evaluation.similarity_confidence >= 0.78 &&
+    Boolean(getMatchedCardId(evaluation))
+  );
 }
 
-function shouldSkipInsteadOfSave(evaluation: Evaluation): {
-  skip: boolean;
-  reason: string;
-} {
-  const scoreTotal = getNumber(evaluation.score_total);
-  const placement = normalizePlacementValue(evaluation.placement);
-  const battle = getBattle(evaluation);
-  const battleAction = normalizeBattleAction(battle?.battle_action);
+function shouldSkipInsteadOfSave(evaluation: Evaluation): SkipDecision {
+  const score = getNumber(evaluation.score_total);
 
-  if (typeof scoreTotal !== "number") {
+  if (typeof score !== "number") {
     return {
       skip: true,
       reason: "invalid_score_total",
     };
   }
 
-  if (scoreTotal < 55) {
+  const placement = normalizePlacementValue(evaluation.placement);
+
+  if (placement === "reject" || placement === "rejected") {
     return {
       skip: true,
-      reason: "score_below_save_threshold",
+      reason: "rejected_by_evaluator",
     };
   }
 
-  if (
-    placement === "hidden" ||
-    placement === "rejected" ||
-    placement === "reject"
-  ) {
-    return {
-      skip: true,
-      reason: "placement_not_savable",
-    };
-  }
+  const battle = getBattle(evaluation);
+  const battleAction = getString(battle?.battle_action);
 
   if (battleAction === "keep_existing_hide_candidate") {
     return {
@@ -838,18 +738,6 @@ function shouldSkipInsteadOfSave(evaluation: Evaluation): {
     skip: false,
     reason: "savable",
   };
-}
-
-function shouldReplaceExisting(evaluation: Evaluation): boolean {
-  const placement = normalizePlacementValue(evaluation.placement);
-  const battle = getBattle(evaluation);
-  const battleAction = normalizeBattleAction(battle?.battle_action);
-
-  return (
-    placement === "replace_existing" ||
-    battleAction === "replace_existing" ||
-    Boolean(getString(evaluation.replace_card_id))
-  );
 }
 
 function getFinalCardForSave(card: CandidateCard): {
@@ -867,176 +755,51 @@ function getFinalCardForSave(card: CandidateCard): {
 }
 
 function getModelName(provider: string): string {
-  if (provider === "openai") return process.env.OPENAI_MODEL || "gpt-5.5";
-  if (provider === "claude") return process.env.ANTHROPIC_MODEL || "claude";
-  if (provider === "gemini") return process.env.GEMINI_MODEL || "gemini";
+  if (provider === "openai") {
+    return process.env.OPENAI_MODEL || "gpt-5.5";
+  }
+
+  if (provider === "claude") {
+    return process.env.ANTHROPIC_MODEL || "claude";
+  }
+
+  if (provider === "gemini") {
+    return process.env.GEMINI_MODEL || "gemini";
+  }
+
   return provider;
 }
 
 function chooseEditorProvider(body: unknown): Provider {
-  if (!isRecord(body)) return "claude";
+  if (!isRecord(body)) {
+    return "gemini";
+  }
 
-  if (isProvider(body.editor_provider)) return body.editor_provider;
-  if (isProvider(body.evaluator_provider)) return body.evaluator_provider;
-  if (isProvider(body.provider)) return body.provider;
+  if (isProvider(body.editor_provider)) {
+    return body.editor_provider;
+  }
+
+  if (isProvider(body.evaluator_provider)) {
+    return body.evaluator_provider;
+  }
+
+  if (isProvider(body.provider) && body.provider !== "openai") {
+    return body.provider;
+  }
 
   const envProvider = process.env.ANGLE_EDITOR_PROVIDER;
-  if (isProvider(envProvider)) return envProvider;
+
+  if (isProvider(envProvider)) {
+    return envProvider;
+  }
 
   const fallback = defaultProvider();
-  if (isProvider(fallback)) return fallback;
 
-  return "claude";
-}
-
-function normalizeSourceTitle(args: {
-  sourceTitle: string | null;
-  sourceType: string | null;
-  sourceLens: string | null;
-  lang: Lang;
-  sourceModel: string | null;
-}): string | null {
-  if (args.sourceType === "word_lens_generation" || args.sourceLens === "word") {
-    if (args.lang === "ru") return "Лексика";
-    if (args.lang === "es") return "Léxico";
-    return "Lexicon";
+  if (fallback !== "openai") {
+    return fallback;
   }
 
-  return args.sourceTitle ?? args.sourceModel;
-}
-
-function normalizeSourceType(args: {
-  sourceType: string | null;
-  rewritten: boolean;
-  forceSaveDuplicate: boolean;
-}): string {
-  if (args.forceSaveDuplicate) return "manual_force_duplicate";
-  if (args.sourceType) return args.sourceType;
-  return args.rewritten
-    ? "admin_process_candidate_rewrite"
-    : "admin_process_candidate";
-}
-
-function normalizePossibleReference(raw: string): DetectedReference | null {
-  const cleanRaw = raw
-    .replace(/[«»"“”()[\]{}]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  const match = cleanRaw.match(/^(.+?)\s+(\d{1,3})\s*:\s*(\d{1,3})$/);
-  if (!match) return null;
-
-  const bookPart = match[1].trim();
-  const chapter = match[2];
-  const verse = match[3];
-
-  const bookWords = bookPart.split(/\s+/).filter(Boolean);
-  const attempts: string[] = [];
-
-  attempts.push(`${bookPart} ${chapter}:${verse}`);
-
-  for (let i = 0; i < bookWords.length; i += 1) {
-    const suffix = bookWords.slice(i).join(" ");
-    attempts.push(`${suffix} ${chapter}:${verse}`);
-  }
-
-  const uniqueAttempts = Array.from(new Set(attempts));
-
-  for (const attempt of uniqueAttempts) {
-    const normalized = normalizeReference(attempt);
-
-    if (
-      normalized.canonical_ref &&
-      Number.isFinite(normalized.chapter) &&
-      Number.isFinite(normalized.verse) &&
-      normalized.chapter > 0 &&
-      normalized.verse > 0
-    ) {
-      return {
-        raw: attempt,
-        canonical_ref: normalized.canonical_ref,
-        book_key: normalized.book_key ?? null,
-        book: normalized.book ?? null,
-        chapter: normalized.chapter ?? null,
-        verse: normalized.verse ?? null,
-      };
-    }
-  }
-
-  return null;
-}
-
-function extractExplicitReferences(text: string): DetectedReference[] {
-  const refs: DetectedReference[] = [];
-  const seen = new Set<string>();
-
-  const patterns = [
-    /((?:[1-3]\s*)?(?:[A-Za-zА-Яа-яЁёІіЇїЄє]+\.?)(?:\s+[A-Za-zА-Яа-яЁёІіЇїЄє]+\.?){0,3})\s+(\d{1,3})\s*:\s*(\d{1,3})/g,
-    /((?:[1-3]\s*)?(?:[A-Za-zА-Яа-яЁёІіЇїЄє]+\.?))\s*(\d{1,3})\s*:\s*(\d{1,3})/g,
-  ];
-
-  for (const pattern of patterns) {
-    for (const match of text.matchAll(pattern)) {
-      const raw = `${match[1]} ${match[2]}:${match[3]}`;
-      const detected = normalizePossibleReference(raw);
-
-      if (!detected?.canonical_ref) continue;
-
-      const key = detected.canonical_ref;
-      if (seen.has(key)) continue;
-
-      seen.add(key);
-      refs.push(detected);
-    }
-  }
-
-  return refs;
-}
-
-function getCandidateTextForReferenceGuard(candidate: CandidateCard): string {
-  return [
-    candidate.title,
-    candidate.anchor,
-    candidate.teaser,
-    candidate.why_it_matters,
-    candidate.body,
-  ]
-    .filter((part): part is string => typeof part === "string" && part.trim().length > 0)
-    .join("\n\n");
-}
-
-function findReferenceMismatch(args: {
-  reference: string;
-  normalizedReference: ReturnType<typeof normalizeReference>;
-  candidate: CandidateCard;
-}): ReferenceMismatch | null {
-  const expectedCanonical = args.normalizedReference.canonical_ref ?? null;
-  if (!expectedCanonical) return null;
-
-  const candidateText = getCandidateTextForReferenceGuard(args.candidate);
-  const detectedReferences = extractExplicitReferences(candidateText);
-
-  if (detectedReferences.length === 0) return null;
-
-  const hasExpectedReference = detectedReferences.some(
-    (ref) => ref.canonical_ref === expectedCanonical,
-  );
-
-  if (hasExpectedReference) return null;
-
-  const mismatch = detectedReferences.find(
-    (ref) => ref.canonical_ref && ref.canonical_ref !== expectedCanonical,
-  );
-
-  if (!mismatch) return null;
-
-  return {
-    expected_reference: args.reference,
-    expected_canonical_ref: expectedCanonical,
-    detected_reference: mismatch.raw,
-    detected_canonical_ref: mismatch.canonical_ref,
-    detected_references: detectedReferences,
-  };
+  return "gemini";
 }
 
 async function evaluateCandidate(args: {
@@ -1049,11 +812,7 @@ async function evaluateCandidate(args: {
   sourceArticle?: string;
   targetFeaturedCount: number;
   editorProvider: Provider;
-}): Promise<{
-  evaluation: Evaluation;
-  json_repaired: boolean;
-  json_parse_error: string | null;
-}> {
+}): Promise<Evaluation> {
   const prompt = buildEvaluateAnglePrompt({
     reference: args.reference,
     verseText: args.verseText,
@@ -1066,19 +825,9 @@ async function evaluateCandidate(args: {
   });
 
   const text = await runAI(args.editorProvider, prompt, args.lang, true);
+  const parsed = extractJsonObject(text);
 
-  const parsedResult = await extractJsonObjectWithRepair({
-    text,
-    provider: args.editorProvider,
-    lang: args.lang,
-    expectedShape: "evaluation",
-  });
-
-  return {
-    evaluation: normalizeEvaluation(parsedResult.parsed),
-    json_repaired: parsedResult.repaired,
-    json_parse_error: parsedResult.parse_error,
-  };
+  return normalizeEvaluation(parsed);
 }
 
 async function rewriteCandidate(args: {
@@ -1089,11 +838,7 @@ async function rewriteCandidate(args: {
   evaluation: Evaluation;
   sourceArticle?: string;
   editorProvider: Provider;
-}): Promise<{
-  card: CandidateCard;
-  json_repaired: boolean;
-  json_parse_error: string | null;
-}> {
+}): Promise<CandidateCard> {
   const prompt = buildRewriteAnglePrompt({
     reference: args.reference,
     verseText: args.verseText,
@@ -1104,15 +849,7 @@ async function rewriteCandidate(args: {
   });
 
   const text = await runAI(args.editorProvider, prompt, args.lang, true);
-
-  const parsedResult = await extractJsonObjectWithRepair({
-    text,
-    provider: args.editorProvider,
-    lang: args.lang,
-    expectedShape: "rewrite",
-  });
-
-  const parsed = parsedResult.parsed;
+  const parsed = extractJsonObject(text);
 
   if (!isRecord(parsed) || !isRecord(parsed.card)) {
     throw new Error("Rewrite returned invalid JSON object");
@@ -1128,15 +865,11 @@ async function rewriteCandidate(args: {
   }
 
   return {
-    card: {
-      id: "rewritten_candidate",
-      title,
-      anchor: getString(card.anchor),
-      teaser,
-      why_it_matters: getString(card.why_it_matters),
-    },
-    json_repaired: parsedResult.repaired,
-    json_parse_error: parsedResult.parse_error,
+    id: "rewritten_candidate",
+    title,
+    anchor: getString(card.anchor),
+    teaser,
+    why_it_matters: getString(card.why_it_matters),
   };
 }
 
@@ -1146,14 +879,6 @@ async function saveOneCard(args: SaveOneCardArgs): Promise<{
   lang: Lang;
   error: string | null;
 }> {
-  const displaySourceTitle = normalizeSourceTitle({
-    sourceTitle: args.sourceTitle,
-    sourceType: args.sourceType,
-    sourceLens: args.sourceLens,
-    lang: args.lang,
-    sourceModel: args.sourceModel,
-  });
-
   const saveResult = await saveAngleCard({
     reference: args.reference,
     book: args.book,
@@ -1176,35 +901,25 @@ async function saveOneCard(args: SaveOneCardArgs): Promise<{
 
     score_total: args.score_total,
     scores: args.scores,
-    evaluation: {
-      ...args.evaluation,
-      source_title: displaySourceTitle,
-      source_type: args.sourceType,
-      source_lens: args.sourceLens,
-    },
+    evaluation: args.evaluation,
     battle: args.battle,
 
     status: args.status,
     rank: args.status === "featured" ? 999 : null,
     is_locked: false,
 
-    source_type: normalizeSourceType({
-      sourceType: args.sourceType,
-      rewritten: args.rewritten,
-      forceSaveDuplicate: args.forceSaveDuplicate,
-    }),
+    source_type: args.forceSaveDuplicate
+      ? "manual_force_duplicate"
+      : args.rewritten
+        ? "admin_process_candidate_rewrite"
+        : "admin_process_candidate",
     source_provider: args.sourceProvider,
-    source_model: displaySourceTitle ?? args.sourceModel,
+    source_model: args.sourceModel,
 
     editor_provider: args.editorProvider,
     editor_model: getModelName(args.editorProvider),
 
-    original_card: {
-      ...args.candidate,
-      source_title: displaySourceTitle,
-      source_type: args.sourceType,
-      source_lens: args.sourceLens,
-    },
+    original_card: args.candidate,
     rewritten_from_card_id: null,
     replaced_card_id: args.replace_card_id,
 
@@ -1247,9 +962,6 @@ export async function POST(req: Request) {
         : null;
 
     const sourceModel = getString(body?.source_model) ?? null;
-    const sourceTitle = getString(body?.source_title) ?? null;
-    const sourceType = getString(body?.source_type) ?? null;
-    const sourceLens = getString(body?.source_lens) ?? null;
 
     if (!reference || !verseText || !lang || !isCandidateCard(candidate)) {
       return NextResponse.json(
@@ -1262,57 +974,6 @@ export async function POST(req: Request) {
     }
 
     const normalizedReference = normalizeReference(reference);
-
-    const referenceMismatch = findReferenceMismatch({
-      reference,
-      normalizedReference,
-      candidate,
-    });
-
-    if (referenceMismatch && !forceSaveDuplicate) {
-      return NextResponse.json({
-        ok: true,
-        skipped: true,
-        skip_reason: "reference_mismatch",
-        saved_id: null,
-        saved_ids: [],
-        rewritten: false,
-        status: "skipped_reference_mismatch",
-        score_total: null,
-        canonical_ref: normalizedReference.canonical_ref,
-        book_key: normalizedReference.book_key,
-        editor_provider: editorProvider,
-        editor_model: getModelName(editorProvider),
-        source_title: sourceTitle,
-        source_type: sourceType,
-        source_lens: sourceLens,
-        reference_mismatch: referenceMismatch,
-        json_repaired: false,
-        first_evaluation: {
-          score_total: null,
-          placement: "rejected",
-          coverage_type: null,
-          angle_summary: "Reference mismatch guard blocked this candidate before AI evaluation.",
-          reason: `Карточка явно ссылается на ${referenceMismatch.detected_reference}, но выбранный стих: ${referenceMismatch.expected_reference}. Сохранение заблокировано до AI-оценки.`,
-          risk: "Карточка может быть сохранена в набор другого стиха.",
-          same_angle: false,
-          matched_card_id: null,
-          reference_mismatch: referenceMismatch,
-        },
-        final_card: candidate,
-        final_evaluation: {
-          score_total: null,
-          placement: "rejected",
-          coverage_type: null,
-          angle_summary: "Reference mismatch guard blocked this candidate before AI evaluation.",
-          reason: `Карточка явно ссылается на ${referenceMismatch.detected_reference}, но выбранный стих: ${referenceMismatch.expected_reference}. Сохранение заблокировано до AI-оценки.`,
-          risk: "Карточка может быть сохранена в набор другого стиха.",
-          same_angle: false,
-          matched_card_id: null,
-          reference_mismatch: referenceMismatch,
-        },
-      });
-    }
 
     const existing = await getAngleCards({
       reference,
@@ -1335,7 +996,7 @@ export async function POST(req: Request) {
       (card) => card.status === "reserve",
     );
 
-    const firstEvaluationResult = await evaluateCandidate({
+    const firstEvaluation = await evaluateCandidate({
       reference,
       verseText,
       lang,
@@ -1346,8 +1007,6 @@ export async function POST(req: Request) {
       targetFeaturedCount,
       editorProvider,
     });
-
-    const firstEvaluation = firstEvaluationResult.evaluation;
 
     if (previewOnly) {
       const duplicate = shouldSkipMatchedDuplicate(firstEvaluation)
@@ -1382,62 +1041,20 @@ export async function POST(req: Request) {
         book_key: normalizedReference.book_key,
         editor_provider: editorProvider,
         editor_model: getModelName(editorProvider),
-        source_title: sourceTitle,
-        source_type: sourceType,
-        source_lens: sourceLens,
         duplicate,
-        json_repaired: firstEvaluationResult.json_repaired,
-        json_parse_error: firstEvaluationResult.json_parse_error,
         first_evaluation: firstEvaluation,
         final_card: candidate,
         final_evaluation: firstEvaluation,
       });
     }
 
-    if (shouldSkipMatchedDuplicate(firstEvaluation) && !forceSaveDuplicate) {
-      const matchedCard = findMatchedCard(firstEvaluation, existing.cards);
-
-      return NextResponse.json({
-        ok: true,
-        skipped: true,
-        skip_reason: "matched_duplicate",
-        saved_id: null,
-        saved_ids: [],
-        rewritten: false,
-        status: "skipped_duplicate",
-        score_total: getNumber(firstEvaluation.score_total),
-        canonical_ref: normalizedReference.canonical_ref,
-        book_key: normalizedReference.book_key,
-        editor_provider: editorProvider,
-        editor_model: getModelName(editorProvider),
-        source_title: sourceTitle,
-        source_type: sourceType,
-        source_lens: sourceLens,
-        duplicate: buildDuplicatePayload({
-          evaluation: firstEvaluation,
-          candidate,
-          finalCard: candidate,
-          matchedCard,
-        }),
-        json_repaired: firstEvaluationResult.json_repaired,
-        json_parse_error: firstEvaluationResult.json_parse_error,
-        first_evaluation: firstEvaluation,
-        final_card: candidate,
-        final_evaluation: firstEvaluation,
-      });
-    }
-
-    let finalCard: CandidateCard = candidate;
-    let finalEvaluation: Evaluation = firstEvaluation;
-    let rewritten = false;
+    let finalCard = candidate;
+    let finalEvaluation = firstEvaluation;
     let rewrittenCard: CandidateCard | null = null;
-    let rewriteJsonRepaired = false;
-    let rewriteJsonParseError: string | null = null;
-    let finalEvaluationJsonRepaired = firstEvaluationResult.json_repaired;
-    let finalEvaluationJsonParseError = firstEvaluationResult.json_parse_error;
+    let rewritten = false;
 
-    if (shouldRewrite(firstEvaluation) && !forceSaveDuplicate) {
-      const rewriteResult = await rewriteCandidate({
+    if (shouldRewrite(firstEvaluation)) {
+      rewrittenCard = await rewriteCandidate({
         reference,
         verseText,
         lang,
@@ -1448,26 +1065,19 @@ export async function POST(req: Request) {
       });
 
       rewritten = true;
-      rewrittenCard = rewriteResult.card;
-      finalCard = rewriteResult.card;
-      rewriteJsonRepaired = rewriteResult.json_repaired;
-      rewriteJsonParseError = rewriteResult.json_parse_error;
+      finalCard = rewrittenCard;
 
-      const finalEvaluationResult = await evaluateCandidate({
+      finalEvaluation = await evaluateCandidate({
         reference,
         verseText,
         lang,
-        candidate: rewrittenCard,
+        candidate: finalCard,
         featuredCards,
         reserveCards,
         sourceArticle,
         targetFeaturedCount,
         editorProvider,
       });
-
-      finalEvaluation = finalEvaluationResult.evaluation;
-      finalEvaluationJsonRepaired = finalEvaluationResult.json_repaired;
-      finalEvaluationJsonParseError = finalEvaluationResult.json_parse_error;
 
       if (shouldSkipMatchedDuplicate(finalEvaluation) && !forceSaveDuplicate) {
         const matchedCard = findMatchedCard(finalEvaluation, existing.cards);
@@ -1485,17 +1095,12 @@ export async function POST(req: Request) {
           book_key: normalizedReference.book_key,
           editor_provider: editorProvider,
           editor_model: getModelName(editorProvider),
-          source_title: sourceTitle,
-          source_type: sourceType,
-          source_lens: sourceLens,
           duplicate: buildDuplicatePayload({
             evaluation: finalEvaluation,
             candidate,
             finalCard,
             matchedCard,
           }),
-          json_repaired: finalEvaluationJsonRepaired || rewriteJsonRepaired,
-          json_parse_error: finalEvaluationJsonParseError ?? rewriteJsonParseError,
           first_evaluation: firstEvaluation,
           rewritten_card: rewrittenCard,
           final_card: finalCard,
@@ -1515,16 +1120,14 @@ export async function POST(req: Request) {
         saved_ids: [],
         rewritten,
         status: "skipped_not_savable",
-        score_total: getNumber(finalEvaluation.score_total),
+        score_total:
+          skipDecision.reason === "invalid_score_total"
+            ? null
+            : getNumber(finalEvaluation.score_total),
         canonical_ref: normalizedReference.canonical_ref,
         book_key: normalizedReference.book_key,
         editor_provider: editorProvider,
         editor_model: getModelName(editorProvider),
-        source_title: sourceTitle,
-        source_type: sourceType,
-        source_lens: sourceLens,
-        json_repaired: finalEvaluationJsonRepaired || rewriteJsonRepaired,
-        json_parse_error: finalEvaluationJsonParseError ?? rewriteJsonParseError,
         first_evaluation: firstEvaluation,
         rewritten_card: rewrittenCard,
         final_card: finalCard,
@@ -1534,26 +1137,12 @@ export async function POST(req: Request) {
 
     const referenceParts = parseReferenceParts(reference);
     const cardForSave = getFinalCardForSave(finalCard);
-
-    const replacementNeeded = shouldReplaceExisting(finalEvaluation) && !forceSaveDuplicate;
-    const matchedCardForReplacement = replacementNeeded
-      ? findMatchedCard(finalEvaluation, existing.cards)
-      : null;
-    const replacementTargetId =
-      getMatchedCardId(finalEvaluation) ?? matchedCardForReplacement?.id ?? null;
-
-    let status =
+    const status =
       forceStatus ??
       (forceSaveDuplicate
         ? "reserve"
         : normalizeStatusFromPlacement(finalEvaluation.placement));
-
     const scoreTotal = getNumber(finalEvaluation.score_total);
-
-    if (typeof scoreTotal === "number" && scoreTotal < 73) {
-      status = "reserve";
-    }
-
     const translationGroupId = randomUUID();
 
     const translationResult = await translateAngleCard({
@@ -1578,9 +1167,6 @@ export async function POST(req: Request) {
           book_key: normalizedReference.book_key,
           editor_provider: editorProvider,
           editor_model: getModelName(editorProvider),
-          source_title: sourceTitle,
-          source_type: sourceType,
-          source_lens: sourceLens,
           first_evaluation: firstEvaluation,
           final_card: finalCard,
           final_evaluation: finalEvaluation,
@@ -1620,12 +1206,9 @@ export async function POST(req: Request) {
         rewritten,
         sourceProvider,
         sourceModel,
-        sourceType,
-        sourceTitle,
-        sourceLens,
         editorProvider,
         candidate,
-        replace_card_id: replacementTargetId,
+        replace_card_id: getString(finalEvaluation.replace_card_id),
         forceSaveDuplicate,
       });
 
@@ -1641,48 +1224,6 @@ export async function POST(req: Request) {
       }
 
       saveResults.push(saveResult);
-    }
-
-    let replacementResult: Awaited<
-      ReturnType<typeof hideAngleCardThoughtGroupByCardId>
-    > | null = null;
-
-    if (replacementNeeded && replacementTargetId) {
-      replacementResult = await hideAngleCardThoughtGroupByCardId({
-        cardId: replacementTargetId,
-        reason:
-          getString(finalEvaluation.reason) ??
-          getString(getBattle(finalEvaluation)?.battle_reason) ??
-          "Hidden automatically because evaluator selected a stronger replacement card.",
-        moderator_decision: "replaced_by_better_card",
-      });
-
-      if (!replacementResult.ok) {
-        return NextResponse.json(
-          {
-            error:
-              replacementResult.error ??
-              "New card was saved, but failed to hide replaced card",
-            saved_ids: saveResults,
-            replacement_needed: replacementNeeded,
-            replacement_target_id: replacementTargetId,
-            replacement_result: replacementResult,
-            canonical_ref: normalizedReference.canonical_ref,
-            book_key: normalizedReference.book_key,
-            editor_provider: editorProvider,
-            editor_model: getModelName(editorProvider),
-            source_title: sourceTitle,
-            source_type: sourceType,
-            source_lens: sourceLens,
-            first_evaluation: firstEvaluation,
-            rewritten_card: rewrittenCard,
-            final_card: finalCard,
-            translated_cards: translationResult.cards,
-            final_evaluation: finalEvaluation,
-          },
-          { status: 500 },
-        );
-      }
     }
 
     const originSaved =
@@ -1702,14 +1243,6 @@ export async function POST(req: Request) {
       book_key: normalizedReference.book_key,
       editor_provider: editorProvider,
       editor_model: getModelName(editorProvider),
-      source_title: sourceTitle,
-      source_type: sourceType,
-      source_lens: sourceLens,
-      json_repaired: finalEvaluationJsonRepaired || rewriteJsonRepaired,
-      json_parse_error: finalEvaluationJsonParseError ?? rewriteJsonParseError,
-      replacement_needed: replacementNeeded,
-      replacement_target_id: replacementTargetId,
-      replacement_result: replacementResult,
       first_evaluation: firstEvaluation,
       rewritten_card: rewrittenCard,
       final_card: finalCard,
