@@ -91,6 +91,7 @@ function isSafeCanonicalRef(value: string | null | undefined): value is string {
   if (!value) return false;
   if (hasCyrillic(value)) return false;
   if (value.includes(":")) return false;
+  if (!/[a-z]/.test(value)) return false;
 
   return /^[a-z0-9]+(?:-[a-z0-9]+)*-\d+(?:-\d+){0,2}$/.test(value);
 }
@@ -99,6 +100,7 @@ function isSafePassageId(value: string | null | undefined): value is string {
   if (!value) return false;
   if (hasCyrillic(value)) return false;
   if (value.includes(":")) return false;
+  if (!/[a-z]/.test(value)) return false;
 
   return /^[a-z0-9]+(?:_[a-z0-9]+)*_\d+(?:_\d+){0,2}$/.test(value);
 }
