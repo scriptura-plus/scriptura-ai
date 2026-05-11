@@ -1,38 +1,85 @@
 import { runAI } from "@/lib/ai/runAI";
 import type { Provider } from "@/lib/ai/providers";
 import {
+  classifySignal,
+  type IntakeClassification,
+  type IntakeStatus,
+} from "../intake/classifySignal";
+import {
   createAngleFingerprint,
   createDeterministicId,
 } from "../fingerprint";
-import { buildSameAngleJudgePrompt } from "../prompts";
 import type {
   AngleFingerprint,
   DiscoverySignal,
   ExistingCoverageCard,
-  ModeratorQueueItem,
   RiskFlag,
-  SameAngleVerdict,
-  VerifierVerdict,
 } from "../types";
 
 type JsonRecord = Record<string, unknown>;
 
 type DetectorOutputStatus =
+  | "not_run"
   | "detector_failed"
   | "declared_no_signals"
   | "signals_parsed"
   | "unparseable_text";
+
+type IntakeTier = "A_routine" | "B_conflict" | "C_risk_escalation";
 
 type SignalFlow = {
   detector_output_status: DetectorOutputStatus;
   detector_declared_no_signals: boolean;
   parsed_signal_count: number;
   queue_item_count: number;
-  discarded_count: number;
-  rewrite_count: number;
-  approved_count: number;
-  all_parsed_signals_discarded: boolean;
+
+  keep_raw_count: number;
+  keep_cautious_count: number;
+  keep_needs_evidence_count: number;
+  keep_possible_duplicate_count: number;
+  keep_surface_hypothesis_count: number;
+  discard_pretty_empty_count: number;
+  discard_clear_fail_count: number;
+
+  stored_signal_count: number;
+  discarded_signal_count: number;
+
   no_signals_reason: string | null;
+  notes: string[];
+};
+
+type ScopeDecision = {
+  passage_id: string;
+  included_verses: string[];
+  authorized_scope: string;
+  excluded_context: string;
+  rationale: string;
+  detector_may_use: string[];
+  detector_may_not_use: string[];
+};
+
+type InputContextSnapshot = {
+  reference: string;
+  canonical_ref: string;
+  passage_id: string;
+  lang: "ru";
+  surface_translation: "rstj_yahweh";
+  pipeline_language_mode: "russian_first_mvp";
+  experiment_id: "real_text_only_rule_based_intake_v0";
+  genre: string | null;
+  verse_text_ru: string;
+  passage_text_ru: string;
+  existing_cards_snapshot: {
+    existing_cards_count: number;
+    nearest_existing_cards: ExistingCoverageCard[];
+    note: string;
+  };
+  research_lake_snapshot: {
+    used_by_detector: false;
+    available: null;
+    source_count: null;
+    source_types: [];
+  };
 };
 
 type TextDetectorSignalSeed = {
@@ -49,64 +96,106 @@ type TextDetectorSignalSeed = {
 
 export type RealVerseDiagnosticItem = {
   signal_id: string;
+  signal_index: number;
   reader_surprise_ru: string | null;
   core_observation: string;
-  existing_cards_count: number;
-  nearest_existing_cards: ExistingCoverageCard[];
-  hash_duplicate_card: ExistingCoverageCard | null;
-  judge_raw_response: string | null;
-  verifier_raw_response: string | null;
-  normalized_same_angle_verdict: SameAngleVerdict;
-  normalized_verifier_verdict: VerifierVerdict;
+  anchor_text: string | null;
+  evidence_level: DiscoverySignal["evidence_level"];
+  risk_flags: string[];
+  intake_classification: IntakeClassification;
+};
+
+export type RealVerseIntakeQueueItem = {
+  queue_item_id: string;
+  decision_type: "signal_intake_classification";
+  tier: IntakeTier;
+
+  signal: DiscoverySignal & {
+    intake_classification: IntakeClassification;
+  };
+
+  card_draft: null;
+
+  context: {
+    verse_with_anchor_highlighted: string;
+    nearest_existing_cards: ExistingCoverageCard[];
+    fingerprint_diff: null;
+    existing_language_versions: null;
+  };
+
+  verdicts: {
+    same_angle: {
+      verdict: "not_run";
+      judge_confidence: "not_applicable";
+      overlap_explanation: string | null;
+      compared_against: string[];
+      differentiation_required: string | null;
+    };
+    verifier: {
+      overall: "not_run";
+      pretty_but_empty: boolean;
+      rejection_reason: string | null;
+      patch_instruction: string | null;
+    };
+    intake_classification: IntakeClassification;
+  };
+
+  suggested_action: IntakeStatus;
+  suggested_action_confidence: "high" | "medium" | "low";
+
+  available_actions: Array<
+    | "keep_raw"
+    | "keep_cautious"
+    | "keep_needs_evidence"
+    | "keep_possible_duplicate"
+    | "keep_surface_hypothesis"
+    | "discard_pretty_empty"
+    | "discard_clear_fail"
+    | "send_to_promotion_review"
+  >;
+
+  moderator_decision: null;
+  moderator_reasoning: null;
+  moderator_decision_time_seconds: null;
+
+  created_at: string;
+  priority: number;
 };
 
 export type RealVerseTextOnlyResult = {
   ok: boolean;
   mode: "real_text_only";
+
   reference: string;
   canonical_ref: string;
   passage_id: string;
 
   lang: "ru";
-  surface_lang: "ru";
   surface_translation: "rstj_yahweh";
-  pipeline_language_mode: "russian_first_text_only_v1";
-  experiment_id: "real_studio_10_runs_text_only_v1";
+  pipeline_language_mode: "russian_first_mvp";
+  experiment_id: "real_text_only_rule_based_intake_v0";
 
   detector_provider: Provider;
-  judge_provider: Provider;
-  verifier_provider: Provider;
+  judge_provider: "not_used_rule_based_intake_v0";
+  verifier_provider: "not_used_rule_based_intake_v0";
 
   detector_raw_text: string | null;
   detector_output_status: DetectorOutputStatus;
   detector_declared_no_signals: boolean;
   detector_signal_count: number;
+  queue_item_count: number;
 
   signal_flow: SignalFlow;
-  scope_decision: Record<string, unknown>;
-  input_context_snapshot: Record<string, unknown>;
+  scope_decision: ScopeDecision;
+  input_context_snapshot: InputContextSnapshot;
 
-  queue: ModeratorQueueItem[];
+  queue: RealVerseIntakeQueueItem[];
   diagnostics: RealVerseDiagnosticItem[];
 
-  action_counts: {
-    approve_reserve: number;
-    approve_active: number;
-    rewrite: number;
-    replace_existing: number;
-    discard: number;
-    send_back: number;
-    mark_for_external_research: number;
-  };
-
-  tier_counts: {
-    A_routine: number;
-    B_conflict: number;
-    C_risk_escalation: number;
-  };
+  action_counts: Record<string, number>;
+  tier_counts: Record<IntakeTier, number>;
 
   errors: string[];
-  created_at: string;
 };
 
 function isRecord(value: unknown): value is JsonRecord {
@@ -125,60 +214,12 @@ function toStringArray(value: unknown): string[] {
     .filter(Boolean);
 }
 
-function stringifyForPrompt(value: unknown): string {
-  return JSON.stringify(value, null, 2);
-}
-
 function stripCodeFence(text: string): string {
   return text
     .trim()
     .replace(/^```(?:json|text)?\s*/i, "")
     .replace(/\s*```$/i, "")
     .trim();
-}
-
-function extractFirstJson(text: string): unknown | null {
-  const stripped = stripCodeFence(text);
-
-  try {
-    return JSON.parse(stripped);
-  } catch {
-    // Continue to best-effort extraction.
-  }
-
-  const arrayStart = stripped.indexOf("[");
-  const arrayEnd = stripped.lastIndexOf("]");
-
-  if (arrayStart >= 0 && arrayEnd > arrayStart) {
-    try {
-      return JSON.parse(stripped.slice(arrayStart, arrayEnd + 1));
-    } catch {
-      // Continue to object extraction.
-    }
-  }
-
-  const objectStart = stripped.indexOf("{");
-  const objectEnd = stripped.lastIndexOf("}");
-
-  if (objectStart >= 0 && objectEnd > objectStart) {
-    try {
-      return JSON.parse(stripped.slice(objectStart, objectEnd + 1));
-    } catch {
-      // Ignore.
-    }
-  }
-
-  return null;
-}
-
-function parseJsonObject(text: string): JsonRecord | null {
-  const parsed = extractFirstJson(text);
-  return isRecord(parsed) ? parsed : null;
-}
-
-function parseJsonArray(text: string): unknown[] | null {
-  const parsed = extractFirstJson(text);
-  return Array.isArray(parsed) ? parsed : null;
 }
 
 function getNestedRecord(
@@ -191,7 +232,7 @@ function getNestedRecord(
 }
 
 function normalizeRiskFlags(value: unknown): RiskFlag[] {
-  const allowed = new Set<RiskFlag>([
+  const allowed = new Set([
     "lexical_overclaim",
     "intertext_speculative",
     "historical_overclaim",
@@ -199,63 +240,89 @@ function normalizeRiskFlags(value: unknown): RiskFlag[] {
     "meaningful_absence_unsafe",
     "self_generated_echo",
     "pretty_but_empty",
+
+    // Forward-compatible evidence-demand flags. Existing RiskFlag may not list
+    // all of these yet, so the final return is intentionally cast.
+    "requires_lexical_evidence",
+    "requires_historical_evidence",
+    "requires_intertextual_evidence",
+    "requires_theological_evidence",
+    "requires_syntactic_evidence",
+    "requires_original_check",
+    "translation_surface_artifact_suspected",
+    "russian_synodal_archaism_suspected",
   ]);
 
-  if (Array.isArray(value)) {
-    return value
-      .map((item) => (typeof item === "string" ? item.trim() : ""))
-      .filter((item): item is RiskFlag => allowed.has(item as RiskFlag));
+  const rawItems = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? value.split(/[,;|]+/)
+      : [];
+
+  const flags = new Set<string>();
+
+  for (const item of rawItems) {
+    const raw = typeof item === "string" ? item.trim() : "";
+    const lower = raw.toLowerCase();
+
+    if (
+      !lower ||
+      lower === "none" ||
+      lower === "no" ||
+      lower === "нет" ||
+      lower === "без" ||
+      lower === "-"
+    ) {
+      continue;
+    }
+
+    if (allowed.has(lower)) {
+      flags.add(lower);
+      continue;
+    }
+
+    if (lower.includes("pretty") || lower.includes("пуст")) {
+      flags.add("pretty_but_empty");
+    }
+
+    if (lower.includes("lexical") || lower.includes("лекс")) {
+      flags.add("lexical_overclaim");
+    }
+
+    if (lower.includes("intertext") || lower.includes("межтекст")) {
+      flags.add("intertext_speculative");
+    }
+
+    if (lower.includes("historical") || lower.includes("истор")) {
+      flags.add("historical_overclaim");
+    }
+
+    if (lower.includes("theological") || lower.includes("богослов")) {
+      flags.add("theological_overreach");
+    }
+
+    if (
+      lower.includes("absence") ||
+      lower.includes("meaningful_absence") ||
+      lower.includes("отсутств")
+    ) {
+      flags.add("meaningful_absence_unsafe");
+    }
+
+    if (lower.includes("original") || lower.includes("оригинал")) {
+      flags.add("requires_original_check");
+    }
+
+    if (lower.includes("translation") || lower.includes("перевод")) {
+      flags.add("translation_surface_artifact_suspected");
+    }
+
+    if (lower.includes("archaic") || lower.includes("синод") || lower.includes("арха")) {
+      flags.add("russian_synodal_archaism_suspected");
+    }
   }
 
-  if (typeof value !== "string") return [];
-
-  const lower = value.toLowerCase();
-
-  if (
-    lower === "none" ||
-    lower === "no" ||
-    lower === "нет" ||
-    lower === "без" ||
-    lower === "-"
-  ) {
-    return [];
-  }
-
-  const flags = new Set<RiskFlag>();
-
-  if (lower.includes("lexical_overclaim") || lower.includes("лекс")) {
-    flags.add("lexical_overclaim");
-  }
-
-  if (lower.includes("intertext") || lower.includes("межтекст")) {
-    flags.add("intertext_speculative");
-  }
-
-  if (lower.includes("historical") || lower.includes("истор")) {
-    flags.add("historical_overclaim");
-  }
-
-  if (lower.includes("theological") || lower.includes("богослов")) {
-    flags.add("theological_overreach");
-  }
-
-  if (
-    lower.includes("meaningful_absence") ||
-    lower.includes("absence") ||
-    lower.includes("отсутств")
-  ) {
-    flags.add("meaningful_absence_unsafe");
-  }
-
-  if (lower.includes("self_generated") || lower.includes("echo")) {
-    flags.add("self_generated_echo");
-  }
-
-  if (lower.includes("pretty_but_empty") || lower.includes("пуст")) {
-    flags.add("pretty_but_empty");
-  }
-
-  return Array.from(flags);
+  return Array.from(flags) as RiskFlag[];
 }
 
 function normalizeEvidenceLevel(
@@ -507,7 +574,7 @@ function parseLabeledTextBlock(block: string): Record<string, string> {
 
     if (!line) continue;
 
-    const match = line.match(/^([^:：]{2,40})[:：]\s*(.*)$/);
+    const match = line.match(/^([^:：]{2,50})[:：]\s*(.*)$/);
 
     if (match) {
       const rawLabel = match[1].trim().toLowerCase();
@@ -607,163 +674,6 @@ function parseTextDetectorSignals(text: string): TextDetectorSignalSeed[] {
   return seeds;
 }
 
-function normalizeDetectorSignal(
-  value: unknown,
-  index: number,
-  runId: string,
-  context: {
-    reference: string;
-    canonicalRef: string;
-    passageId: string;
-  },
-): DiscoverySignal | null {
-  if (!isRecord(value)) return null;
-
-  const textualAnchor = getNestedRecord(value, "textual_anchor");
-  const canonical = getNestedRecord(textualAnchor, "canonical");
-  const surfaces = getNestedRecord(textualAnchor, "surfaces");
-  const surfaceRu = getNestedRecord(surfaces, "ru");
-
-  const angleFingerprint = getNestedRecord(value, "angle_fingerprint");
-
-  const canonicalQuote =
-    toString(canonical?.quote) ||
-    toString(canonical?.text) ||
-    toString(surfaceRu?.quote);
-
-  const surfaceQuote = toString(surfaceRu?.quote) || canonicalQuote;
-
-  const surfaceWords = toStringArray(surfaceRu?.specific_words);
-  const canonicalWords = toStringArray(canonical?.specific_words);
-  const specificWords = surfaceWords.length > 0 ? surfaceWords : canonicalWords;
-
-  const coreObservation = toString(value.core_observation);
-
-  const readerSurprise = getNestedRecord(value, "reader_surprise_sentence");
-  const readerSurpriseRu =
-    toString(readerSurprise?.ru) || toString(value.reader_surprise_sentence);
-
-  const phenomenon = toString(angleFingerprint?.phenomenon);
-  const interpretiveMove = toString(angleFingerprint?.interpretive_move);
-  const angleFamily = normalizeAngleFamily(angleFingerprint?.angle_family);
-
-  if (
-    !canonicalQuote ||
-    !surfaceQuote ||
-    !coreObservation ||
-    !readerSurpriseRu ||
-    !phenomenon ||
-    !interpretiveMove
-  ) {
-    return null;
-  }
-
-  const fingerprint = createAngleFingerprint({
-    anchor_canonical: {
-      lang: "ru",
-      text: canonicalQuote,
-      canonical_pending: true,
-    },
-    phenomenon,
-    phenomenon_status:
-      angleFingerprint?.phenomenon_status === "approved_vocab"
-        ? "approved_vocab"
-        : "proposed_new",
-    interpretive_move: interpretiveMove,
-    interpretive_move_status:
-      angleFingerprint?.interpretive_move_status === "approved_vocab"
-        ? "approved_vocab"
-        : "proposed_new",
-    angle_family: angleFamily,
-  });
-
-  const signalSeed = {
-    reference: context.reference,
-    canonicalRef: context.canonicalRef,
-    passageId: context.passageId,
-    index,
-    runId,
-    fingerprint_hash: fingerprint.hash,
-    coreObservation,
-    readerSurpriseRu,
-  };
-
-  const rawSignalId = toString(value.signal_id);
-
-  return {
-    signal_id:
-      rawSignalId && rawSignalId !== "temporary_detector_id_ok"
-        ? rawSignalId
-        : createDeterministicId("sig", signalSeed),
-
-    reference: context.reference,
-    canonical_ref: context.canonicalRef,
-    passage_id: context.passageId,
-
-    primary_lang: "ru",
-
-    textual_anchor: {
-      canonical: {
-        lang: "ru",
-        quote: canonicalQuote,
-        specific_words: specificWords,
-        canonical_pending: true,
-      },
-      surfaces: {
-        ru: {
-          quote: surfaceQuote,
-          specific_words: specificWords,
-          translation_source: "RSTJ 1876 / Synodal Yahweh Edition",
-        },
-        en: null,
-        es: null,
-      },
-    },
-
-    core_observation: coreObservation,
-
-    reader_surprise_sentence: {
-      ru: readerSurpriseRu,
-      en: null,
-      es: null,
-    },
-
-    angle_fingerprint: fingerprint,
-
-    source_basis: {
-      primary: "verse_text_only",
-      has_self_generated_context: false,
-    },
-
-    evidence_level: normalizeEvidenceLevel(value.evidence_level),
-    risk_flags: normalizeRiskFlags(value.risk_flags),
-
-    relation_to_existing: null,
-    verifier_verdict: null,
-    suggested_next_action: null,
-
-    detector_id: "real_text_only_argument_structure_mapping_v1",
-    run_id: runId,
-    created_at: new Date().toISOString(),
-
-    metadata: {
-      normalized_from_detector: true,
-      detector_index: index,
-      detector_format: "json",
-      experiment_id: "real_studio_10_runs_text_only_v1",
-      pipeline_language_mode: "russian_first_text_only_v1",
-      language_scope: "surface_only",
-      cross_lingual_status: "not_assessed",
-      original_text_consulted: false,
-      surface_translation: "rstj_yahweh",
-      fingerprint_version: 1,
-      anchor_canonical_strategy: "surface_word",
-      canonical_source_lang: "ru",
-      canonical_pending: true,
-    },
-  };
-}
-
 function createSignalFromTextSeed(args: {
   seed: TextDetectorSignalSeed;
   index: number;
@@ -847,7 +757,7 @@ function createSignalFromTextSeed(args: {
     verifier_verdict: null,
     suggested_next_action: null,
 
-    detector_id: "real_text_only_argument_structure_mapping_v1",
+    detector_id: "text_only_detector_rule_based_intake_v0",
     run_id: args.runId,
     created_at: new Date().toISOString(),
 
@@ -855,16 +765,10 @@ function createSignalFromTextSeed(args: {
       normalized_from_detector: true,
       detector_index: args.index,
       detector_format: "text_first",
-      experiment_id: "real_studio_10_runs_text_only_v1",
-      pipeline_language_mode: "russian_first_text_only_v1",
       language_scope: "surface_only",
       cross_lingual_status: "not_assessed",
-      original_text_consulted: false,
       surface_translation: "rstj_yahweh",
-      fingerprint_version: 1,
-      anchor_canonical_strategy: "surface_word",
-      canonical_source_lang: "ru",
-      canonical_pending: true,
+      fingerprint_strategy: "russian_surface_v1",
     },
   };
 }
@@ -878,16 +782,6 @@ function parseDetectorOutputToSignals(args: {
     passageId: string;
   };
 }): DiscoverySignal[] {
-  const parsedArray = parseJsonArray(args.detectorRawText);
-
-  if (parsedArray) {
-    return parsedArray
-      .map((item, index) =>
-        normalizeDetectorSignal(item, index, args.runId, args.context),
-      )
-      .filter((item): item is DiscoverySignal => item !== null);
-  }
-
   const seeds = parseTextDetectorSignals(args.detectorRawText);
 
   return seeds.map((seed, index) =>
@@ -900,234 +794,149 @@ function parseDetectorOutputToSignals(args: {
   );
 }
 
-function findHashDuplicate(
-  signal: DiscoverySignal,
-  existingCards: ExistingCoverageCard[],
-): ExistingCoverageCard | null {
+function getSignalAnchorText(signal: DiscoverySignal): string | null {
+  const textualAnchor = getNestedRecord(signal as unknown as JsonRecord, "textual_anchor");
+  const canonical = getNestedRecord(textualAnchor, "canonical");
+  const surfaces = getNestedRecord(textualAnchor, "surfaces");
+  const ru = getNestedRecord(surfaces, "ru");
+
   return (
-    existingCards.find(
-      (card) => card.fingerprint_hash === signal.angle_fingerprint.hash,
-    ) ?? null
+    toString(canonical?.quote) ||
+    toString(canonical?.text) ||
+    toString(ru?.quote) ||
+    null
   );
 }
 
-function selectNearestExistingCards(
-  signal: DiscoverySignal,
-  existingCards: ExistingCoverageCard[],
-  limit = 5,
-): ExistingCoverageCard[] {
-  const ruSurface = signal.textual_anchor.surfaces.ru;
-  const anchorCandidates = [
-    ruSurface?.quote,
-    ...(ruSurface?.specific_words ?? []),
-    signal.angle_fingerprint.anchor_canonical.text,
-  ];
-
-  const anchorWords = new Set(
-    anchorCandidates
-      .filter(Boolean)
-      .map((item) => String(item).toLowerCase()),
+function getReaderSurpriseRu(signal: DiscoverySignal): string | null {
+  const readerSurprise = getNestedRecord(
+    signal as unknown as JsonRecord,
+    "reader_surprise_sentence",
   );
 
-  return existingCards
-    .map((card) => {
-      let score = 0;
-
-      const cardAnchor = `${card.anchor_surface ?? ""} ${
-        card.anchor_canonical ?? ""
-      }`.toLowerCase();
-
-      for (const word of anchorWords) {
-        if (word && cardAnchor.includes(word)) score += 3;
-      }
-
-      if (card.angle_family === signal.angle_fingerprint.angle_family) {
-        score += 2;
-      }
-
-      if (
-        card.fingerprint_components?.phenomenon ===
-        signal.angle_fingerprint.phenomenon
-      ) {
-        score += 2;
-      }
-
-      if (
-        card.fingerprint_components?.interpretive_move ===
-        signal.angle_fingerprint.interpretive_move
-      ) {
-        score += 2;
-      }
-
-      if (card.status === "featured") score += 1;
-
-      return { card, score };
-    })
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit)
-    .map((item) => item.card);
+  return (
+    toString(readerSurprise?.ru) ||
+    toString((signal as unknown as JsonRecord).reader_surprise_sentence) ||
+    null
+  );
 }
 
-function normalizeSameAngleVerdict(
-  value: JsonRecord | null,
-  signal: DiscoverySignal,
-  fallbackVerdict: SameAngleVerdict["verdict"],
-  comparedAgainst: string[],
-): SameAngleVerdict {
-  const verdict = toString(value?.verdict);
-
-  const allowed = new Set<SameAngleVerdict["verdict"]>([
-    "same_angle",
-    "partial_overlap",
-    "new_angle",
-    "stronger_version",
-    "pretty_but_empty",
-    "risky_overclaim",
-  ]);
-
-  const confidence = toString(value?.judge_confidence);
-
-  return {
-    signal_id: signal.signal_id,
-    verdict: allowed.has(verdict as SameAngleVerdict["verdict"])
-      ? (verdict as SameAngleVerdict["verdict"])
-      : fallbackVerdict,
-    compared_against:
-      toStringArray(value?.compared_against).length > 0
-        ? toStringArray(value?.compared_against)
-        : comparedAgainst,
-    overlap_explanation: toString(value?.overlap_explanation) || null,
-    differentiation_required: toString(value?.differentiation_required) || null,
-    judge_confidence:
-      confidence === "high" || confidence === "medium" || confidence === "low"
-        ? confidence
-        : "medium",
-  };
+function getRiskFlags(signal: DiscoverySignal): string[] {
+  return Array.isArray(signal.risk_flags)
+    ? signal.risk_flags.map((item) => String(item))
+    : [];
 }
 
-function normalizeVerifierVerdict(
-  value: JsonRecord | null,
-  signal: DiscoverySignal,
-): VerifierVerdict {
-  const risk = isRecord(value?.risk_assessment) ? value.risk_assessment : {};
-
-  const overall = toString(value?.overall);
-
-  return {
-    signal_id: signal.signal_id,
-    discovery_present: value?.discovery_present === true,
-    anchor_precise: value?.anchor_precise === true,
-    evidence_supports_claim: value?.evidence_supports_claim === true,
-    consistency_check: value?.consistency_check === true,
-    risk_assessment: {
-      lexical_overclaim: risk.lexical_overclaim === true,
-      intertext_speculative: risk.intertext_speculative === true,
-      historical_overclaim: risk.historical_overclaim === true,
-      theological_overreach: risk.theological_overreach === true,
-      meaningful_absence_unsafe: risk.meaningful_absence_unsafe === true,
-      self_generated_echo: risk.self_generated_echo === true,
-    },
-    pretty_but_empty: value?.pretty_but_empty === true,
-    overall:
-      overall === "pass" || overall === "fail" || overall === "needs_patch"
-        ? overall
-        : "fail",
-    patch_instruction: toString(value?.patch_instruction) || null,
-    rejection_reason: toString(value?.rejection_reason) || null,
-  };
+function getDetectorOutputStatus(args: {
+  detectorRawText: string | null;
+  detectorFailed?: boolean;
+  signalCount: number;
+}): DetectorOutputStatus {
+  if (args.detectorFailed) return "detector_failed";
+  if (!args.detectorRawText) return "not_run";
+  if (detectorDeclaredNoSignals(args.detectorRawText)) {
+    return "declared_no_signals";
+  }
+  if (args.signalCount > 0) return "signals_parsed";
+  return "unparseable_text";
 }
 
-function createDeterministicVerifierVerdict(args: {
-  signal: DiscoverySignal;
-  kind: "lexical_overclaim" | "pretty_but_empty" | "hash_duplicate";
-}): VerifierVerdict {
-  if (args.kind === "lexical_overclaim") {
-    return {
-      signal_id: args.signal.signal_id,
-      discovery_present: true,
-      anchor_precise: true,
-      evidence_supports_claim: false,
-      consistency_check: true,
-      risk_assessment: {
-        lexical_overclaim: true,
-        intertext_speculative: false,
-        historical_overclaim: false,
-        theological_overreach: false,
-        meaningful_absence_unsafe: false,
-        self_generated_echo: false,
-      },
-      pretty_but_empty: false,
-      overall: "fail",
-      patch_instruction: null,
-      rejection_reason:
-        "Code decision: lexical overclaim risk was already present on the signal.",
-    };
+function inferIncludedVersesFromPassageId(passageId: string): string[] {
+  const match = passageId.match(/_(\d+)_(\d+)-(\d+)$/);
+  if (!match) return [];
+
+  const chapter = match[1];
+  const start = Number(match[2]);
+  const end = Number(match[3]);
+
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) {
+    return [];
   }
 
-  if (args.kind === "pretty_but_empty") {
-    return {
-      signal_id: args.signal.signal_id,
-      discovery_present: false,
-      anchor_precise: true,
-      evidence_supports_claim: false,
-      consistency_check: true,
-      risk_assessment: {
-        lexical_overclaim: false,
-        intertext_speculative: false,
-        historical_overclaim: false,
-        theological_overreach: false,
-        meaningful_absence_unsafe: false,
-        self_generated_echo: false,
-      },
-      pretty_but_empty: true,
-      overall: "fail",
-      patch_instruction: null,
-      rejection_reason:
-        "Code decision: signal was already classified as pretty-but-empty.",
-    };
+  const verses: string[] = [];
+
+  for (let verse = start; verse <= end; verse += 1) {
+    verses.push(`${chapter}:${verse}`);
   }
 
+  return verses;
+}
+
+function createScopeDecision(passageId: string): ScopeDecision {
   return {
-    signal_id: args.signal.signal_id,
-    discovery_present: true,
-    anchor_precise: true,
-    evidence_supports_claim: true,
-    consistency_check: true,
-    risk_assessment: {
-      lexical_overclaim: false,
-      intertext_speculative: false,
-      historical_overclaim: false,
-      theological_overreach: false,
-      meaningful_absence_unsafe: false,
-      self_generated_echo: false,
-    },
-    pretty_but_empty: false,
-    overall: "pass",
-    patch_instruction: null,
-    rejection_reason: null,
+    passage_id: passageId,
+    included_verses: inferIncludedVersesFromPassageId(passageId),
+    authorized_scope:
+      "Detector may use only the supplied Russian verse text and supplied passage text.",
+    excluded_context:
+      "Research Lake, existing cards, previous AI outputs, Source Packet, original-language packet, translation comparison packet, historical background, and cross-references are excluded from Detector input.",
+    rationale:
+      "Intake is intentionally cheap and generous. Text-only Detector extracts raw research signals; rule-based classifier labels status/risk; heavy reviewer is deferred to promotion/public decisions.",
+    detector_may_use: ["verse_text_ru", "passage_text_ru", "genre_scope_metadata"],
+    detector_may_not_use: [
+      "Research Lake",
+      "existing cards",
+      "prior AI outputs",
+      "Source Packet",
+      "original-language packet",
+      "translation comparison packet",
+      "historical background",
+      "cross-references outside supplied passage",
+    ],
   };
 }
 
-function hasAnyRisk(verdict: VerifierVerdict): boolean {
-  return Object.values(verdict.risk_assessment).some(Boolean);
+function createInputContextSnapshot(args: {
+  reference: string;
+  canonicalRef: string;
+  passageId: string;
+  verseTextRu: string;
+  passageTextRu: string;
+  genre?: string | null;
+  existingCards: ExistingCoverageCard[];
+}): InputContextSnapshot {
+  return {
+    reference: args.reference,
+    canonical_ref: args.canonicalRef,
+    passage_id: args.passageId,
+    lang: "ru",
+    surface_translation: "rstj_yahweh",
+    pipeline_language_mode: "russian_first_mvp",
+    experiment_id: "real_text_only_rule_based_intake_v0",
+    genre: args.genre ?? null,
+    verse_text_ru: args.verseTextRu,
+    passage_text_ru: args.passageTextRu,
+    existing_cards_snapshot: {
+      existing_cards_count: args.existingCards.length,
+      nearest_existing_cards: args.existingCards.slice(0, 20),
+      note:
+        "Detector did not use existing cards. Existing cards were used only by deterministic duplicate guard in rule-based intake classifier.",
+    },
+    research_lake_snapshot: {
+      used_by_detector: false,
+      available: null,
+      source_count: null,
+      source_types: [],
+    },
+  };
 }
 
-function getTier(args: {
-  sameAngleVerdict: SameAngleVerdict;
-  verifierVerdict: VerifierVerdict;
-  signal: DiscoverySignal;
-}): ModeratorQueueItem["tier"] {
+function getTierFromClassification(
+  classification: IntakeClassification,
+): IntakeTier {
   if (
-    args.signal.risk_flags.length > 0 ||
-    hasAnyRisk(args.verifierVerdict) ||
-    args.sameAngleVerdict.verdict === "risky_overclaim"
+    classification.intake_status === "discard_pretty_empty" ||
+    classification.intake_status === "discard_clear_fail" ||
+    classification.intake_status === "keep_needs_evidence" ||
+    classification.intake_status === "keep_surface_hypothesis" ||
+    classification.reviewer_required === "full_before_public"
   ) {
     return "C_risk_escalation";
   }
 
   if (
-    args.sameAngleVerdict.verdict === "partial_overlap" ||
-    args.sameAngleVerdict.verdict === "stronger_version"
+    classification.intake_status === "keep_possible_duplicate" ||
+    classification.possible_duplicate
   ) {
     return "B_conflict";
   }
@@ -1135,445 +944,200 @@ function getTier(args: {
   return "A_routine";
 }
 
-function getSuggestedAction(args: {
-  sameAngleVerdict: SameAngleVerdict;
-  verifierVerdict: VerifierVerdict;
-  signal: DiscoverySignal;
-}): ModeratorQueueItem["suggested_action"] {
+function getPriorityFromTier(tier: IntakeTier): number {
+  if (tier === "C_risk_escalation") return 5;
+  if (tier === "B_conflict") return 4;
+  return 3;
+}
+
+function getSuggestedActionConfidence(
+  classification: IntakeClassification,
+): "high" | "medium" | "low" {
   if (
-    args.verifierVerdict.pretty_but_empty ||
-    args.sameAngleVerdict.verdict === "pretty_but_empty"
+    classification.intake_status === "discard_pretty_empty" ||
+    classification.duplicate_guard.duplicate_confidence === "exact"
   ) {
-    return "discard";
+    return "high";
   }
 
-  if (args.sameAngleVerdict.verdict === "same_angle") {
-    return "discard";
+  if (classification.intake_status === "keep_raw") return "high";
+  if (classification.intake_status === "discard_clear_fail") return "medium";
+
+  return "medium";
+}
+
+function getAvailableActions(
+  classification: IntakeClassification,
+): RealVerseIntakeQueueItem["available_actions"] {
+  if (
+    classification.intake_status === "discard_pretty_empty" ||
+    classification.intake_status === "discard_clear_fail"
+  ) {
+    return [
+      "discard_pretty_empty",
+      "discard_clear_fail",
+      "keep_cautious",
+      "send_to_promotion_review",
+    ];
   }
 
-  if (args.verifierVerdict.overall === "fail") {
-    return "discard";
-  }
-
-  if (args.verifierVerdict.overall === "needs_patch") {
-    return "rewrite";
-  }
-
-  if (hasAnyRisk(args.verifierVerdict)) {
-    return "rewrite";
-  }
-
-  if (args.sameAngleVerdict.verdict === "risky_overclaim") {
-    return "rewrite";
-  }
-
-  if (args.sameAngleVerdict.verdict === "stronger_version") {
-    return "replace_existing";
-  }
-
-  if (args.sameAngleVerdict.verdict === "partial_overlap") {
-    return "rewrite";
+  if (classification.intake_status === "keep_possible_duplicate") {
+    return [
+      "keep_possible_duplicate",
+      "keep_cautious",
+      "keep_raw",
+      "send_to_promotion_review",
+    ];
   }
 
   if (
-    args.sameAngleVerdict.verdict === "new_angle" &&
-    args.verifierVerdict.overall === "pass" &&
-    (args.signal.evidence_level === "strong" ||
-      args.signal.evidence_level === "plausible")
+    classification.intake_status === "keep_needs_evidence" ||
+    classification.intake_status === "keep_surface_hypothesis"
   ) {
-    return "approve_reserve";
+    return [
+      classification.intake_status,
+      "keep_cautious",
+      "send_to_promotion_review",
+    ];
   }
 
-  return "discard";
+  return [
+    "keep_raw",
+    "keep_cautious",
+    "keep_needs_evidence",
+    "keep_possible_duplicate",
+    "keep_surface_hypothesis",
+    "send_to_promotion_review",
+  ];
 }
 
 function createQueueItem(args: {
   signal: DiscoverySignal;
-  nearestExistingCards: ExistingCoverageCard[];
-  sameAngleVerdict: SameAngleVerdict;
-  verifierVerdict: VerifierVerdict;
+  classification: IntakeClassification;
   verseTextRu: string;
-}): ModeratorQueueItem {
-  const tier = getTier({
-    sameAngleVerdict: args.sameAngleVerdict,
-    verifierVerdict: args.verifierVerdict,
-    signal: args.signal,
-  });
-
-  const suggestedAction = getSuggestedAction({
-    sameAngleVerdict: args.sameAngleVerdict,
-    verifierVerdict: args.verifierVerdict,
-    signal: args.signal,
-  });
-
-  const availableActions: ModeratorQueueItem["available_actions"] =
-    tier === "A_routine"
-      ? ["approve_active", "approve_reserve", "send_back", "discard"]
-      : tier === "B_conflict"
-        ? ["approve_reserve", "replace_existing", "rewrite", "discard"]
-        : ["rewrite", "discard", "mark_for_external_research"];
+  existingCards: ExistingCoverageCard[];
+}): RealVerseIntakeQueueItem {
+  const tier = getTierFromClassification(args.classification);
+  const signalWithClassification = {
+    ...args.signal,
+    suggested_next_action: args.classification.intake_status,
+    intake_classification: args.classification,
+    metadata: {
+      ...(isRecord((args.signal as unknown as JsonRecord).metadata)
+        ? ((args.signal as unknown as JsonRecord).metadata as JsonRecord)
+        : {}),
+      intake_classification: args.classification,
+    },
+  } as DiscoverySignal & { intake_classification: IntakeClassification };
 
   return {
     queue_item_id: createDeterministicId("q", {
       signal_id: args.signal.signal_id,
-      same_angle: args.sameAngleVerdict.verdict,
-      verifier: args.verifierVerdict.overall,
+      intake_status: args.classification.intake_status,
+      duplicate_confidence:
+        args.classification.duplicate_guard.duplicate_confidence,
     }),
-    decision_type: "angle_approval",
+    decision_type: "signal_intake_classification",
     tier,
 
-    signal: {
-      ...args.signal,
-      relation_to_existing: args.sameAngleVerdict,
-      verifier_verdict: args.verifierVerdict,
-      suggested_next_action: suggestedAction,
-    },
+    signal: signalWithClassification,
 
     card_draft: null,
 
     context: {
       verse_with_anchor_highlighted: args.verseTextRu,
-      nearest_existing_cards: args.nearestExistingCards,
+      nearest_existing_cards: args.existingCards.slice(0, 5),
       fingerprint_diff: null,
       existing_language_versions: null,
     },
 
     verdicts: {
-      same_angle: args.sameAngleVerdict,
-      verifier: args.verifierVerdict,
+      same_angle: {
+        verdict: "not_run",
+        judge_confidence: "not_applicable",
+        overlap_explanation:
+          "Heavy Same-Angle Judge was not run at intake. Duplicate detection used rule-based duplicate guard only.",
+        compared_against: args.classification.duplicate_guard.matched_card_ids,
+        differentiation_required: args.classification.possible_duplicate
+          ? "Review possible duplicate before crafting or promotion."
+          : null,
+      },
+      verifier: {
+        overall: "not_run",
+        pretty_but_empty:
+          args.classification.intake_status === "discard_pretty_empty",
+        rejection_reason:
+          args.classification.intake_status === "discard_clear_fail" ||
+          args.classification.intake_status === "discard_pretty_empty"
+            ? args.classification.reason
+            : null,
+        patch_instruction:
+          args.classification.intake_status === "keep_cautious"
+            ? "Use cautious wording if this signal becomes a candidate."
+            : null,
+      },
+      intake_classification: args.classification,
     },
 
-    suggested_action: suggestedAction,
-    suggested_action_confidence:
-      args.verifierVerdict.overall === "pass" &&
-      args.sameAngleVerdict.judge_confidence === "high"
-        ? "high"
-        : "medium",
+    suggested_action: args.classification.intake_status,
+    suggested_action_confidence: getSuggestedActionConfidence(args.classification),
 
-    available_actions: availableActions,
+    available_actions: getAvailableActions(args.classification),
 
     moderator_decision: null,
     moderator_reasoning: null,
     moderator_decision_time_seconds: null,
 
     created_at: new Date().toISOString(),
-    priority: tier === "C_risk_escalation" ? 5 : tier === "B_conflict" ? 4 : 3,
+    priority: getPriorityFromTier(tier),
   };
 }
 
-function buildScopedVerifierPrompt(args: {
-  signal: DiscoverySignal;
-  sameAngleVerdict: SameAngleVerdict;
-  verseTextRu: string;
-  passageTextRu: string;
-}): string {
-  return [
-    "You are the Verifier for Scriptura AI Discovery Refinery v1.",
-    "",
-    "YOUR TASK:",
-    "Independently evaluate a DiscoverySignal across seven dimensions.",
-    "You evaluate AFTER Same-Angle Judge has assigned a verdict.",
-    "",
-    "AUTHORIZED TEXTUAL SCOPE:",
-    "Use only the supplied verse text and supplied passage text below.",
-    "Do not use other verses from the chapter, cross-references, later/earlier events, historical background, Greek/Hebrew claims, or theology unless supplied explicitly below.",
-    "",
-    "SUPPLIED VERSE TEXT RU:",
-    args.verseTextRu,
-    "",
-    "SUPPLIED PASSAGE TEXT RU:",
-    args.passageTextRu,
-    "",
-    "INPUT — DISCOVERY SIGNAL:",
-    stringifyForPrompt(args.signal),
-    "",
-    "INPUT — SAME-ANGLE VERDICT:",
-    stringifyForPrompt(args.sameAngleVerdict),
-    "",
-    "EVALUATION DIMENSIONS:",
-    "",
-    "1. discovery_present:",
-    "Does core_observation describe a specific, observable textual phenomenon?",
-    "Or is it paraphrase, summary, devotional impression, or general explanation?",
-    "",
-    "2. anchor_precise:",
-    "Is textual_anchor.surfaces.ru a citable phrase from the supplied verse/passage?",
-    "Is it specific enough that one could underline it?",
-    "",
-    "3. evidence_supports_claim:",
-    "Does the supplied text support core_observation?",
-    "Or does the claim require external knowledge, original-language work, theological inference, or speculation?",
-    "",
-    "4. consistency_check:",
-    "Is reader_surprise_sentence.ru a faithful reformulation of core_observation?",
-    "Or does it introduce a new claim, sentiment, or angle?",
-    "",
-    "5. risk_assessment:",
-    "- lexical_overclaim: claims about word meanings beyond what the supplied text shows.",
-    "- intertext_speculative: pulls in other passages without explicit supplied evidence.",
-    "- historical_overclaim: assumes historical context not evidenced in supplied text.",
-    "- theological_overreach: makes doctrinal/theological claims beyond textual scope.",
-    "- meaningful_absence_unsafe: claims author intentionally omitted something without evidence.",
-    "- self_generated_echo: novelty appears to come from existing Scriptura output rather than the supplied text.",
-    "",
-    "6. pretty_but_empty:",
-    "This is a separate explicit flag.",
-    'Ask: "What specifically would a reader newly notice in the words of the supplied text?"',
-    "If the answer is vague, sentimental, cosmetic, or general, set true.",
-    "",
-    "7. overall:",
-    "pass | fail | needs_patch",
-    "",
-    "CRITICAL FAIL VS NEEDS_PATCH RULES:",
-    "- Use fail when there is no real observable textual mechanism.",
-    "- Use fail for unsupported Greek/Hebrew/original-language claims.",
-    "- Use fail for theological or lexical interpretation that cannot be grounded in the supplied text.",
-    "- Use fail for pretty-but-empty wording even if it sounds beautiful.",
-    "- Use needs_patch when a real observable mechanism exists, but the wording is too absolute, too broad, or overstates the conclusion.",
-    "- A real mechanism with overstrong wording should normally be needs_patch, not fail, if a safer wording could preserve the same mechanism.",
-    "- A signal with any true risk_assessment flag cannot have overall: pass.",
-    "- Day-1 forbids Greek lexical claims because Greek canonical anchor/source work is deferred.",
-    "- If core_observation and reader_surprise_sentence.ru are not aligned, consistency_check must be false.",
-    "",
-    "OUTPUT JSON ONLY:",
-    stringifyForPrompt({
-      signal_id: args.signal.signal_id,
-      discovery_present: true,
-      anchor_precise: true,
-      evidence_supports_claim: true,
-      consistency_check: true,
-      risk_assessment: {
-        lexical_overclaim: false,
-        intertext_speculative: false,
-        historical_overclaim: false,
-        theological_overreach: false,
-        meaningful_absence_unsafe: false,
-        self_generated_echo: false,
-      },
-      pretty_but_empty: false,
-      overall: "pass | fail | needs_patch",
-      patch_instruction: null,
-      rejection_reason: null,
-    }),
-  ].join("\n");
-}
+function countActions(queue: RealVerseIntakeQueueItem[]): Record<string, number> {
+  const statuses: IntakeStatus[] = [
+    "keep_raw",
+    "keep_cautious",
+    "keep_needs_evidence",
+    "keep_possible_duplicate",
+    "keep_surface_hypothesis",
+    "discard_pretty_empty",
+    "discard_clear_fail",
+  ];
 
-async function processSignal(args: {
-  signal: DiscoverySignal;
-  existingCards: ExistingCoverageCard[];
-  judgeProvider: Provider;
-  verifierProvider: Provider;
-  verseTextRu: string;
-  passageTextRu: string;
-}): Promise<{
-  queueItem: ModeratorQueueItem;
-  diagnostic: RealVerseDiagnosticItem;
-}> {
-  const hashDuplicate = findHashDuplicate(args.signal, args.existingCards);
-  const nearestExistingCards = selectNearestExistingCards(
-    args.signal,
-    args.existingCards,
-  );
+  const counts: Record<string, number> = {
+    // Legacy counters kept for older UI/run-log summary code.
+    approve_reserve: 0,
+    approve_active: 0,
+    rewrite: 0,
+    replace_existing: 0,
+    discard: queue.filter(
+      (item) =>
+        item.suggested_action === "discard_pretty_empty" ||
+        item.suggested_action === "discard_clear_fail",
+    ).length,
+    send_back: 0,
+    mark_for_external_research: 0,
+  };
 
-  let sameAngleVerdict: SameAngleVerdict;
-  let verifierVerdict: VerifierVerdict | null = null;
-  let judgeRawResponse: string | null = null;
-  let verifierRawResponse: string | null = null;
-
-  if (args.signal.risk_flags.includes("lexical_overclaim")) {
-    judgeRawResponse =
-      "CODE_DECISION: signal was pre-flagged as lexical_overclaim. Same-Angle Judge was not called.";
-
-    sameAngleVerdict = {
-      signal_id: args.signal.signal_id,
-      verdict: "risky_overclaim",
-      compared_against: nearestExistingCards.map((card) => card.card_id),
-      overlap_explanation:
-        "Code decision: signal was pre-flagged as lexical_overclaim before Same-Angle Judge.",
-      differentiation_required: null,
-      judge_confidence: "high",
-    };
-
-    verifierRawResponse =
-      "CODE_DECISION: deterministic verifier verdict for pre-flagged lexical_overclaim.";
-
-    verifierVerdict = createDeterministicVerifierVerdict({
-      signal: args.signal,
-      kind: "lexical_overclaim",
-    });
-  } else if (args.signal.risk_flags.includes("pretty_but_empty")) {
-    judgeRawResponse =
-      "CODE_DECISION: signal was pre-flagged as pretty_but_empty. Same-Angle Judge was not called.";
-
-    sameAngleVerdict = {
-      signal_id: args.signal.signal_id,
-      verdict: "pretty_but_empty",
-      compared_against: nearestExistingCards.map((card) => card.card_id),
-      overlap_explanation:
-        "Code decision: signal was pre-flagged as pretty_but_empty before Same-Angle Judge.",
-      differentiation_required: null,
-      judge_confidence: "high",
-    };
-
-    verifierRawResponse =
-      "CODE_DECISION: deterministic verifier verdict for pre-flagged pretty_but_empty.";
-
-    verifierVerdict = createDeterministicVerifierVerdict({
-      signal: args.signal,
-      kind: "pretty_but_empty",
-    });
-  } else if (hashDuplicate) {
-    judgeRawResponse =
-      "CODE_DECISION: deterministic fingerprint hash matched an existing card. Same-Angle Judge was not called.";
-
-    sameAngleVerdict = {
-      signal_id: args.signal.signal_id,
-      verdict: "same_angle",
-      compared_against: [hashDuplicate.card_id],
-      overlap_explanation:
-        "Deterministic fingerprint hash matched an existing card before LLM judge.",
-      differentiation_required: null,
-      judge_confidence: "high",
-    };
-
-    verifierRawResponse =
-      "CODE_DECISION: deterministic verifier pass for intrinsic signal quality; duplicate routing is handled by Same-Angle verdict.";
-
-    verifierVerdict = createDeterministicVerifierVerdict({
-      signal: args.signal,
-      kind: "hash_duplicate",
-    });
-  } else {
-    const judgePrompt = buildSameAngleJudgePrompt({
-      signal: args.signal,
-      nearestExistingCards,
-    });
-
-    judgeRawResponse = await runAI(args.judgeProvider, judgePrompt, "en", true);
-
-    sameAngleVerdict = normalizeSameAngleVerdict(
-      parseJsonObject(judgeRawResponse),
-      args.signal,
-      "new_angle",
-      nearestExistingCards.map((card) => card.card_id),
-    );
-
-    if (sameAngleVerdict.verdict === "same_angle") {
-      const signalFingerprint = args.signal.angle_fingerprint;
-
-      const exactComponentMatch = nearestExistingCards.some((card) => {
-        const components = card.fingerprint_components;
-        if (!components) return false;
-
-        return (
-          components.anchor === signalFingerprint.anchor_canonical.text &&
-          components.phenomenon === signalFingerprint.phenomenon &&
-          components.interpretive_move === signalFingerprint.interpretive_move &&
-          components.angle_family === signalFingerprint.angle_family
-        );
-      });
-
-      if (!exactComponentMatch) {
-        sameAngleVerdict = {
-          ...sameAngleVerdict,
-          verdict: "partial_overlap",
-          overlap_explanation:
-            sameAngleVerdict.overlap_explanation ??
-            "Code guard: Judge said same_angle, but no exact fingerprint component match was found.",
-          differentiation_required:
-            sameAngleVerdict.differentiation_required ??
-            "Moderator should check whether this shares only the anchor or actually repeats the same interpretive move.",
-          judge_confidence:
-            sameAngleVerdict.judge_confidence === "high"
-              ? "medium"
-              : sameAngleVerdict.judge_confidence,
-        };
-      }
-    }
+  for (const status of statuses) {
+    counts[status] = queue.filter((item) => item.suggested_action === status)
+      .length;
   }
 
-  if (!verifierVerdict) {
-    const verifierPrompt = buildScopedVerifierPrompt({
-      signal: args.signal,
-      sameAngleVerdict,
-      verseTextRu: args.verseTextRu,
-      passageTextRu: args.passageTextRu,
-    });
+  counts.keep_total = queue.filter((item) =>
+    String(item.suggested_action).startsWith("keep_"),
+  ).length;
+  counts.discard_total = counts.discard_pretty_empty + counts.discard_clear_fail;
 
-    verifierRawResponse = await runAI(
-      args.verifierProvider,
-      verifierPrompt,
-      "en",
-      true,
-    );
-
-    verifierVerdict = normalizeVerifierVerdict(
-      parseJsonObject(verifierRawResponse),
-      args.signal,
-    );
-  }
-
-  const queueItem = createQueueItem({
-    signal: args.signal,
-    nearestExistingCards,
-    sameAngleVerdict,
-    verifierVerdict,
-    verseTextRu: args.verseTextRu,
-  });
-
-  const diagnostic: RealVerseDiagnosticItem = {
-    signal_id: args.signal.signal_id,
-    reader_surprise_ru: args.signal.reader_surprise_sentence.ru,
-    core_observation: args.signal.core_observation,
-    existing_cards_count: args.existingCards.length,
-    nearest_existing_cards: nearestExistingCards,
-    hash_duplicate_card: hashDuplicate,
-    judge_raw_response: judgeRawResponse,
-    verifier_raw_response: verifierRawResponse,
-    normalized_same_angle_verdict: sameAngleVerdict,
-    normalized_verifier_verdict: verifierVerdict,
-  };
-
-  return {
-    queueItem,
-    diagnostic,
-  };
+  return counts;
 }
 
-function countActions(
-  queue: ModeratorQueueItem[],
-): RealVerseTextOnlyResult["action_counts"] {
-  return {
-    approve_reserve: queue.filter(
-      (item) => item.suggested_action === "approve_reserve",
-    ).length,
-    approve_active: queue.filter(
-      (item) => item.suggested_action === "approve_active",
-    ).length,
-    rewrite: queue.filter((item) => item.suggested_action === "rewrite")
-      .length,
-    replace_existing: queue.filter(
-      (item) => item.suggested_action === "replace_existing",
-    ).length,
-    discard: queue.filter((item) => item.suggested_action === "discard")
-      .length,
-    send_back: queue.filter((item) => item.suggested_action === "send_back")
-      .length,
-    mark_for_external_research: queue.filter(
-      (item) => item.suggested_action === "mark_for_external_research",
-    ).length,
-  };
-}
-
-function countTiers(
-  queue: ModeratorQueueItem[],
-): RealVerseTextOnlyResult["tier_counts"] {
+function countTiers(queue: RealVerseIntakeQueueItem[]): Record<IntakeTier, number> {
   return {
     A_routine: queue.filter((item) => item.tier === "A_routine").length,
     B_conflict: queue.filter((item) => item.tier === "B_conflict").length,
-    C_risk_escalation: queue.filter(
-      (item) => item.tier === "C_risk_escalation",
-    ).length,
+    C_risk_escalation: queue.filter((item) => item.tier === "C_risk_escalation")
+      .length,
   };
 }
 
@@ -1581,7 +1145,7 @@ function createSignalFlow(args: {
   detectorOutputStatus: DetectorOutputStatus;
   detectorDeclaredNoSignals: boolean;
   parsedSignalCount: number;
-  queue: ModeratorQueueItem[];
+  queue: RealVerseIntakeQueueItem[];
   noSignalsReason?: string | null;
 }): SignalFlow {
   const actionCounts = countActions(args.queue);
@@ -1591,66 +1155,77 @@ function createSignalFlow(args: {
     detector_declared_no_signals: args.detectorDeclaredNoSignals,
     parsed_signal_count: args.parsedSignalCount,
     queue_item_count: args.queue.length,
-    discarded_count: actionCounts.discard,
-    rewrite_count: actionCounts.rewrite,
-    approved_count: actionCounts.approve_reserve + actionCounts.approve_active,
-    all_parsed_signals_discarded:
-      args.parsedSignalCount > 0 &&
-      args.queue.length > 0 &&
-      actionCounts.discard === args.queue.length,
+
+    keep_raw_count: actionCounts.keep_raw,
+    keep_cautious_count: actionCounts.keep_cautious,
+    keep_needs_evidence_count: actionCounts.keep_needs_evidence,
+    keep_possible_duplicate_count: actionCounts.keep_possible_duplicate,
+    keep_surface_hypothesis_count: actionCounts.keep_surface_hypothesis,
+    discard_pretty_empty_count: actionCounts.discard_pretty_empty,
+    discard_clear_fail_count: actionCounts.discard_clear_fail,
+
+    stored_signal_count: actionCounts.keep_total,
+    discarded_signal_count: actionCounts.discard_total,
+
     no_signals_reason: args.noSignalsReason ?? null,
+    notes: [
+      "Heavy Judge/Verifier are intentionally not called at intake.",
+      "Risk flags are observers at intake and become gates only during promotion.",
+      "Intake is cheap and generous; promotion is selective and strict.",
+    ],
   };
 }
 
-function getDetectorOutputStatus(args: {
-  detectorRawText: string | null;
-  detectorFailed?: boolean;
-  signalCount: number;
-}): DetectorOutputStatus {
-  if (args.detectorFailed) return "detector_failed";
-  if (args.detectorRawText && detectorDeclaredNoSignals(args.detectorRawText)) {
-    return "declared_no_signals";
-  }
-  if (args.signalCount > 0) return "signals_parsed";
-  return "unparseable_text";
-}
-
-function buildTextFirstDetectorPrompt(args: {
+function buildTextOnlyDetectorPrompt(args: {
   reference: string;
   verseTextRu: string;
   passageTextRu: string;
   genre?: string | null;
 }): string {
   return [
-    "Ты — детектор Discovery Refinery для Scriptura AI.",
+    "Ты — text-only Detector для Scriptura AI Discovery Refinery.",
     "",
-    "ЭКСПЕРИМЕНТ:",
-    "Это один из 10 реальных text-only прогонов из Studio.",
-    "Цель — проверить, достаточно ли Russian-first text-only pipeline до возврата к Source Packet / Original-Translation-Evidence архитектуре.",
-    "",
-    "Твоя задача — найти 0–3 настоящих текстовых сигнала, из которых позже можно сделать карточки-открытия.",
+    "Твоя задача — найти 0–3 настоящих текстовых сигнала.",
     "Не пиши готовые карточки.",
     "Не пиши проповедь.",
     "Не объясняй стих в целом.",
-    "Ищи только конкретные текстовые механизмы: союз, повтор, контраст, порядок слов, список, переход агентности, вопрос-ответ, риторическую асимметрию, значимое отсутствие, напряжение повествования.",
+    "",
+    "АРХИТЕКТУРНЫЙ ПРИНЦИП:",
+    "Intake дешёвый и щедрый, promotion выборочный и строгий.",
+    "Ты не финальный рецензент. Ты добываешь сырьё и честно ставишь risk flags.",
     "",
     "ЖЁСТКАЯ ГРАНИЦА МАТЕРИАЛА:",
     "Используй только текст стиха и контекст/отрывок, которые даны ниже.",
-    "Не используй Research Lake.",
-    "Не используй существующие карточки Scriptura.",
-    "Не используй прошлые AI-выводы.",
-    "Не используй Source Packet.",
-    "Не используй original-language packet.",
-    "Не используй другие стихи из главы, если они не входят в данный ниже контекст/отрывок.",
-    "Не используй общие библейские знания, перекрёстные ссылки, будущие/предыдущие события, исторический фон или греческий/еврейский язык, если это не дано явно ниже.",
-    "Если мысль зависит от материала за пределами данного текста, не выдавай её.",
-    "Если для бедного/формульного стиха нет сигнала внутри данного текста, верни НЕТ_СИГНАЛОВ.",
-    "",
-    "ВАЖНО:",
-    "Не возвращай JSON.",
-    "Не используй markdown-таблицу.",
-    "Верни обычный текст в строгих блоках.",
+    "Не используй Research Lake, существующие карточки, прошлые AI-выводы, Source Packet, оригинальные языки, сравнение переводов, исторический фон или перекрёстные ссылки, если они не даны явно ниже.",
+    "Если мысль зависит от материала за пределами данного текста, не выдавай её как факт. Лучше поставь risk flag.",
     "Если сильных сигналов нет, верни ровно одну строку: НЕТ_СИГНАЛОВ",
+    "",
+    "ЧТО ИСКАТЬ:",
+    "- союз, повтор, контраст, порядок слов, список, переход агентности;",
+    "- вопрос-ответ, риторическую асимметрию, значимое отсутствие;",
+    "- напряжение повествования, неожиданный порядок, сдвиг от образа к выводу;",
+    "- surface-сигнал русского текста, если он действительно заметен.",
+    "",
+    "ЧЕГО НЕ ДЕЛАТЬ:",
+    "- не делай утверждений о греческом/еврейском;",
+    "- не превращай это в Word Lens / lexical lookup;",
+    "- не называй surface-сигнал универсальным;",
+    "- не выдумывай психологию персонажей сверх текста;",
+    "- не пытайся найти вау там, где текст формульный или бедный.",
+    "",
+    "RISK FLAGS:",
+    "Используй none или один/несколько через запятую:",
+    "- pretty_but_empty — красиво, но нет механизма в тексте;",
+    "- lexical_overclaim — мысль требует лексики/оригинала;",
+    "- requires_lexical_evidence — нужна лексическая проверка;",
+    "- requires_original_check — нужно проверить оригинальный язык;",
+    "- translation_surface_artifact_suspected — возможно артефакт перевода;",
+    "- russian_synodal_archaism_suspected — возможно эффект архаичного русского регистра;",
+    "- intertext_speculative — нужна межтекстовая проверка;",
+    "- historical_overclaim — нужен исторический источник;",
+    "- theological_overreach — слишком богословски обобщено;",
+    "- meaningful_absence_unsafe — отсутствие заметно, но опасно говорить о намерении автора;",
+    "- self_generated_echo — похоже на повтор уже известной формулировки.",
     "",
     "Формат каждого сигнала:",
     "",
@@ -1660,20 +1235,10 @@ function buildTextFirstDetectorPrompt(args: {
     "Наблюдение: точное объяснение текстового механизма; не sermon",
     "Открытие: Я не замечал, что ...",
     "Доказательность: strong | plausible | weak",
-    "Семья: rhetorical | structural | lexical | meaningful_absence | discourse_function | metaphor_image | contextual | other",
-    "Риск: none | lexical_overclaim | intertext_speculative | historical_overclaim | theological_overreach | meaningful_absence_unsafe | self_generated_echo | pretty_but_empty",
+    "Семья: rhetorical | structural | lexical | meaningful_absence | discourse_function | metaphor_image | contextual | translation | paradox_tension | other",
+    "Риск: none | pretty_but_empty | lexical_overclaim | requires_lexical_evidence | requires_original_check | translation_surface_artifact_suspected | russian_synodal_archaism_suspected | intertext_speculative | historical_overclaim | theological_overreach | meaningful_absence_unsafe | self_generated_echo",
     "Феномен: short_snake_case_english_phrase",
     "Ход: short_snake_case_english_phrase",
-    "",
-    "Требования к качеству:",
-    "- Якорь должен быть виден прямо в данном тексте.",
-    "- Наблюдение должно показывать механизм, а не просто красивую мысль.",
-    "- Открытие должно звучать как: «Я не замечал, что...»",
-    "- Не делай утверждений о греческом/еврейском, если они не даны в тексте.",
-    "- Для бедных/формульных стихов лучше 0–1 сигнал, чем натянутые открытия.",
-    "- Для narrative не выдумывай психологию персонажей сверх текста.",
-    "- Для meaningful absence будь осторожен: отсутствие должно быть видимым внутри данного текста и не превращаться в догадку об авторском намерении.",
-    "- Не сравнивай с персонажем/событием/исключением, которого нет в данном ниже тексте.",
     "",
     "Данные стиха:",
     `Reference: ${args.reference}`,
@@ -1689,82 +1254,6 @@ function buildTextFirstDetectorPrompt(args: {
     .join("\n");
 }
 
-function buildScopeDecision(args: {
-  reference: string;
-  canonicalRef: string;
-  passageId: string;
-}): Record<string, unknown> {
-  return {
-    mode: "text_only",
-    experiment_id: "real_studio_10_runs_text_only_v1",
-    reference: args.reference,
-    canonical_ref: args.canonicalRef,
-    passage_id: args.passageId,
-    included_verses: [args.reference],
-    detector_may_use: [
-      "verse_text",
-      "allowed_passage",
-      "genre_scope_metadata",
-    ],
-    detector_may_not_use: [
-      "Research Lake",
-      "existing cards",
-      "prior Claude outputs",
-      "active/reserve cards for the same verse",
-      "Source Packet",
-      "original-language packet",
-      "translation comparison packet",
-    ],
-    rationale:
-      "10-run forcing function: test Russian-first text-only pipeline before returning to Source Packet / Original-Translation-Evidence architecture.",
-  };
-}
-
-function buildInputContextSnapshot(args: {
-  reference: string;
-  canonicalRef: string;
-  passageId: string;
-  verseTextRu: string;
-  passageTextRu: string;
-  existingCards: ExistingCoverageCard[];
-}): Record<string, unknown> {
-  return {
-    reference: args.reference,
-    canonical_ref: args.canonicalRef,
-    passage_id: args.passageId,
-
-    verse_text_source: "ru-rstj.json via server getVerseText(local-first)",
-    surface_lang: "ru",
-    surface_translation: "rstj_yahweh",
-    pipeline_language_mode: "russian_first_text_only_v1",
-
-    passage_scope: "verse_only_v1",
-    verse_text_ru: args.verseTextRu,
-    passage_text_ru: args.passageTextRu,
-
-    existing_cards_snapshot: {
-      used_by_detector: false,
-      used_by_judge: true,
-      existing_cards_count: args.existingCards.length,
-      cards: args.existingCards,
-      note:
-        "Detector did not see existing cards. Existing cards are only supplied to Same-Angle Judge.",
-    },
-
-    research_lake_snapshot: {
-      available: null,
-      used_by_detector: false,
-      note: "Research Lake intentionally excluded for this 10-run test.",
-    },
-
-    source_packet_snapshot: {
-      used_by_detector: false,
-      note:
-        "Source Packet / Original-Translation-Evidence architecture is parked until 10 real text-only runs are reviewed.",
-    },
-  };
-}
-
 export async function runRealVerseTextOnlyPreview(args: {
   reference: string;
   canonicalRef: string;
@@ -1772,89 +1261,84 @@ export async function runRealVerseTextOnlyPreview(args: {
   verseTextRu: string;
   passageTextRu: string;
   existingCards: ExistingCoverageCard[];
-  detectorProvider?: Provider;
+  detectorProvider: Provider;
   judgeProvider?: Provider;
   verifierProvider?: Provider;
   genre?: string | null;
 }): Promise<RealVerseTextOnlyResult> {
-  const detectorProvider = args.detectorProvider ?? "claude";
-  const judgeProvider = args.judgeProvider ?? "openai";
-  const verifierProvider = args.verifierProvider ?? "openai";
-
   const runId = createDeterministicId("run", {
     reference: args.reference,
     canonicalRef: args.canonicalRef,
-    passageId: args.passageId,
-    mode: "real_text_only",
+    mode: "real_text_only_rule_based_intake_v0",
     created_at: new Date().toISOString(),
   });
 
-  const prompt = buildTextFirstDetectorPrompt({
+  const scopeDecision = createScopeDecision(args.passageId);
+  const inputContextSnapshot = createInputContextSnapshot({
+    reference: args.reference,
+    canonicalRef: args.canonicalRef,
+    passageId: args.passageId,
+    verseTextRu: args.verseTextRu,
+    passageTextRu: args.passageTextRu,
+    genre: args.genre,
+    existingCards: args.existingCards,
+  });
+
+  const prompt = buildTextOnlyDetectorPrompt({
     reference: args.reference,
     verseTextRu: args.verseTextRu,
     passageTextRu: args.passageTextRu,
     genre: args.genre,
   });
 
-  const errors: string[] = [];
   let detectorRawText: string | null = null;
 
   try {
-    detectorRawText = await runAI(detectorProvider, prompt, "ru", false);
+    detectorRawText = await runAI(args.detectorProvider, prompt, "ru", false);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-
-    const detectorOutputStatus: DetectorOutputStatus = "detector_failed";
+    const signalFlow = createSignalFlow({
+      detectorOutputStatus: "detector_failed",
+      detectorDeclaredNoSignals: false,
+      parsedSignalCount: 0,
+      queue: [],
+      noSignalsReason: `Detector failed: ${message}`,
+    });
 
     return {
       ok: false,
       mode: "real_text_only",
+
       reference: args.reference,
       canonical_ref: args.canonicalRef,
       passage_id: args.passageId,
 
       lang: "ru",
-      surface_lang: "ru",
       surface_translation: "rstj_yahweh",
-      pipeline_language_mode: "russian_first_text_only_v1",
-      experiment_id: "real_studio_10_runs_text_only_v1",
+      pipeline_language_mode: "russian_first_mvp",
+      experiment_id: "real_text_only_rule_based_intake_v0",
 
-      detector_provider: detectorProvider,
-      judge_provider: judgeProvider,
-      verifier_provider: verifierProvider,
+      detector_provider: args.detectorProvider,
+      judge_provider: "not_used_rule_based_intake_v0",
+      verifier_provider: "not_used_rule_based_intake_v0",
 
       detector_raw_text: null,
-      detector_output_status: detectorOutputStatus,
+      detector_output_status: "detector_failed",
       detector_declared_no_signals: false,
       detector_signal_count: 0,
+      queue_item_count: 0,
 
-      signal_flow: createSignalFlow({
-        detectorOutputStatus,
-        detectorDeclaredNoSignals: false,
-        parsedSignalCount: 0,
-        queue: [],
-        noSignalsReason: `Detector failed: ${message}`,
-      }),
-      scope_decision: buildScopeDecision({
-        reference: args.reference,
-        canonicalRef: args.canonicalRef,
-        passageId: args.passageId,
-      }),
-      input_context_snapshot: buildInputContextSnapshot({
-        reference: args.reference,
-        canonicalRef: args.canonicalRef,
-        passageId: args.passageId,
-        verseTextRu: args.verseTextRu,
-        passageTextRu: args.passageTextRu,
-        existingCards: args.existingCards,
-      }),
+      signal_flow: signalFlow,
+      scope_decision: scopeDecision,
+      input_context_snapshot: inputContextSnapshot,
 
       queue: [],
       diagnostics: [],
+
       action_counts: countActions([]),
       tier_counts: countTiers([]),
+
       errors: [`Detector failed: ${message}`],
-      created_at: new Date().toISOString(),
     };
   }
 
@@ -1868,32 +1352,8 @@ export async function runRealVerseTextOnlyPreview(args: {
     },
   });
 
-  const queue: ModeratorQueueItem[] = [];
-  const diagnostics: RealVerseDiagnosticItem[] = [];
-
-  for (const signal of signals) {
-    try {
-      const processed = await processSignal({
-        signal,
-        existingCards: args.existingCards,
-        judgeProvider,
-        verifierProvider,
-        verseTextRu: args.verseTextRu,
-        passageTextRu: args.passageTextRu,
-      });
-
-      queue.push(processed.queueItem);
-      diagnostics.push(processed.diagnostic);
-    } catch (error) {
-      errors.push(
-        `${signal.signal_id}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    }
-  }
-
   const declaredNoSignals = detectorDeclaredNoSignals(detectorRawText);
+  const errors: string[] = [];
 
   if (signals.length === 0 && !declaredNoSignals) {
     errors.push(
@@ -1901,61 +1361,87 @@ export async function runRealVerseTextOnlyPreview(args: {
     );
   }
 
+  const queue: RealVerseIntakeQueueItem[] = [];
+  const diagnostics: RealVerseDiagnosticItem[] = [];
+
+  for (let index = 0; index < signals.length; index += 1) {
+    const signal = signals[index];
+
+    const classification = classifySignal({
+      signal,
+      existingCards: args.existingCards,
+      existingSignals: signals.slice(0, index),
+    });
+
+    const queueItem = createQueueItem({
+      signal,
+      classification,
+      verseTextRu: args.verseTextRu,
+      existingCards: args.existingCards,
+    });
+
+    queue.push(queueItem);
+
+    diagnostics.push({
+      signal_id: signal.signal_id,
+      signal_index: index,
+      reader_surprise_ru: getReaderSurpriseRu(signal),
+      core_observation: signal.core_observation,
+      anchor_text: getSignalAnchorText(signal),
+      evidence_level: signal.evidence_level,
+      risk_flags: getRiskFlags(signal),
+      intake_classification: classification,
+    });
+  }
+
   const detectorOutputStatus = getDetectorOutputStatus({
     detectorRawText,
     signalCount: signals.length,
   });
 
+  const signalFlow = createSignalFlow({
+    detectorOutputStatus,
+    detectorDeclaredNoSignals: declaredNoSignals,
+    parsedSignalCount: signals.length,
+    queue,
+    noSignalsReason: declaredNoSignals
+      ? "Detector explicitly returned НЕТ_СИГНАЛОВ."
+      : null,
+  });
+
   return {
     ok: errors.length === 0,
     mode: "real_text_only",
+
     reference: args.reference,
     canonical_ref: args.canonicalRef,
     passage_id: args.passageId,
 
     lang: "ru",
-    surface_lang: "ru",
     surface_translation: "rstj_yahweh",
-    pipeline_language_mode: "russian_first_text_only_v1",
-    experiment_id: "real_studio_10_runs_text_only_v1",
+    pipeline_language_mode: "russian_first_mvp",
+    experiment_id: "real_text_only_rule_based_intake_v0",
 
-    detector_provider: detectorProvider,
-    judge_provider: judgeProvider,
-    verifier_provider: verifierProvider,
+    detector_provider: args.detectorProvider,
+    judge_provider: "not_used_rule_based_intake_v0",
+    verifier_provider: "not_used_rule_based_intake_v0",
 
     detector_raw_text: detectorRawText,
     detector_output_status: detectorOutputStatus,
     detector_declared_no_signals: declaredNoSignals,
     detector_signal_count: signals.length,
+    queue_item_count: queue.length,
 
-    signal_flow: createSignalFlow({
-      detectorOutputStatus,
-      detectorDeclaredNoSignals: declaredNoSignals,
-      parsedSignalCount: signals.length,
-      queue,
-      noSignalsReason: declaredNoSignals
-        ? "Detector explicitly returned НЕТ_СИГНАЛОВ."
-        : null,
-    }),
-    scope_decision: buildScopeDecision({
-      reference: args.reference,
-      canonicalRef: args.canonicalRef,
-      passageId: args.passageId,
-    }),
-    input_context_snapshot: buildInputContextSnapshot({
-      reference: args.reference,
-      canonicalRef: args.canonicalRef,
-      passageId: args.passageId,
-      verseTextRu: args.verseTextRu,
-      passageTextRu: args.passageTextRu,
-      existingCards: args.existingCards,
-    }),
+    signal_flow: signalFlow,
+    scope_decision: scopeDecision,
+    input_context_snapshot: inputContextSnapshot,
 
     queue,
     diagnostics,
+
     action_counts: countActions(queue),
     tier_counts: countTiers(queue),
+
     errors,
-    created_at: new Date().toISOString(),
   };
 }
