@@ -8,7 +8,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 240;
 
-const MIN_OLD_PIPELINE_SAVE_SCORE = 74;
+const MIN_OLD_PIPELINE_SAVE_SCORE = 0;
 
 type Lang = "ru";
 type JsonRecord = Record<string, unknown>;
