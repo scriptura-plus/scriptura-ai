@@ -1,63 +1,106 @@
 export type NormalizedReference = {
-  canonical_ref: string | null;
+  original: string;
+  reference: string;
   book_key: string | null;
-  book: string;
-  chapter: number;
-  verse: number;
+  canonical_ref: string | null;
+  passage_id: string | null;
+  book: string | null;
+  chapter: number | null;
+  verse: number | null;
+  end_verse: number | null;
 };
 
-type BookAlias = {
+type BookAliasEntry = {
   key: string;
   aliases: string[];
 };
 
-const BOOK_ALIASES: BookAlias[] = [
-  // Hebrew Scriptures / Old Testament
+const BOOK_ALIASES: BookAliasEntry[] = [
   {
     key: "genesis",
-    aliases: ["genesis", "gen", "ge", "gn", "бытие", "быт", "гн", "génesis", "genesis", "gn"],
+    aliases: [
+      "genesis",
+      "gen",
+      "ge",
+      "бытие",
+      "бытия",
+      "быт",
+      "книга бытия",
+    ],
   },
   {
     key: "exodus",
-    aliases: ["exodus", "exo", "ex", "исход", "исх", "éxodo", "exodo", "éx"],
+    aliases: [
+      "exodus",
+      "ex",
+      "exo",
+      "исход",
+      "исхода",
+      "исх",
+      "книга исход",
+      "книга исхода",
+    ],
   },
   {
     key: "leviticus",
-    aliases: ["leviticus", "lev", "le", "левит", "лев", "levítico", "levitico", "lv"],
+    aliases: ["leviticus", "lev", "левит", "левита", "лев"],
   },
   {
     key: "numbers",
-    aliases: ["numbers", "num", "nu", "числа", "чис", "números", "numeros", "nm"],
+    aliases: ["numbers", "num", "числа", "чисел", "чис"],
   },
   {
     key: "deuteronomy",
-    aliases: ["deuteronomy", "deut", "dt", "второзаконие", "втор", "deuteronomio"],
+    aliases: [
+      "deuteronomy",
+      "deut",
+      "второзаконие",
+      "второзакония",
+      "втор",
+    ],
   },
   {
     key: "joshua",
-    aliases: ["joshua", "josh", "jos", "иисус навин", "нав", "josué", "josue"],
+    aliases: [
+      "joshua",
+      "josh",
+      "иисус навин",
+      "иисуса навина",
+      "и навин",
+      "навин",
+      "навина",
+      "нав",
+    ],
   },
   {
     key: "judges",
-    aliases: ["judges", "judg", "jg", "судьи", "суд", "jueces", "jue"],
+    aliases: ["judges", "judg", "судьи", "судей", "суд"],
   },
   {
     key: "ruth",
-    aliases: ["ruth", "ru", "рут", "руфь", "руф", "rut"],
+    aliases: ["ruth", "рут", "руфь", "руфи", "руф"],
   },
   {
     key: "1-samuel",
     aliases: [
       "1 samuel",
       "1samuel",
-      "1-samuel",
       "1 sam",
       "1sam",
-      "1-я царств",
-      "1 я царств",
+      "1-я самуила",
+      "1 самуила",
+      "1 книга самуила",
+      "1-я книга самуила",
       "1 царств",
-      "1 цар",
-      "1 samuel",
+      "1-я царств",
+      "1 книга царств",
+      "1-я книга царств",
+      "первая самуила",
+      "первая книга самуила",
+      "первая царств",
+      "первая книга царств",
+      "1ц",
+      "1 ц",
     ],
   },
   {
@@ -65,14 +108,22 @@ const BOOK_ALIASES: BookAlias[] = [
     aliases: [
       "2 samuel",
       "2samuel",
-      "2-samuel",
       "2 sam",
       "2sam",
-      "2-я царств",
-      "2 я царств",
+      "2-я самуила",
+      "2 самуила",
+      "2 книга самуила",
+      "2-я книга самуила",
       "2 царств",
-      "2 цар",
-      "2 samuel",
+      "2-я царств",
+      "2 книга царств",
+      "2-я книга царств",
+      "вторая самуила",
+      "вторая книга самуила",
+      "вторая царств",
+      "вторая книга царств",
+      "2ц",
+      "2 ц",
     ],
   },
   {
@@ -80,14 +131,18 @@ const BOOK_ALIASES: BookAlias[] = [
     aliases: [
       "1 kings",
       "1kings",
-      "1-kings",
-      "1 ki",
-      "1ki",
-      "3-я царств",
-      "3 я царств",
+      "1 kg",
       "3 царств",
-      "3 цар",
-      "1 reyes",
+      "3-я царств",
+      "3 книга царств",
+      "3-я книга царств",
+      "1 королей",
+      "1-я королей",
+      "первая королей",
+      "третья царств",
+      "третья книга царств",
+      "3ц",
+      "3 ц",
     ],
   },
   {
@@ -95,14 +150,18 @@ const BOOK_ALIASES: BookAlias[] = [
     aliases: [
       "2 kings",
       "2kings",
-      "2-kings",
-      "2 ki",
-      "2ki",
-      "4-я царств",
-      "4 я царств",
+      "2 kg",
       "4 царств",
-      "4 цар",
-      "2 reyes",
+      "4-я царств",
+      "4 книга царств",
+      "4-я книга царств",
+      "2 королей",
+      "2-я королей",
+      "вторая королей",
+      "четвертая царств",
+      "четвертая книга царств",
+      "4ц",
+      "4 ц",
     ],
   },
   {
@@ -110,15 +169,19 @@ const BOOK_ALIASES: BookAlias[] = [
     aliases: [
       "1 chronicles",
       "1chronicles",
-      "1-chronicles",
-      "1 chr",
-      "1chr",
-      "1-я паралипоменон",
-      "1 я паралипоменон",
+      "1 chron",
       "1 паралипоменон",
+      "1-я паралипоменон",
+      "1 книга паралипоменон",
+      "1-я книга паралипоменон",
+      "1 летопись",
+      "1-я летопись",
+      "1 хроник",
+      "первая паралипоменон",
+      "первая книга паралипоменон",
+      "первая летопись",
+      "1пар",
       "1 пар",
-      "1 crónicas",
-      "1 cronicas",
     ],
   },
   {
@@ -126,166 +189,238 @@ const BOOK_ALIASES: BookAlias[] = [
     aliases: [
       "2 chronicles",
       "2chronicles",
-      "2-chronicles",
-      "2 chr",
-      "2chr",
-      "2-я паралипоменон",
-      "2 я паралипоменон",
+      "2 chron",
       "2 паралипоменон",
+      "2-я паралипоменон",
+      "2 книга паралипоменон",
+      "2-я книга паралипоменон",
+      "2 летопись",
+      "2-я летопись",
+      "2 хроник",
+      "вторая паралипоменон",
+      "вторая книга паралипоменон",
+      "вторая летопись",
+      "2пар",
       "2 пар",
-      "2 crónicas",
-      "2 cronicas",
     ],
   },
   {
     key: "ezra",
-    aliases: ["ezra", "ezr", "ездра", "езд", "esdras", "esd"],
+    aliases: ["ezra", "ездра", "ездры", "езд"],
   },
   {
     key: "nehemiah",
-    aliases: ["nehemiah", "neh", "неемия", "неем", "nehemías", "nehemias"],
+    aliases: ["nehemiah", "neh", "неемия", "неемии", "неем"],
   },
   {
     key: "esther",
-    aliases: ["esther", "est", "есфирь", "есф", "ester"],
+    aliases: ["esther", "esth", "есфирь", "есфири", "есф"],
   },
   {
     key: "job",
-    aliases: ["job", "jb", "иов"],
+    aliases: ["job", "иов", "иова"],
   },
   {
     key: "psalms",
-    aliases: ["psalms", "psalm", "ps", "psa", "псалтирь", "псалом", "пс", "salmos", "salmo", "sl"],
+    aliases: [
+      "psalms",
+      "psalm",
+      "ps",
+      "псалтирь",
+      "псалом",
+      "псалмы",
+      "псалма",
+      "пс",
+    ],
   },
   {
     key: "proverbs",
-    aliases: ["proverbs", "prov", "pr", "притчи", "притч", "пр", "proverbios", "prv"],
+    aliases: ["proverbs", "prov", "притчи", "притчей", "притча", "прит"],
   },
   {
     key: "ecclesiastes",
-    aliases: ["ecclesiastes", "eccl", "ecc", "экклезиаст", "екклесиаст", "еккл", "eclesiastés", "eclesiastes"],
+    aliases: [
+      "ecclesiastes",
+      "eccl",
+      "екклесиаст",
+      "екклесиаста",
+      "экклезиаст",
+      "экклезиаста",
+      "еккл",
+    ],
   },
   {
-    key: "song-of-solomon",
+    key: "song-of-songs",
     aliases: [
-      "song of solomon",
-      "song-of-solomon",
-      "song",
-      "songs",
       "song of songs",
+      "song of solomon",
+      "song",
       "песнь песней",
+      "песни песней",
+      "песнь",
+      "песни",
       "песн",
-      "cantar de los cantares",
-      "cantares",
     ],
   },
   {
     key: "isaiah",
-    aliases: ["isaiah", "isa", "is", "исайя", "исаия", "ис", "isaías", "isaias"],
+    aliases: ["isaiah", "isa", "исаия", "исайя", "исаии", "исайи", "ис"],
   },
   {
     key: "jeremiah",
-    aliases: ["jeremiah", "jer", "jr", "иеремия", "иер", "jeremías", "jeremias"],
+    aliases: ["jeremiah", "jer", "иеремия", "иеремии", "иер"],
   },
   {
     key: "lamentations",
-    aliases: ["lamentations", "lam", "плач иеремии", "плач", "lamentaciones", "lm"],
+    aliases: [
+      "lamentations",
+      "lam",
+      "плач иеремии",
+      "плач",
+    ],
   },
   {
     key: "ezekiel",
-    aliases: ["ezekiel", "ezek", "eze", "иезекииль", "иез", "ezequiel", "ez"],
+    aliases: [
+      "ezekiel",
+      "ezek",
+      "иезекииль",
+      "иезекииля",
+      "езекииль",
+      "езекииля",
+      "иез",
+    ],
   },
   {
     key: "daniel",
-    aliases: ["daniel", "dan", "dn", "даниил", "дан"],
+    aliases: ["daniel", "dan", "даниил", "даниила", "дан"],
   },
   {
     key: "hosea",
-    aliases: ["hosea", "hos", "осия", "ос", "oseas", "osea"],
+    aliases: ["hosea", "hos", "осия", "осии", "ос"],
   },
   {
     key: "joel",
-    aliases: ["joel", "jl", "иоиль", "иоил"],
+    aliases: ["joel", "иоиль", "иоиля", "иол"],
   },
   {
     key: "amos",
-    aliases: ["amos", "am", "амос", "ам", "amós"],
+    aliases: ["amos", "амос", "амоса", "ам"],
   },
   {
     key: "obadiah",
-    aliases: ["obadiah", "obad", "ob", "авдий", "авд", "abdías", "abdias"],
+    aliases: ["obadiah", "obad", "авдий", "авдия", "авд"],
   },
   {
     key: "jonah",
-    aliases: ["jonah", "jon", "иона", "ион", "jonás", "jonas"],
+    aliases: ["jonah", "jon", "иона", "ионы", "ион"],
   },
   {
     key: "micah",
-    aliases: ["micah", "mic", "михей", "мих", "miqueas", "miq"],
+    aliases: ["micah", "mic", "михей", "михея", "мих"],
   },
   {
     key: "nahum",
-    aliases: ["nahum", "nah", "наум", "naúm", "naum"],
+    aliases: ["nahum", "nah", "наум", "наума"],
   },
   {
     key: "habakkuk",
-    aliases: ["habakkuk", "hab", "аввакум", "авв", "habacuc"],
+    aliases: ["habakkuk", "hab", "аввакум", "аввакума", "авв"],
   },
   {
     key: "zephaniah",
-    aliases: ["zephaniah", "zeph", "софония", "соф", "sofonías", "sofonias"],
+    aliases: ["zephaniah", "zeph", "софония", "софонии", "соф"],
   },
   {
     key: "haggai",
-    aliases: ["haggai", "hag", "аггей", "агг", "hageo"],
+    aliases: ["haggai", "hag", "аггей", "аггея", "агг"],
   },
   {
     key: "zechariah",
-    aliases: ["zechariah", "zech", "zec", "захария", "зах", "zacarías", "zacarias"],
+    aliases: ["zechariah", "zech", "захария", "захарии", "зах"],
   },
   {
     key: "malachi",
-    aliases: ["malachi", "mal", "малахия", "мал", "malaquías", "malaquias"],
+    aliases: ["malachi", "mal", "малахия", "малахии", "мал"],
   },
 
-  // Christian Greek Scriptures / New Testament
   {
     key: "matthew",
-    aliases: ["matthew", "matt", "mt", "матфея", "матфей", "мф", "mateo"],
+    aliases: [
+      "matthew",
+      "matt",
+      "матфея",
+      "матфей",
+      "евангелие от матфея",
+      "от матфея",
+      "мат",
+    ],
   },
   {
     key: "mark",
-    aliases: ["mark", "mk", "mrk", "марка", "марк", "мк", "marcos"],
+    aliases: [
+      "mark",
+      "mk",
+      "марка",
+      "марк",
+      "евангелие от марка",
+      "от марка",
+      "мар",
+    ],
   },
   {
     key: "luke",
-    aliases: ["luke", "lk", "луки", "лука", "лк", "lucas"],
+    aliases: [
+      "luke",
+      "lk",
+      "луки",
+      "лука",
+      "евангелие от луки",
+      "от луки",
+      "лук",
+    ],
   },
   {
     key: "john",
-    aliases: ["john", "jn", "jhn", "иоанна", "иоанн", "ин", "juan"],
+    aliases: [
+      "john",
+      "jn",
+      "иоанна",
+      "иоанн",
+      "евангелие от иоанна",
+      "от иоанна",
+      "ин",
+    ],
   },
   {
     key: "acts",
-    aliases: ["acts", "act", "ac", "деяния", "деян", "дн", "hechos"],
+    aliases: [
+      "acts",
+      "acts of apostles",
+      "деяния",
+      "деяний",
+      "деяния апостолов",
+      "деян",
+    ],
   },
   {
     key: "romans",
-    aliases: ["romans", "rom", "ro", "римлянам", "рим", "romanos"],
+    aliases: ["romans", "rom", "римлянам", "рим", "к римлянам"],
   },
   {
     key: "1-corinthians",
     aliases: [
       "1 corinthians",
       "1corinthians",
-      "1-corinthians",
       "1 cor",
-      "1cor",
-      "1-е коринфянам",
-      "1 е коринфянам",
       "1 коринфянам",
+      "1-е коринфянам",
+      "1 послание коринфянам",
+      "1-е послание коринфянам",
+      "первое коринфянам",
+      "первое послание коринфянам",
       "1 кор",
-      "1 corintios",
+      "1кор",
     ],
   },
   {
@@ -293,45 +428,58 @@ const BOOK_ALIASES: BookAlias[] = [
     aliases: [
       "2 corinthians",
       "2corinthians",
-      "2-corinthians",
       "2 cor",
-      "2cor",
-      "2-е коринфянам",
-      "2 е коринфянам",
       "2 коринфянам",
+      "2-е коринфянам",
+      "2 послание коринфянам",
+      "2-е послание коринфянам",
+      "второе коринфянам",
+      "второе послание коринфянам",
       "2 кор",
-      "2 corintios",
+      "2кор",
     ],
   },
   {
     key: "galatians",
-    aliases: ["galatians", "gal", "галатам", "гал", "gálatas", "galatas"],
+    aliases: ["galatians", "gal", "галатам", "гал", "к галатам"],
   },
   {
     key: "ephesians",
-    aliases: ["ephesians", "eph", "ефесянам", "еф", "efesios"],
+    aliases: ["ephesians", "eph", "ефесянам", "еф", "к ефесянам"],
   },
   {
     key: "philippians",
-    aliases: ["philippians", "phil", "php", "филиппийцам", "филип", "флп", "filipenses"],
+    aliases: [
+      "philippians",
+      "phil",
+      "филиппийцам",
+      "филиппийцам",
+      "флп",
+      "к филиппийцам",
+    ],
   },
   {
     key: "colossians",
-    aliases: ["colossians", "col", "колоссянам", "кол", "colosenses"],
+    aliases: [
+      "colossians",
+      "col",
+      "колоссянам",
+      "кол",
+      "к колоссянам",
+    ],
   },
   {
     key: "1-thessalonians",
     aliases: [
       "1 thessalonians",
       "1thessalonians",
-      "1-thessalonians",
       "1 thess",
-      "1thess",
-      "1-е фессалоникийцам",
-      "1 е фессалоникийцам",
       "1 фессалоникийцам",
+      "1-е фессалоникийцам",
       "1 фес",
-      "1 tesalonicenses",
+      "1фес",
+      "первое фессалоникийцам",
+      "первое послание фессалоникийцам",
     ],
   },
   {
@@ -339,14 +487,13 @@ const BOOK_ALIASES: BookAlias[] = [
     aliases: [
       "2 thessalonians",
       "2thessalonians",
-      "2-thessalonians",
       "2 thess",
-      "2thess",
-      "2-е фессалоникийцам",
-      "2 е фессалоникийцам",
       "2 фессалоникийцам",
+      "2-е фессалоникийцам",
       "2 фес",
-      "2 tesalonicenses",
+      "2фес",
+      "второе фессалоникийцам",
+      "второе послание фессалоникийцам",
     ],
   },
   {
@@ -354,14 +501,13 @@ const BOOK_ALIASES: BookAlias[] = [
     aliases: [
       "1 timothy",
       "1timothy",
-      "1-timothy",
       "1 tim",
-      "1tim",
-      "1-е тимофею",
-      "1 е тимофею",
       "1 тимофею",
+      "1-е тимофею",
       "1 тим",
-      "1 timoteo",
+      "1тим",
+      "первое тимофею",
+      "первое послание тимофею",
     ],
   },
   {
@@ -369,45 +515,43 @@ const BOOK_ALIASES: BookAlias[] = [
     aliases: [
       "2 timothy",
       "2timothy",
-      "2-timothy",
       "2 tim",
-      "2tim",
-      "2-е тимофею",
-      "2 е тимофею",
       "2 тимофею",
+      "2-е тимофею",
       "2 тим",
-      "2 timoteo",
+      "2тим",
+      "второе тимофею",
+      "второе послание тимофею",
     ],
   },
   {
     key: "titus",
-    aliases: ["titus", "tit", "титу", "тит", "tito"],
+    aliases: ["titus", "tit", "титу", "тит"],
   },
   {
     key: "philemon",
-    aliases: ["philemon", "phlm", "phm", "филимону", "флм", "filemón", "filemon"],
+    aliases: ["philemon", "philem", "филимону", "флм"],
   },
   {
     key: "hebrews",
-    aliases: ["hebrews", "heb", "евреям", "евр", "hebreos"],
+    aliases: ["hebrews", "heb", "евреям", "евр", "к евреям"],
   },
   {
     key: "james",
-    aliases: ["james", "jas", "jm", "иакова", "иак", "santiago"],
+    aliases: ["james", "jas", "иакова", "иаков", "иак"],
   },
   {
     key: "1-peter",
     aliases: [
       "1 peter",
       "1peter",
-      "1-peter",
       "1 pet",
-      "1pet",
-      "1-е петра",
-      "1 е петра",
       "1 петра",
+      "1-е петра",
       "1 пет",
-      "1 pedro",
+      "1пет",
+      "первое петра",
+      "первое послание петра",
     ],
   },
   {
@@ -415,14 +559,13 @@ const BOOK_ALIASES: BookAlias[] = [
     aliases: [
       "2 peter",
       "2peter",
-      "2-peter",
       "2 pet",
-      "2pet",
-      "2-е петра",
-      "2 е петра",
       "2 петра",
+      "2-е петра",
       "2 пет",
-      "2 pedro",
+      "2пет",
+      "второе петра",
+      "второе послание петра",
     ],
   },
   {
@@ -430,14 +573,13 @@ const BOOK_ALIASES: BookAlias[] = [
     aliases: [
       "1 john",
       "1john",
-      "1-john",
       "1 jn",
-      "1jn",
-      "1-е иоанна",
-      "1 е иоанна",
       "1 иоанна",
+      "1-е иоанна",
       "1 ин",
-      "1 juan",
+      "1ин",
+      "первое иоанна",
+      "первое послание иоанна",
     ],
   },
   {
@@ -445,14 +587,13 @@ const BOOK_ALIASES: BookAlias[] = [
     aliases: [
       "2 john",
       "2john",
-      "2-john",
       "2 jn",
-      "2jn",
-      "2-е иоанна",
-      "2 е иоанна",
       "2 иоанна",
+      "2-е иоанна",
       "2 ин",
-      "2 juan",
+      "2ин",
+      "второе иоанна",
+      "второе послание иоанна",
     ],
   },
   {
@@ -460,104 +601,240 @@ const BOOK_ALIASES: BookAlias[] = [
     aliases: [
       "3 john",
       "3john",
-      "3-john",
       "3 jn",
-      "3jn",
-      "3-е иоанна",
-      "3 е иоанна",
       "3 иоанна",
+      "3-е иоанна",
       "3 ин",
-      "3 juan",
+      "3ин",
+      "третье иоанна",
+      "третье послание иоанна",
     ],
   },
   {
     key: "jude",
-    aliases: ["jude", "jud", "иуды", "иуда", "иуд", "judas"],
+    aliases: ["jude", "jud", "иуды", "иуда", "иуд"],
   },
   {
     key: "revelation",
-    aliases: ["revelation", "rev", "re", "откровение", "откр", "апокалипсис", "apocalipsis"],
+    aliases: [
+      "revelation",
+      "rev",
+      "apocalypse",
+      "откровение",
+      "откровения",
+      "откровение иоанна",
+      "апокалипсис",
+      "откр",
+    ],
   },
 ];
 
-function normalizeText(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/ё/g, "е")
-    .replace(/[.,;]/g, "")
-    .replace(/[–—]/g, "-")
-    .replace(/\s+/g, " ");
+const ALIAS_TO_BOOK_KEY = createAliasMap(BOOK_ALIASES);
+
+function createAliasMap(entries: BookAliasEntry[]): Map<string, string> {
+  const map = new Map<string, string>();
+
+  for (const entry of entries) {
+    map.set(normalizeBookName(entry.key), entry.key);
+
+    for (const alias of entry.aliases) {
+      map.set(normalizeBookName(alias), entry.key);
+    }
+  }
+
+  return map;
 }
 
-function normalizeBookText(value: string): string {
-  return normalizeText(value)
-    .replace(/^i\s+/i, "1 ")
-    .replace(/^ii\s+/i, "2 ")
-    .replace(/^iii\s+/i, "3 ")
-    .replace(/^1-я\s+/i, "1 ")
-    .replace(/^2-я\s+/i, "2 ")
-    .replace(/^3-я\s+/i, "3 ")
-    .replace(/^1-е\s+/i, "1 ")
-    .replace(/^2-е\s+/i, "2 ")
-    .replace(/^3-е\s+/i, "3 ")
-    .replace(/^1\s+я\s+/i, "1 ")
-    .replace(/^2\s+я\s+/i, "2 ")
-    .replace(/^3\s+я\s+/i, "3 ")
-    .replace(/^1\s+е\s+/i, "1 ")
-    .replace(/^2\s+е\s+/i, "2 ")
-    .replace(/^3\s+е\s+/i, "3 ")
+function normalizeBookName(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/ё/g, "е")
+    .replace(/[–—]/g, "-")
+    .replace(/\./g, "")
+    .replace(/[,;]/g, " ")
+    .replace(/\s+/g, " ")
+    .replace(/^к\s+/, "")
+    .replace(/^ко\s+/, "")
+    .replace(/^от\s+/, "")
+    .replace(/^из\s+/, "")
+    .replace(/^пророка\s+/, "")
+    .replace(/^книга\s+/, "")
+    .replace(/^послание\s+/, "")
+    .replace(/^евангелие\s+от\s+/, "")
+    .replace(/^первое\s+/, "1 ")
+    .replace(/^первая\s+/, "1 ")
+    .replace(/^первый\s+/, "1 ")
+    .replace(/^второе\s+/, "2 ")
+    .replace(/^вторая\s+/, "2 ")
+    .replace(/^второй\s+/, "2 ")
+    .replace(/^третье\s+/, "3 ")
+    .replace(/^третья\s+/, "3 ")
+    .replace(/^третий\s+/, "3 ")
+    .replace(/^четвертое\s+/, "4 ")
+    .replace(/^четвертая\s+/, "4 ")
+    .replace(/^четвертый\s+/, "4 ")
+    .replace(/^([1-4])\s*[-–—]?\s*(?:я|е|й|ая|ое)?\s+/, "$1 ")
+    .replace(/^([1-4])\s*[-–—]?\s*(?:я|е|й|ая|ое)?(?=[а-яa-z])/, "$1 ")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-function findBookKey(book: string): string | null {
-  const normalizedBook = normalizeBookText(book);
+function normalizeReferenceInput(value: string): string {
+  return value
+    .replace(/\u00A0/g, " ")
+    .replace(/[–—]/g, "-")
+    .replace(/[;,]/g, ":")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
-  for (const item of BOOK_ALIASES) {
-    if (item.aliases.some((alias) => normalizeBookText(alias) === normalizedBook)) {
-      return item.key;
-    }
+function slugify(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/ё/g, "е")
+    .replace(/[^\p{L}\p{N}]+/gu, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function parseReferenceParts(reference: string): {
+  rawBook: string;
+  chapter: number;
+  verse: number | null;
+  endVerse: number | null;
+} | null {
+  const normalized = normalizeReferenceInput(reference);
+
+  // Examples:
+  // - "Михея 6:8"
+  // - "Псалом 22:1"
+  // - "1 Паралипоменон 25:25"
+  // - "John 17.3"
+  // - "Matthew 11:28-30"
+  const match = normalized.match(/^(.+?)\s+(\d+)(?:\s*[:.]\s*(\d+)(?:\s*-\s*(\d+))?)?$/);
+
+  if (!match) return null;
+
+  const rawBook = match[1]?.trim() ?? "";
+  const chapter = Number(match[2]);
+  const verse = match[3] ? Number(match[3]) : null;
+  const endVerse = match[4] ? Number(match[4]) : null;
+
+  if (!rawBook || !Number.isFinite(chapter) || chapter <= 0) {
+    return null;
   }
+
+  if (verse !== null && (!Number.isFinite(verse) || verse <= 0)) {
+    return null;
+  }
+
+  if (endVerse !== null && (!Number.isFinite(endVerse) || endVerse <= 0)) {
+    return null;
+  }
+
+  return {
+    rawBook,
+    chapter,
+    verse,
+    endVerse,
+  };
+}
+
+function resolveBookKey(rawBook: string): string | null {
+  const normalized = normalizeBookName(rawBook);
+
+  const direct = ALIAS_TO_BOOK_KEY.get(normalized);
+  if (direct) return direct;
+
+  const compact = normalized.replace(/\s+/g, "");
+  const compactMatch = ALIAS_TO_BOOK_KEY.get(compact);
+  if (compactMatch) return compactMatch;
 
   return null;
 }
 
+function makeCanonicalRef(args: {
+  bookKey: string | null;
+  rawBook: string;
+  chapter: number | null;
+  verse: number | null;
+  endVerse: number | null;
+}): string | null {
+  if (!args.chapter) return null;
+
+  const book = args.bookKey ?? slugify(args.rawBook);
+
+  if (!book) return null;
+
+  if (!args.verse) return `${book}-${args.chapter}`;
+
+  if (args.endVerse && args.endVerse !== args.verse) {
+    return `${book}-${args.chapter}-${args.verse}-${args.endVerse}`;
+  }
+
+  return `${book}-${args.chapter}-${args.verse}`;
+}
+
+function makePassageId(canonicalRef: string | null): string | null {
+  if (!canonicalRef) return null;
+  return canonicalRef.replace(/-/g, "_");
+}
+
 export function normalizeReference(reference: string): NormalizedReference {
+  const original = reference;
   const trimmed = reference.trim();
 
-  const match = trimmed.match(/^(.+?)\s+(\d+):(\d+)$/);
-
-  if (!match) {
+  if (!trimmed) {
     return {
-      canonical_ref: null,
+      original,
+      reference: "",
       book_key: null,
-      book: trimmed,
-      chapter: 0,
-      verse: 0,
-    };
-  }
-
-  const book = match[1].trim();
-  const chapter = Number(match[2]);
-  const verse = Number(match[3]);
-  const bookKey = findBookKey(book);
-
-  if (!bookKey || !Number.isFinite(chapter) || !Number.isFinite(verse)) {
-    return {
       canonical_ref: null,
-      book_key: bookKey,
-      book,
-      chapter: Number.isFinite(chapter) ? chapter : 0,
-      verse: Number.isFinite(verse) ? verse : 0,
+      passage_id: null,
+      book: null,
+      chapter: null,
+      verse: null,
+      end_verse: null,
     };
   }
+
+  const parsed = parseReferenceParts(trimmed);
+
+  if (!parsed) {
+    const fallback = slugify(trimmed) || null;
+
+    return {
+      original,
+      reference: trimmed,
+      book_key: null,
+      canonical_ref: fallback,
+      passage_id: makePassageId(fallback),
+      book: null,
+      chapter: null,
+      verse: null,
+      end_verse: null,
+    };
+  }
+
+  const bookKey = resolveBookKey(parsed.rawBook);
+  const canonicalRef = makeCanonicalRef({
+    bookKey,
+    rawBook: parsed.rawBook,
+    chapter: parsed.chapter,
+    verse: parsed.verse,
+    endVerse: parsed.endVerse,
+  });
 
   return {
-    canonical_ref: `${bookKey}-${chapter}-${verse}`,
+    original,
+    reference: trimmed,
     book_key: bookKey,
-    book,
-    chapter,
-    verse,
+    canonical_ref: canonicalRef,
+    passage_id: makePassageId(canonicalRef),
+    book: bookKey ?? parsed.rawBook,
+    chapter: parsed.chapter,
+    verse: parsed.verse,
+    end_verse: parsed.endVerse,
   };
 }
+
+export default normalizeReference;
