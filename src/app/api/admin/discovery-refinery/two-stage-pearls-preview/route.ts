@@ -1537,7 +1537,7 @@ export async function POST(req: Request) {
           originalLanguagePrompt: originalLanguage.prompt,
         });
 
-        const rawText = await runAI(harvesterProvider, prompt, "ru", true);
+        const rawText = await runAI(harvesterProvider, prompt, "ru", false);
         const parsed = parseAngles(rawText, spec.focus);
 
         return {
