@@ -367,9 +367,16 @@ function shouldCreateReviewCandidate(args: {
   const duplicate = args.duplicateInfo;
   if (!duplicate?.matched_card_id) return false;
 
-  const candidateScore = duplicate.candidate_score ?? args.previewScore ?? args.card.score_total ?? null;
+  const v2Score = args.card.score_total ?? null;
+  const candidateScore = duplicate.candidate_score ?? args.previewScore ?? v2Score;
   const existingScore = duplicate.existing_score;
   const scoreDelta = duplicate.score_delta;
+
+  // If Pearls v2 produced a strong card and the old pipeline rejected it only as a duplicate,
+  // return it to editor review instead of letting it disappear.
+  if (typeof v2Score === "number" && v2Score >= STRONG_DUPLICATE_SCORE) {
+    return true;
+  }
 
   if (typeof candidateScore === "number" && candidateScore >= STRONG_DUPLICATE_SCORE) {
     return true;
@@ -403,7 +410,7 @@ function buildReviewCandidate(args: {
   const duplicate = args.duplicateInfo;
   const existingCard = duplicate?.existing_card ?? null;
   const scoreDelta = duplicate?.score_delta ?? null;
-  const candidateScore = duplicate?.candidate_score ?? args.previewScore ?? args.card.score_total ?? null;
+  const v2Score = args.card.score_total ?? null;
 
   const type =
     typeof scoreDelta === "number" && scoreDelta >= NEAR_REPLACEMENT_MIN_DELTA
@@ -419,7 +426,7 @@ function buildReviewCandidate(args: {
     reference: args.reference,
     canonical_ref: args.canonicalRef,
     candidate_title: args.candidate.title,
-    candidate_score_v2: args.card.score_total ?? null,
+    candidate_score_v2: v2Score,
     preview_score: args.previewScore,
     old_pipeline_status: args.oldPipelineStatus,
     existing_card_id: duplicate?.matched_card_id ?? null,
@@ -459,13 +466,13 @@ function buildProcessBody(args: {
     lang: args.lang,
     provider: args.provider,
     source_provider: "pearls_v2",
-    source_model: "pearls_v2_current_result_topup_v7_review_candidates",
+    source_model: "pearls_v2_current_result_topup_v8_review_candidates",
     editor_provider: args.editorProvider,
     targetFeaturedCount: args.targetCount,
     ...(forcedStatus ? { force_status: forcedStatus } : {}),
     ...(args.previewOnly ? { preview_only: true } : {}),
     sourceArticle: JSON.stringify({
-      source: "pearls_v2_current_result_topup_v7_review_candidates",
+      source: "pearls_v2_current_result_topup_v8_review_candidates",
       canonical_ref: args.canonicalRef,
       v2_card: args.card,
       forced_status: forcedStatus,
