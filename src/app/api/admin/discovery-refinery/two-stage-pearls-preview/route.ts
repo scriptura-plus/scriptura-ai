@@ -251,36 +251,38 @@ function parseTextAngles(text: string, focus: string): HarvestedAngle[] {
         ? [cleaned]
         : [];
 
-  return blocks
-    .map((block, index) => {
-      const anchor = extractLabeledField(block, "Якорь", [
-        "Наблюдение",
-        "Почему интересно",
-      ]);
-      const observation = extractLabeledField(block, "Наблюдение", [
-        "Почему интересно",
-        "Якорь",
-      ]);
-      const whyInteresting = extractLabeledField(block, "Почему интересно", [
-        "Якорь",
-        "Наблюдение",
-      ]);
+  const angles: HarvestedAngle[] = [];
 
-      if (!anchor || !observation) return null;
+  blocks.forEach((block, index) => {
+    const anchor = extractLabeledField(block, "Якорь", [
+      "Наблюдение",
+      "Почему интересно",
+    ]);
+    const observation = extractLabeledField(block, "Наблюдение", [
+      "Почему интересно",
+      "Якорь",
+    ]);
+    const whyInteresting = extractLabeledField(block, "Почему интересно", [
+      "Якорь",
+      "Наблюдение",
+    ]);
 
-      return {
-        angle_id: `${focus}_${index + 1}`,
-        title: deriveAngleTitle(anchor, observation, index),
-        anchor,
-        discovery: observation,
-        why_interesting: whyInteresting || null,
-        angle_type: focus,
-        evidence_need: "none",
-        risk_note: null,
-        focus,
-      };
-    })
-    .filter((item): item is HarvestedAngle => item !== null);
+    if (!anchor || !observation) return;
+
+    angles.push({
+      angle_id: `${focus}_${index + 1}`,
+      title: deriveAngleTitle(anchor, observation, index),
+      anchor,
+      discovery: observation,
+      why_interesting: whyInteresting || null,
+      angle_type: focus,
+      evidence_need: "none",
+      risk_note: null,
+      focus,
+    });
+  });
+
+  return angles;
 }
 
 function parseTextCards(text: string): DraftCard[] {
@@ -300,41 +302,43 @@ function parseTextCards(text: string): DraftCard[] {
             .filter(Boolean)
         : [];
 
-  return blocks
-    .map((block, index) => {
-      const title = extractLabeledField(block, "Заголовок", [
-        "Опора",
-        "Основной текст",
-        "Почему это важно",
-      ]);
-      const anchor = extractLabeledField(block, "Опора", [
-        "Заголовок",
-        "Основной текст",
-        "Почему это важно",
-      ]);
-      const teaser = extractLabeledField(block, "Основной текст", [
-        "Заголовок",
-        "Опора",
-        "Почему это важно",
-      ]);
-      const why = extractLabeledField(block, "Почему это важно", [
-        "Заголовок",
-        "Опора",
-        "Основной текст",
-      ]);
+  const cards: DraftCard[] = [];
 
-      if (!title || !anchor || !teaser) return null;
+  blocks.forEach((block, index) => {
+    const title = extractLabeledField(block, "Заголовок", [
+      "Опора",
+      "Основной текст",
+      "Почему это важно",
+    ]);
+    const anchor = extractLabeledField(block, "Опора", [
+      "Заголовок",
+      "Основной текст",
+      "Почему это важно",
+    ]);
+    const teaser = extractLabeledField(block, "Основной текст", [
+      "Заголовок",
+      "Опора",
+      "Почему это важно",
+    ]);
+    const why = extractLabeledField(block, "Почему это важно", [
+      "Заголовок",
+      "Опора",
+      "Основной текст",
+    ]);
 
-      return {
-        card_id: `card_${index + 1}`,
-        title,
-        anchor,
-        teaser,
-        why_it_matters: why,
-        source_angle_ids: [],
-      };
-    })
-    .filter((item): item is DraftCard => item !== null);
+    if (!title || !anchor || !teaser) return;
+
+    cards.push({
+      card_id: `card_${index + 1}`,
+      title,
+      anchor,
+      teaser,
+      why_it_matters: why,
+      source_angle_ids: [],
+    });
+  });
+
+  return cards;
 }
 
 function hasOriginalLanguage(text: string | null | undefined): boolean {
