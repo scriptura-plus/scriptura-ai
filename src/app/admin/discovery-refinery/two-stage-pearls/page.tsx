@@ -443,7 +443,7 @@ export default function PearlsV2LabPage() {
             reference: result.reference ?? reference,
             lang: "ru",
             targetCount: 12,
-            processLimit: 3,
+            processLimit: 8,
             force: false,
             includeStrongNonPublic: false,
             cards,
