@@ -203,6 +203,8 @@ function cleanGeneratedText(value: string): string {
   return value
     .replace(/\r\n/g, "\n")
     .replace(/\u00a0/g, " ")
+    .replace(/\*\*/g, "")
+    .replace(/__([^_]+)__/g, "$1")
     .replace(/[ \t]+$/gm, "")
     .trim();
 }
@@ -240,32 +242,91 @@ function extractLabeledField(
 function parseTextAngles(text: string, focus: string): HarvestedAngle[] {
   const cleaned = cleanGeneratedText(stripCodeFence(text));
   const rawBlocks = cleaned
-    .split(/(?=^\s*УГОЛ\s+\d+\b)/gim)
+    .split(/(?=^\s*(?:#{1,6}\s*)?(?:УГОЛ|Angle)\s+\d+\b)/gim)
     .map((block) => block.trim())
-    .filter((block) => /Якорь\s*:/i.test(block) && /Наблюдение\s*:/i.test(block));
+    .filter((block) => /(?:Якорь|Опора|Anchor)\s*:/i.test(block) && /(?:Наблюдение|Observation)\s*:/i.test(block));
 
   const blocks =
     rawBlocks.length > 0
       ? rawBlocks
-      : /Якорь\s*:/i.test(cleaned) && /Наблюдение\s*:/i.test(cleaned)
+      : /(?:Якорь|Опора|Anchor)\s*:/i.test(cleaned) && /(?:Наблюдение|Observation)\s*:/i.test(cleaned)
         ? [cleaned]
         : [];
 
   const angles: HarvestedAngle[] = [];
 
   blocks.forEach((block, index) => {
-    const anchor = extractLabeledField(block, "Якорь", [
-      "Наблюдение",
-      "Почему интересно",
-    ]);
-    const observation = extractLabeledField(block, "Наблюдение", [
-      "Почему интересно",
-      "Якорь",
-    ]);
-    const whyInteresting = extractLabeledField(block, "Почему интересно", [
-      "Якорь",
-      "Наблюдение",
-    ]);
+    const anchor =
+      extractLabeledField(block, "Якорь", [
+        "Опора",
+        "Anchor",
+        "Наблюдение",
+        "Observation",
+        "Почему интересно",
+        "Почему это интересно",
+        "Why interesting",
+      ]) ||
+      extractLabeledField(block, "Опора", [
+        "Якорь",
+        "Anchor",
+        "Наблюдение",
+        "Observation",
+        "Почему интересно",
+        "Почему это интересно",
+        "Why interesting",
+      ]) ||
+      extractLabeledField(block, "Anchor", [
+        "Якорь",
+        "Опора",
+        "Наблюдение",
+        "Observation",
+        "Почему интересно",
+        "Почему это интересно",
+        "Why interesting",
+      ]);
+
+    const observation =
+      extractLabeledField(block, "Наблюдение", [
+        "Почему интересно",
+        "Почему это интересно",
+        "Why interesting",
+        "Why it matters",
+        "Якорь",
+        "Опора",
+        "Anchor",
+      ]) ||
+      extractLabeledField(block, "Observation", [
+        "Почему интересно",
+        "Почему это интересно",
+        "Why interesting",
+        "Why it matters",
+        "Якорь",
+        "Опора",
+        "Anchor",
+      ]);
+
+    const whyInteresting =
+      extractLabeledField(block, "Почему интересно", [
+        "Якорь",
+        "Опора",
+        "Anchor",
+        "Наблюдение",
+        "Observation",
+      ]) ||
+      extractLabeledField(block, "Почему это интересно", [
+        "Якорь",
+        "Опора",
+        "Anchor",
+        "Наблюдение",
+        "Observation",
+      ]) ||
+      extractLabeledField(block, "Why interesting", [
+        "Якорь",
+        "Опора",
+        "Anchor",
+        "Наблюдение",
+        "Observation",
+      ]);
 
     if (!anchor || !observation) return;
 
@@ -288,7 +349,7 @@ function parseTextAngles(text: string, focus: string): HarvestedAngle[] {
 function parseTextCards(text: string): DraftCard[] {
   const cleaned = cleanGeneratedText(stripCodeFence(text));
   const rawBlocks = cleaned
-    .split(/(?=^\s*(?:ЖЕМЧУЖИНА|КАРТОЧКА)\s+\d+\b)/gim)
+    .split(/(?=^\s*(?:#{1,6}\s*)?(?:ЖЕМЧУЖИНА|КАРТОЧКА)\s+\d+\b)/gim)
     .map((block) => block.trim())
     .filter((block) => /Заголовок\s*:/i.test(block) && /Опора\s*:/i.test(block));
 
@@ -497,7 +558,13 @@ function parseAngles(text: string, focus: string): {
     };
   }
 
-  return { angles: [], parsed_json: parsed, error: `No angles parsed from ${focus}.` };
+  const rawStart = cleanGeneratedText(stripCodeFence(text)).slice(0, 700);
+
+  return {
+    angles: [],
+    parsed_json: parsed,
+    error: `No angles parsed from ${focus}. Raw starts: ${rawStart}`,
+  };
 }
 
 function normalizeLexiconStatus(value: unknown): LexiconClaimStatus | undefined {
@@ -1167,16 +1234,6 @@ function buildAngleHarvesterPrompt(args: {
   focusInstruction: string;
   originalLanguagePrompt: string;
 }): string {
-  const originalLanguageBlock =
-    args.focus === "language" && args.originalLanguagePrompt.trim().length > 0
-      ? [
-          "ЛЕКСИЧЕСКИЙ КОНТЕКСТ ДОСТУПЕН ТОЛЬКО КАК ПРОВЕРОЧНАЯ ОПОРА:",
-          args.originalLanguagePrompt,
-          "",
-          "Не делай справочник. Один сильный языковой угол лучше пяти слабых.",
-        ].join("\n")
-      : "ЛЕКСИЧЕСКИЙ АНАЛИЗ НЕ ЯВЛЯЕТСЯ ТВОЕЙ ОСНОВНОЙ ЗАДАЧЕЙ.";
-
   return [
     "Ты — внимательный читатель библейского текста, ищущий наблюдения для зрелой аудитории, которая знает Библию десятилетиями.",
     "",
@@ -1188,7 +1245,7 @@ function buildAngleHarvesterPrompt(args: {
     "",
     "Найди максимум углов в ЦЕНТРАЛЬНОМ стихе. Угол — это наблюдение о тексте, которое может вызвать у зрелого читателя ощущение: «этого я не замечал».",
     "",
-    "Углы могут опираться на ближайший контекст только если этот контекст явно присутствует в данных. Если контекст не дан — не выдумывай его.",
+    "Углы могут опираться на ближайший контекст только если он явно дан в самом стихе или в существующих карточках. Не выдумывай исторический фон и не уходи в справку.",
     "",
     `ФОКУС ЭТОГО ПРОХОДА: ${args.focus}`,
     args.focusInstruction,
@@ -1197,9 +1254,9 @@ function buildAngleHarvesterPrompt(args: {
     "",
     "- Структурные асимметрии: один элемент уточнён, другой нет; что поставлено первым, что в конце.",
     "- Риторические механизмы: основание, оговорка, усиление, инверсия, парадокс.",
-    "- Нарративные паттерны: повторы, рамки, контрасты, что названо и что намеренно не названо.",
-    "- Логические связки внутри стиха: что они соединяют и как меняют чтение.",
-    "- Грамматические особенности, видимые в русском: вид глагола, залог, число, наклонение.",
+    "- Нарративные паттерны: повторы, рамки, контрасты, обещания и их исполнение, что названо и что намеренно не названо.",
+    "- Логические связки внутри стиха: «ибо», «потому что», «итак», «и» — что они связывают и как.",
+    "- Грамматические особенности, видимые в русском: вид глагола, залог, наклонение, единственное/множественное число.",
     "- Эхо или сдвиги по отношению к уже найденным карточкам: ищи не повтор, а новое место давления в тексте.",
     "",
     "ЧТО НЕ ИСКАТЬ",
@@ -1207,37 +1264,33 @@ function buildAngleHarvesterPrompt(args: {
     "- Общие моральные выводы.",
     "- Перефразы стиха другими словами.",
     "- Внешний исторический или культурный контекст.",
-    "- Справочную информацию.",
+    "- Сравнение переводов ради сравнения.",
+    "- Информацию справочного характера.",
     "- Красивые мысли без физической опоры в тексте.",
     "",
-    originalLanguageBlock,
+    "ЛЕКСИЧЕСКИЙ КОНТЕКСТ ДОСТУПЕН ТОЛЬКО КАК ОПОРА ДЛЯ ОСТОРОЖНОСТИ:",
+    args.originalLanguagePrompt || "Пакет оригинального языка недоступен. Не делай утверждений об оригинале.",
     "",
-    "EXISTING CARDS — НЕ ПОВТОРЯЙ ИХ:",
+    "Не превращай detector в лексическую линзу. Твоя основная задача — увидеть углы; проверит их отдельный Судья.",
+    "",
+    "УЖЕ СУЩЕСТВУЮЩИЕ КАРТОЧКИ — НЕ ПОВТОРЯЙ ИХ:",
     JSON.stringify(args.existingCards.slice(0, 12), null, 2),
     "",
     "ВАЖНО",
     "",
-    "Будь жадным. Лучше слишком много наблюдений, чем слишком мало. Не оценивай себя и не критикуй найденное — это сделает отдельный Судья. Твоя задача — видеть максимум.",
+    "Будь жадным. Найди 7–15 углов. Лучше слишком много, чем слишком мало. Не самоограничивайся, не оценивай себя, не критикуй найденное. Не пиши «это слабый угол» — это решит другой агент. Твоя задача — видеть максимум.",
     "",
-    "JSON ONLY. Верни 7–15 углов в таком формате:",
-    JSON.stringify(
-      {
-        angles: [
-          {
-            angle_id: "a1",
-            title: "короткое рабочее название",
-            anchor: "конкретное слово, фраза или место в центральном стихе",
-            discovery: "что замечено, 2–4 строки",
-            why_interesting: "почему это сдвиг для зрелого читателя, 1–2 строки",
-            angle_type: "structural | rhetorical | narrative | grammatical | contextual | lexical",
-            evidence_need: "none | lexical_check | syntax_check | context_check | human_check",
-            risk_note: null,
-          },
-        ],
-      },
-      null,
-      2,
-    ),
+    "ФОРМАТ ОТВЕТА — строго текстом, без JSON, без markdown-таблицы, ничего лишнего перед или после:",
+    "",
+    "УГОЛ 1",
+    "Якорь: <конкретное слово, фраза или место в центральном стихе>",
+    "Наблюдение: <что замечено, 2-4 строки>",
+    "Почему интересно: <почему это сдвиг для зрелого читателя, 1-2 строки>",
+    "",
+    "УГОЛ 2",
+    "Якорь: ...",
+    "Наблюдение: ...",
+    "Почему интересно: ...",
   ].join("\n");
 }
 
@@ -1253,7 +1306,7 @@ function buildCardWriterPrompt(args: {
     "Ты пишешь жемчужину — литературное мини-эссе по стиху Библии.",
     "Жемчужина не справка и не информация. Это сдвиг в чтении.",
     "",
-    "Представь стол, за которым сидят двадцать христиан, изучающих Библию тридцать лет. Они знают этот стих наизусть. Твоя задача — вызвать у них тихое: «вау, я этого не замечал».",
+    "Представь стол, за которым сидят двадцать христиан, изучающих Библию тридцать лет. Они знают этот стих наизусть. Твоя задача — вызвать у них тихое «вау, я этого не замечал».",
     "",
     "ТОН",
     "",
@@ -1265,7 +1318,7 @@ function buildCardWriterPrompt(args: {
     args.reference,
     `«${args.verseTextRu}»`,
     "",
-    "УГЛЫ НАБЛЮДЕНИЯ",
+    "УГЛЫ НАБЛЮДЕНИЯ:",
     JSON.stringify(args.angles, null, 2),
     "",
     "УЖЕ СУЩЕСТВУЮЩИЕ КАРТОЧКИ — НЕ ПОВТОРЯЙ ИХ:",
@@ -1274,43 +1327,37 @@ function buildCardWriterPrompt(args: {
     "ЛЕКСИЧЕСКИЙ КОНТЕКСТ ДЛЯ ВНУТРЕННЕЙ ПРОВЕРКИ, НЕ ДЛЯ СТИЛЯ:",
     args.originalLanguagePrompt || "Пакет оригинального языка недоступен. Не делай утверждений об оригинале.",
     "",
-    "ФОРМАТ ЖЕМЧУЖИНЫ",
+    "ФОРМАТ ЖЕМЧУЖИНЫ — строго четыре поля",
     "",
-    "Заголовок: одна сильная фраза, передающая суть открытия. Не вопрос, не призыв. Утверждение или образ. 5–12 слов.",
-    "Опора: короткая цитата из стиха или конкретное место — то, на что физически опирается жемчужина. Можно с микро-комментарием в скобках.",
-    "Основной текст: сердце жемчужины. 4–5 смысловых строк рассуждения, разворачивающего угол. Пиши свободно, как литератор. Покажи читателю то, что он не замечал, но не как объявление открытия, а как тихое наблюдение. Можно использовать сравнения, образы и длинные предложения, если они работают.",
-    "Почему это важно: 2–3 строки о том, что меняется в чтении или в практике веры после этого сдвига. Не мораль и не вывод «отсюда следует». Скорее: вот к чему это поворачивает восприятие.",
+    "Заголовок: <одна сильная фраза, передающая суть открытия. Не вопрос, не призыв. Утверждение или образ. 5-12 слов.>",
+    "Опора: <короткая цитата из стиха или конкретное место — то, на что физически опирается жемчужина. 1-2 строки. Можно с микро-комментарием в скобках.>",
+    "Основной текст: <4-5 строк рассуждения, разворачивающего угол. Сердце жемчужины. Пиши свободно, как литератор. Покажи читателю то, что он не замечал, но не как объявление открытия — как тихое наблюдение. Можно использовать сравнения, образы. Не бойся длинных предложений, если они работают.>",
+    "Почему это важно: <2-3 строки о том, что меняется в чтении или в практике веры после этого сдвига. Не мораль, не вывод «отсюда следует». Скорее: вот к чему это поворачивает восприятие.>",
     "",
     "НЕ ДЕЛАЙ",
     "",
     "- Не пересказывай стих своими словами вместо того, чтобы раскрыть угол.",
     "- Не используй слова «удивительно», «прекрасно», «потрясающе» — пусть удивление возникает у читателя, не у автора.",
-    "- Не начинай с «Этот стих учит нас...» или «Здесь мы видим...».",
-    "- Не превращай карточку в словарную справку.",
-    "- Не оглядывайся на итоговую безопасность как писатель — за строгую проверку отвечает следующий шаг.",
+    "- Не начинай с «Этот стих учит нас...» или «Здесь мы видим...». ",
+    "- Не оглядывайся на «безопасно ли это» — за качество и достоверность отвечает следующий шаг.",
     "- Но не выдумывай фактов и не добавляй того, чего нет в угле, стихе или лексическом контексте.",
-    "- Не цитируй стих целиком.",
+    "- Не цитируй стих целиком — только если совсем не обойтись.",
     "- Не упоминай: лексикон, пакет подтверждает, evaluator, public-ready, claim, правила генерации.",
     "- Если используешь греческое/еврейское слово, сразу дай русский мост: γνοὺς — «узнав». В заголовок греческое/еврейское слово не ставь.",
     "",
-    "JSON нужен только как техническая упаковка. Он не должен делать стиль сухим.",
-    "JSON ONLY:",
-    JSON.stringify(
-      {
-        cards: [
-          {
-            card_id: "card_1",
-            title: "Заголовок",
-            anchor: "Опора",
-            teaser: "Основной текст",
-            why_it_matters: "Почему это важно",
-            source_angle_ids: ["a1"],
-          },
-        ],
-      },
-      null,
-      2,
-    ),
+    "ФОРМАТ ОТВЕТА — строго текстом, без JSON, без markdown-таблицы, ничего лишнего перед или после:",
+    "",
+    "ЖЕМЧУЖИНА 1",
+    "Заголовок: ...",
+    "Опора: ...",
+    "Основной текст: ...",
+    "Почему это важно: ...",
+    "",
+    "ЖЕМЧУЖИНА 2",
+    "Заголовок: ...",
+    "Опора: ...",
+    "Основной текст: ...",
+    "Почему это важно: ...",
     "",
     `Напиши до ${args.maxCards} лучших жемчужин. Лучше меньше сильных, чем много правильных, но мёртвых.`,
   ].join("\n");
@@ -1600,30 +1647,20 @@ export async function POST(req: Request) {
       originalLanguagePrompt: originalLanguage.prompt,
     });
 
-    const writerRawText = await runAI(writerProvider, writerPrompt, "ru", true);
+    const writerRawText = await runAI(writerProvider, writerPrompt, "ru", false);
     const parsedCards = parseCards(writerRawText);
 
-    const lexiconPrompt = buildLexiconCheckPrompt({
-      reference,
-      verseTextRu,
-      originalLanguagePrompt: originalLanguage.prompt,
-      cards: parsedCards.cards,
-    });
-
-    const lexiconRawText =
-      parsedCards.cards.length > 0
-        ? await runAI(evaluatorProvider, lexiconPrompt, "ru", true)
-        : "";
-
-    const parsedLexiconChecks =
-      parsedCards.cards.length > 0
-        ? parseLexiconChecks(lexiconRawText)
-        : { checks: [], parsed_json: null, error: null };
-
-    const lexiconCheckedCards = mergeLexiconChecks(
-      parsedCards.cards,
-      parsedLexiconChecks.checks,
-    );
+    // Keep the writer and judge separated.
+    // The strict evaluator receives the original-language packet and checks claims there.
+    // We do not run an extra Lexicon Gate here because it can accidentally rewrite the literary voice before judging.
+    const lexiconPrompt: string | null = null;
+    const lexiconRawText = "";
+    const parsedLexiconChecks: ReturnType<typeof parseLexiconChecks> = {
+      checks: [],
+      parsed_json: null,
+      error: null,
+    };
+    const lexiconCheckedCards = parsedCards.cards;
 
     const evaluatorPrompt = buildEvaluatorPrompt({
       reference,
@@ -1645,7 +1682,7 @@ export async function POST(req: Request) {
       [...evaluatedCards].sort((a, b) => (b.score_total ?? 0) - (a.score_total ?? 0)),
     );
 
-    const rewriteCandidates = sortedCards.filter(shouldRewriteCard).slice(0, 4);
+    const rewriteCandidates: EvaluatedCard[] = [];
 
     let rewritePrompt: string | null = null;
     let rewriteRawText: string | null = null;
