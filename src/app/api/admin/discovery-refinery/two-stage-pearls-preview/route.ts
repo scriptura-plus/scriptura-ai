@@ -236,6 +236,55 @@ function detectOriginalLanguageDisplayBlockers(card: {
   return blockers;
 }
 
+function hasInternalInstructionLeak(text: string | null | undefined): boolean {
+  const value = (text ?? "").toLowerCase();
+
+  const patterns = [
+    "если нужно показывать",
+    "если нужно показать",
+    "стоит сразу перевести",
+    "нужно сразу перевести",
+    "для русского читателя:",
+    "публичный русский мост",
+    "русский мост добавлен",
+    "lexicon",
+    "лексикон подтверждает",
+    "пакет подтверждает",
+    "карточка не делает",
+    "claim",
+    "public-ready",
+    "evaluator",
+    "rewrite_instruction",
+    "corrected_",
+  ];
+
+  return patterns.some((pattern) => value.includes(pattern));
+}
+
+function detectPublicContentBlockers(card: {
+  title?: string | null;
+  anchor?: string | null;
+  teaser?: string | null;
+  why_it_matters?: string | null;
+}): string[] {
+  const blockers = [...detectOriginalLanguageDisplayBlockers(card)];
+
+  const fields = [
+    ["title", card.title],
+    ["anchor", card.anchor],
+    ["teaser", card.teaser],
+    ["why_it_matters", card.why_it_matters],
+  ] as const;
+
+  for (const [field, value] of fields) {
+    if (hasInternalInstructionLeak(value)) {
+      blockers.push(`internal_instruction_leak:${field}`);
+    }
+  }
+
+  return blockers;
+}
+
 function normalizeAngle(value: unknown, index: number, focus: string): HarvestedAngle | null {
   if (!isRecord(value)) return null;
 
@@ -409,7 +458,7 @@ function parseLexiconChecks(text: string): {
 function mergeLexiconChecks(cards: DraftCard[], checks: LexiconCheck[]): DraftCard[] {
   return cards.map((card) => {
     const check = checks.find((item) => item.card_id === card.card_id);
-    const deterministicBlockers = detectOriginalLanguageDisplayBlockers(card);
+    const deterministicBlockers = detectPublicContentBlockers(card);
 
     if (!check) {
       return {
@@ -440,7 +489,7 @@ function mergeLexiconChecks(cards: DraftCard[], checks: LexiconCheck[]): DraftCa
       public_original_language_note: check.public_original_language_note,
     };
 
-    const blockersAfterCorrection = detectOriginalLanguageDisplayBlockers(correctedCard);
+    const blockersAfterCorrection = detectPublicContentBlockers(correctedCard);
 
     return {
       ...correctedCard,
@@ -501,7 +550,7 @@ function mergeEvaluations(cards: DraftCard[], evaluations: JsonRecord[]): Evalua
           .filter(Boolean)
       : [];
 
-    for (const blocker of detectOriginalLanguageDisplayBlockers(card)) {
+    for (const blocker of detectPublicContentBlockers(card)) {
       if (!riskFlags.includes(blocker)) riskFlags.push(blocker);
     }
 
@@ -528,7 +577,7 @@ function shouldRewriteCard(card: EvaluatedCard): boolean {
   const score = card.score_total ?? 0;
   const verdict = card.verdict ?? "";
   const hasRisk = card.risk_flags.length > 0;
-  const hasDisplayProblem = detectOriginalLanguageDisplayBlockers(card).length > 0;
+  const hasDisplayProblem = detectPublicContentBlockers(card).length > 0;
   const hasLexiconProblem =
     card.lexicon_claim_status === "unsupported" ||
     card.lexicon_claim_status === "needs_human_check" ||
@@ -617,6 +666,9 @@ function originalLanguagePublicRules(): string {
     "- Для длинных оригинальных фраз лучше anchor на русском, а оригинал вплести коротко в teaser:",
     "  В греческом это сжато в слове γνοὺς — «узнав».",
     "- Оригинальный язык нужен не как значок экспертности, а только когда он реально усиливает открытие.",
+    "- Никогда не пиши публично внутренние инструкции вроде: ‘Если нужно показывать греческое слово, его стоит сразу перевести’. Это редакционная инструкция, не текст карточки.",
+    "- Если нужно исправить греческое слово без перевода, просто перепиши фразу естественно: ‘В греческом это сжато в слове γνοὺς — «узнав»’. Не объясняй правило читателю.",
+    "- Не упоминай в публичной карточке: лексикон, пакет подтверждает, public-ready, evaluator, rewrite, claim, карточка делает/не делает.",
     "- В одном наборе допустима максимум одна сильная лексическая карточка, если она действительно лучшая; остальные карточки должны оставаться риторическими, структурными, контекстными или нарративными.",
   ].join("\n");
 }
@@ -641,6 +693,8 @@ function buildLexiconCheckPrompt(args: {
     "- Если пакета недостаточно, ставь 'needs_human_check'.",
     "- Если греческое/еврейское слово выводится публично, оно обязано иметь русский мост: γνοὺς — «узнав».",
     "- Если anchor содержит голую длинную греческую/еврейскую фразу, замени anchor на понятный русский или добавь русский мост.",
+    "- Если в карточке протекла внутренняя инструкция, например ‘Если нужно показывать греческое слово...’, обязательно перепиши teaser/why естественным публичным текстом.",
+    "- corrected_* должны содержать только готовый публичный текст, не правила, не объяснение формата и не редакционные инструкции.",
     "- Не пиши в corrected_* null, если поле не меняется.",
     "",
     originalLanguagePublicRules(),
@@ -775,6 +829,7 @@ function getPublicReadiness(card: EvaluatedCard): {
     "duplicate_risk",
     "lexicon_unsupported",
     "untranslated_original_language",
+    "internal_instruction_leak",
   ]);
 
   if (score < 82) blockers.push("score_below_82");
@@ -787,6 +842,7 @@ function getPublicReadiness(card: EvaluatedCard): {
       blockers.push(`needs_rewrite:${flag}`);
     }
     if (flag === "original_language_in_title") blockers.push(`needs_rewrite:${flag}`);
+    if (flag.startsWith("internal_instruction_leak")) blockers.push(`needs_rewrite:${flag}`);
   }
 
   if (card.lexicon_claim_status === "unsupported") blockers.push("risk:lexicon_unsupported");
@@ -796,7 +852,7 @@ function getPublicReadiness(card: EvaluatedCard): {
   if (card.public_original_language_ok === false) {
     blockers.push("needs_rewrite:original_language_display");
   }
-  for (const displayBlocker of detectOriginalLanguageDisplayBlockers(card)) {
+  for (const displayBlocker of detectPublicContentBlockers(card)) {
     blockers.push(`needs_rewrite:${displayBlocker}`);
   }
   if (card.rewrite_instruction) blockers.push("rewrite_instruction_present");
@@ -848,8 +904,8 @@ function buildRecommendedCards(args: {
     const rewriteScore = rewrite.score_total ?? 0;
     const originalSafety = original.safety_score ?? 0;
     const rewriteSafety = rewrite.safety_score ?? 0;
-    const originalDisplayBlockers = detectOriginalLanguageDisplayBlockers(original).length;
-    const rewriteDisplayBlockers = detectOriginalLanguageDisplayBlockers(rewrite).length;
+    const originalDisplayBlockers = detectPublicContentBlockers(original).length;
+    const rewriteDisplayBlockers = detectPublicContentBlockers(rewrite).length;
 
     if (
       rewriteScore >= originalScore - 8 &&
@@ -977,6 +1033,7 @@ function buildCardWriterPrompt(args: {
     "- не делай лексическую справку;",
     "- не повторяй existing cards;",
     "- не добавляй фактов сверх угла и пакета;",
+    "- не упоминай правила генерации, лексикон, evaluator, public-ready, claim, пакет подтверждает или то, как надо показывать греческое слово;",
     "- why_it_matters — одно ясное предложение, не пересказ teaser.",
     "",
     originalLanguagePublicRules(),
@@ -1041,13 +1098,14 @@ function buildEvaluatorPrompt(args: {
     "strong_candidate | usable_candidate | rewrite_needed | needs_evidence | duplicate_risk | weak_reject",
     "",
     "risk_flags:",
-    "lexical_check | translation_check | syntax_check | historical_check | intertextual_check | theological_overreach | duplicate_risk | pretty_empty | overclaim | untranslated_original_language | lexicon_unsupported | lexicon_needs_human_check",
+    "lexical_check | translation_check | syntax_check | historical_check | intertextual_check | theological_overreach | duplicate_risk | pretty_empty | overclaim | untranslated_original_language | internal_instruction_leak | lexicon_unsupported | lexicon_needs_human_check",
     "",
     "Особое правило:",
     "- Если карточка публично показывает греческое/еврейское слово без русского моста формата γνοὺς — «узнав», поставь risk_flag untranslated_original_language и verdict rewrite_needed.",
     "- Если title содержит греческое/еврейское слово, поставь untranslated_original_language.",
     "- Если anchor является длинной голой греческой/еврейской фразой, поставь untranslated_original_language.",
     "- Если лексический claim не подтверждён пакетом, поставь lexicon_unsupported или lexicon_needs_human_check.",
+    "- Если в teaser/why/anchor протекла внутренняя инструкция (‘Если нужно показывать...’, ‘стоит сразу перевести’, ‘лексикон подтверждает’, ‘пакет подтверждает’), поставь internal_instruction_leak и verdict rewrite_needed.",
     "- Не требуй греческий язык от каждой карточки. Сильная риторическая карточка без греческого может быть public-ready.",
     "",
     "СТИХ:",
@@ -1472,6 +1530,9 @@ export async function POST(req: Request) {
         ).length,
         original_language_display_problem_count: recommendedCards.filter(
           (card) => detectOriginalLanguageDisplayBlockers(card).length > 0,
+        ).length,
+        public_content_problem_count: recommendedCards.filter(
+          (card) => detectPublicContentBlockers(card).length > 0,
         ).length,
         strong_count: recommendedCards.filter((card) => (card.score_total ?? 0) >= 82).length,
         usable_count: recommendedCards.filter((card) => (card.score_total ?? 0) >= 74).length,
