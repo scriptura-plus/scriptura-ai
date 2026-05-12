@@ -76,6 +76,70 @@ type ExistingCard = {
   coverage_type?: string | null;
 };
 
+type CandidateSnapshot = {
+  id?: string;
+  title?: string;
+  anchor?: string | null;
+  teaser?: string | null;
+  why_it_matters?: string | null;
+};
+
+type PreviewDuplicateInfo = {
+  matched_card_id?: string | null;
+  existing_score?: number | null;
+  candidate_score?: number | null;
+  score_delta?: number | null;
+  same_angle?: boolean | null;
+  similarity_confidence?: number | null;
+  battle_action?: string | null;
+  battle_reason?: string | null;
+  reason?: string | null;
+  existing_card?: ExistingCard | null;
+  candidate_card?: CandidateSnapshot | null;
+};
+
+type ReviewCandidate = {
+  type?: "near_replacement" | "strong_duplicate" | string;
+  reason?: string;
+  reference?: string;
+  canonical_ref?: string;
+  candidate_title?: string;
+  candidate_score_v2?: number | null;
+  preview_score?: number | null;
+  old_pipeline_status?: string | null;
+  existing_card_id?: string | null;
+  existing_title?: string | null;
+  existing_score?: number | null;
+  score_delta?: number | null;
+  candidate?: CandidateSnapshot;
+  preview_duplicate?: PreviewDuplicateInfo | null;
+  suggested_actions?: string[];
+  preview_response?: unknown;
+};
+
+type TopupResultItem = {
+  candidate_title?: string;
+  candidate_score_v2?: number | null;
+  candidate_public_ready_v2?: boolean;
+  candidate_public_status_v2?: string | null;
+  candidate_lexicon_claim_status_v2?: string | null;
+  candidate_lexicon_note_v2?: string | null;
+  skipped?: boolean;
+  skip_reason?: string | null;
+  saved_id?: string | null;
+  final_score?: number | null;
+  preview_score?: number | null;
+  preview_skipped?: boolean;
+  preview_skip_reason?: string | null;
+  preview_would_save?: boolean | null;
+  preview_duplicate_existing_id?: string | null;
+  old_pipeline_status?: string | null;
+  forced_status?: string | null;
+  has_evidence_risk?: boolean;
+  lexicon_cleared_by_v2?: boolean;
+  review_candidate?: ReviewCandidate | null;
+};
+
 type TopupResponse = {
   ok?: boolean;
   error?: string;
@@ -83,22 +147,16 @@ type TopupResponse = {
   reason?: string;
   existing_count_before?: number;
   target_count?: number;
+  process_limit?: number;
   v2_cards_total?: number;
   selected_for_old_pipeline?: number;
   processed_count?: number;
   saved_count?: number;
   skipped_count?: number;
   failed_count?: number;
-  results?: Array<{
-    candidate_title?: string;
-    candidate_score_v2?: number | null;
-    candidate_public_ready_v2?: boolean;
-    skipped?: boolean;
-    skip_reason?: string | null;
-    saved_id?: string | null;
-    final_score?: number | null;
-    old_pipeline_status?: string | null;
-  }>;
+  review_candidate_count?: number;
+  review_candidates?: ReviewCandidate[];
+  results?: TopupResultItem[];
 };
 
 function getStoredSecret(): string {
@@ -127,6 +185,29 @@ function JsonDetails({ title, value }: { title: string; value: unknown }) {
 function Score({ value }: { value?: number | null }) {
   if (typeof value !== "number") return <span className="score muted">—</span>;
   return <span className={value >= 82 ? "score high" : value >= 74 ? "score mid" : "score"}>{value}</span>;
+}
+
+function Delta({ value }: { value?: number | null }) {
+  if (typeof value !== "number") return <span className="delta muted">Δ —</span>;
+  return <span className={value > 0 ? "delta positive" : value < 0 ? "delta negative" : "delta"}>Δ {value > 0 ? `+${value}` : value}</span>;
+}
+
+function MiniCard({ title, card }: { title: string; card?: CandidateSnapshot | ExistingCard | null }) {
+  if (!card) return null;
+
+  return (
+    <div className="miniCard">
+      <div className="miniTitle">{title}</div>
+      <h4>{card.title || "Untitled"}</h4>
+      {"score_total" in card && typeof card.score_total === "number" ? (
+        <p className="miniMeta">score {card.score_total}</p>
+      ) : null}
+      {"status" in card && card.status ? <p className="miniMeta">status {card.status}</p> : null}
+      {card.anchor ? <p className="anchor">“{card.anchor}”</p> : null}
+      {card.teaser ? <p className="text">{card.teaser}</p> : null}
+      {card.why_it_matters ? <p className="why">{card.why_it_matters}</p> : null}
+    </div>
+  );
 }
 
 function CardView({ card, index }: { card: EvaluatedCard; index: number }) {
@@ -201,6 +282,60 @@ function ExistingCardView({ card, index }: { card: ExistingCard; index: number }
   );
 }
 
+function ReviewCandidateView({ item, index }: { item: ReviewCandidate; index: number }) {
+  const duplicate = item.preview_duplicate ?? null;
+  const existingCard = duplicate?.existing_card ?? null;
+  const candidateCard = item.candidate ?? duplicate?.candidate_card ?? null;
+
+  return (
+    <article className="reviewCard">
+      <div className="reviewHeader">
+        <div>
+          <p className="reviewKicker">Review candidate {index + 1}</p>
+          <h3>{item.candidate_title || candidateCard?.title || "Untitled candidate"}</h3>
+        </div>
+        <div className="scoreCluster">
+          <Score value={item.preview_score} />
+          <Delta value={item.score_delta} />
+        </div>
+      </div>
+
+      <div className="pills">
+        {item.type ? <Pill>{item.type}</Pill> : null}
+        {item.reason ? <Pill>{item.reason}</Pill> : null}
+        {item.old_pipeline_status ? <Pill>old: {item.old_pipeline_status}</Pill> : null}
+        {typeof item.candidate_score_v2 === "number" ? <Pill>v2 {item.candidate_score_v2}</Pill> : null}
+        {typeof item.existing_score === "number" ? <Pill>existing {item.existing_score}</Pill> : null}
+        {item.existing_card_id ? <Pill>matched {item.existing_card_id.slice(0, 8)}</Pill> : null}
+      </div>
+
+      <p className="reviewSummary">
+        Это не было сохранено автоматически, потому что old pipeline увидел сильное пересечение с уже существующей карточкой.
+        Но кандидат достаточно сильный, чтобы не потеряться: редактор должен решить, заменить, объединить идею, сохранить вручную в reserve или отклонить.
+      </p>
+
+      <div className="compareGrid">
+        <MiniCard title="Candidate" card={candidateCard} />
+        <MiniCard title="Existing match" card={existingCard} />
+      </div>
+
+      {duplicate?.battle_reason ? <p className="note strongNote">Battle: {duplicate.battle_reason}</p> : null}
+      {duplicate?.reason ? <p className="note">Reason: {duplicate.reason}</p> : null}
+
+      {item.suggested_actions?.length ? (
+        <div className="actionsRow">
+          <span>Suggested actions</span>
+          {item.suggested_actions.map((action) => (
+            <Pill key={action}>{action}</Pill>
+          ))}
+        </div>
+      ) : null}
+
+      <JsonDetails title="Review candidate JSON" value={item} />
+    </article>
+  );
+}
+
 export default function PearlsV2LabPage() {
   const [reference, setReference] = useState("Иоанна 17:7");
   const [adminSecret, setAdminSecret] = useState(getStoredSecret);
@@ -219,6 +354,7 @@ export default function PearlsV2LabPage() {
   const rewrittenCards = result?.result?.rewritten_cards ?? [];
   const originalCards = result?.result?.evaluated_cards ?? [];
   const existing = result?.result?.existing_cards ?? [];
+  const topupReviewCandidates = topupResult?.review_candidates ?? [];
 
   const summary = useMemo(() => {
     if (!result) return null;
@@ -337,7 +473,7 @@ export default function PearlsV2LabPage() {
         <p className="eyebrow">Scriptura Studio</p>
         <h1>Pearls v2 Lab</h1>
         <p className="subtitle">
-          Углы → сильные карточки → оценка. Ничего не сохраняется.
+          Углы → сильные карточки → оценка. Preview ничего не сохраняет; top-up отправляет текущие V2-карточки в старый pipeline.
         </p>
       </section>
 
@@ -374,7 +510,7 @@ export default function PearlsV2LabPage() {
         <div>
           <h2>V2 top-up through old pipeline</h2>
           <p className="subtitleSmall">
-            Sends current public-ready Pearls v2 cards into process-angle-candidate. It does not rerun Pearls v2.
+            Sends current Pearls v2 cards into process-angle-candidate. Strong duplicate / near-replacement candidates are now returned for editor review instead of disappearing.
           </p>
         </div>
         <button
@@ -391,18 +527,43 @@ export default function PearlsV2LabPage() {
 skipped: ${topupResult.skipped ? "yes" : "no"}
 reason: ${topupResult.reason ?? "—"}
 existing before: ${topupResult.existing_count_before ?? "—"}
+target count: ${topupResult.target_count ?? "—"}
+process limit: ${topupResult.process_limit ?? "—"}
 v2 cards: ${topupResult.v2_cards_total ?? "—"}
 selected: ${topupResult.selected_for_old_pipeline ?? "—"}
 processed: ${topupResult.processed_count ?? 0}
 saved: ${topupResult.saved_count ?? 0}
 skipped by old pipeline: ${topupResult.skipped_count ?? 0}
-failed: ${topupResult.failed_count ?? 0}`}
+failed: ${topupResult.failed_count ?? 0}
+review candidates: ${topupResult.review_candidate_count ?? topupReviewCandidates.length}`}
           </pre>
         ) : null}
         {topupResult?.results?.length ? (
           <JsonDetails title="Top-up details" value={topupResult.results} />
         ) : null}
       </section>
+
+      {topupReviewCandidates.length > 0 ? (
+        <section className="panel reviewPanel">
+          <div className="reviewIntro">
+            <p className="eyebrow">Editor queue</p>
+            <h2>Review Candidates / Near replacements</h2>
+            <p className="subtitleSmall">
+              Эти карточки old pipeline не сохранил автоматически из-за duplicate/battle logic, но они достаточно сильные для ручного решения.
+            </p>
+          </div>
+
+          <div className="reviewGrid">
+            {topupReviewCandidates.map((item, index) => (
+              <ReviewCandidateView
+                item={item}
+                index={index}
+                key={`${item.existing_card_id ?? "review"}_${item.candidate_title ?? index}`}
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       {result ? (
         <>
@@ -516,6 +677,13 @@ failed: ${topupResult.failed_count ?? 0}`}
           margin: 8px 0;
           font-size: 21px;
           line-height: 1.08;
+          letter-spacing: -0.03em;
+        }
+
+        h4 {
+          margin: 7px 0;
+          font-size: 18px;
+          line-height: 1.1;
           letter-spacing: -0.03em;
         }
 
@@ -633,7 +801,8 @@ failed: ${topupResult.failed_count ?? 0}`}
           font: 700 12px/1.2 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         }
 
-        .score {
+        .score,
+        .delta {
           display: inline-flex;
           min-width: 42px;
           justify-content: center;
@@ -654,8 +823,19 @@ failed: ${topupResult.failed_count ?? 0}`}
           background: rgba(160, 120, 60, 0.16);
         }
 
-        .score.muted {
+        .score.muted,
+        .delta.muted {
           color: #8a7a67;
+        }
+
+        .delta.positive {
+          background: rgba(95, 120, 90, 0.18);
+          color: #3d5a38;
+        }
+
+        .delta.negative {
+          background: rgba(138, 63, 43, 0.12);
+          color: #8a3f2b;
         }
 
         .anchor {
@@ -747,6 +927,96 @@ failed: ${topupResult.failed_count ?? 0}`}
           color: #8a1f16;
         }
 
+        .reviewPanel {
+          background:
+            radial-gradient(circle at top left, rgba(95, 120, 144, 0.12), transparent 38%),
+            rgba(251, 246, 234, 0.96);
+          border-color: rgba(95, 120, 144, 0.24);
+        }
+
+        .reviewIntro {
+          margin-bottom: 16px;
+        }
+
+        .reviewGrid {
+          display: grid;
+          gap: 14px;
+        }
+
+        .reviewCard {
+          border: 1px solid rgba(95, 120, 144, 0.24);
+          border-radius: 22px;
+          padding: 16px;
+          background: rgba(255, 250, 240, 0.94);
+          box-shadow: 0 14px 36px rgba(44, 36, 27, 0.06);
+          overflow-wrap: anywhere;
+        }
+
+        .reviewHeader {
+          display: flex;
+          justify-content: space-between;
+          gap: 16px;
+          align-items: flex-start;
+        }
+
+        .reviewKicker,
+        .miniTitle,
+        .actionsRow > span {
+          margin: 0;
+          color: #5f7890;
+          font: 800 11px/1.2 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+        }
+
+        .scoreCluster {
+          display: flex;
+          gap: 8px;
+          align-items: center;
+          flex-wrap: wrap;
+          justify-content: flex-end;
+        }
+
+        .reviewSummary {
+          margin: 12px 0 0;
+          color: #3d4b58;
+          line-height: 1.45;
+        }
+
+        .compareGrid {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+          gap: 12px;
+          margin-top: 14px;
+        }
+
+        .miniCard {
+          border: 1px solid rgba(111, 71, 32, 0.12);
+          border-radius: 16px;
+          padding: 13px;
+          background: rgba(251, 246, 234, 0.82);
+        }
+
+        .miniMeta {
+          margin: 4px 0 0;
+          color: #8a5a2b;
+          font: 700 12px/1.2 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+
+        .strongNote {
+          color: #2f4858;
+        }
+
+        .actionsRow {
+          display: flex;
+          gap: 7px;
+          flex-wrap: wrap;
+          align-items: center;
+          margin-top: 14px;
+          padding-top: 12px;
+          border-top: 1px solid rgba(111, 71, 32, 0.12);
+        }
+
         @media (max-width: 900px) {
           .page {
             padding: 18px;
@@ -754,8 +1024,17 @@ failed: ${topupResult.failed_count ?? 0}`}
 
           .controls,
           .split,
-          .topupPanel {
+          .topupPanel,
+          .compareGrid {
             grid-template-columns: 1fr;
+          }
+
+          .reviewHeader {
+            display: grid;
+          }
+
+          .scoreCluster {
+            justify-content: flex-start;
           }
         }
       `}</style>
