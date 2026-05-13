@@ -37,736 +37,350 @@ export function buildLensPrompt(args: {
     : "";
 
   switch (args.lens) {
-    // ─── ANGLES ──────────────────────────────────────────────────────────────
     case "angles":
-      return (
-        `${fence}\n\n` +
-        `Verse: ${args.reference}\n"${args.verseText}"\n\n` +
-        `${originalLanguagePrompt}\n\n` +
-        `All string values must be written in ${langName}.\n\n` +
-        `${EDITORIAL_VOICE(langName)}\n\n` +
-        `${JARGON_BAN}\n\n` +
+      return buildAnglesPrompt({
+        reference: args.reference,
+        verseText: args.verseText,
+        langName,
+        fence,
+        originalLanguagePrompt,
+      });
 
-        `ORIGINAL-LANGUAGE PACKET — DISPLAY AND VERIFICATION ONLY:\n` +
-        `If a supplied Greek, Hebrew, or Aramaic packet appears above, do NOT treat it as the main discovery agenda for Pearls.\n` +
-        `Use the packet mainly to verify and display original-language forms accurately when a strong non-lexical pearl already requires them.\n` +
-        `Do not mine the packet for many word-level cards. Word-level discoveries belong primarily to the Lexis / Word Lens.\n` +
-        `Do not invent original-language words, transliterations, roots, morphology, or semantic claims that are not supported by the supplied packet.\n` +
-        `Do not write raw technical labels such as "Strong", "morphology", "gloss", "lemma", "packet", "STEPBible", "dataset", "ГЛОССА", "Стронг", "морфология", "лемма", or "пакет" in reader-facing cards.\n` +
-        `Do not include Hebrew, Aramaic, or Greek characters for decoration. Quote an original-language form only when it is verified and essential to that one discovery.\n` +
-        `At most ONE final Pearl may be primarily lexical/original-language, and only if it is clearly one of the strongest discoveries.\n` +
-        `The goal is a portfolio of non-obvious textual discoveries, not a second Lexis lens.\n\n` +
-
-        `PORTFOLIO DIVERSITY RULE — CRITICAL:\n` +
-        `Before writing the final JSON, build a broad internal candidate pool. Look for many possible angles first — even 15–20 if the verse allows it — then select only the strongest distinct discoveries.\n` +
-        `The final set must feel like a portfolio of different ways of seeing the verse. It must NOT be dominated by lexical/original-language observations.\n` +
-        `Final output constraints:\n` +
-        `- Maximum 1 primary lexical/original-language card.\n` +
-        `- Maximum 1 primary translation-loss/rendering card, unless the verse has no other strong angles.\n` +
-        `- At least 3 cards must be non-lexical: structure, rhetoric, sequence, contrast, agency, meaningful absence, image, scene, pressure point, expectation reversal, or immediate-context function.\n` +
-        `- If a candidate would fit better in Lexis, reject it unless it is the single strongest Pearl.\n` +
-        `- If a candidate would fit better in Translations, reject it unless it creates a broader discovery beyond translation comparison.\n` +
-        `- Do not include duplicates in different clothes.\n` +
-        `Score candidates internally for “wow-effect”: would a serious reader think, “I have read this before, but I never noticed THAT”? Prefer distinct candidates likely to score 82+ under a strict Scriptura AI evaluation.\n\n` +
-
-        // ── STEP 1: DISCOVERY HUNT ─────────────────────────────────────────
-        `STEP 1 — SILENT DISCOVERY HUNT (do this before writing anything):\n` +
-        `Read the verse closely. Scan for candidate discoveries in each of these 7 categories. ` +
-        `Generate at least one candidate per category before moving to Step 2.\n\n` +
-
-        `Category 1 — LEXICAL SURPRISE:\n` +
-        `Is there a word in the original Greek or Hebrew whose force, range of meaning, or root metaphor ` +
-        `is stronger, stranger, or more physical than the translation suggests? ` +
-        `What does the translation flatten or domesticate?\n` +
-        `Example: Greek εὔσπλαγχνοι (compassion) literally means "good intestines" — the seat of emotion ` +
-        `was the gut, not the heart. Most translations erase this bodily force entirely.\n\n` +
-
-        `Category 2 — CHOSEN-WORD CONTRAST:\n` +
-        `What word did the author use, and what word could they have used instead? ` +
-        `Is there a near-synonym that would have been more expected or more conventional? ` +
-        `What does the actual choice reveal about the meaning?\n` +
-        `Example: Paul chose χαρίζομαι (to give as a gift) for "forgive," not ἀφίημι (to release a debt). ` +
-        `The difference turns forgiveness from legal cancellation into an act of generosity.\n\n` +
-
-        `Category 3 — BODY OR SPATIAL METAPHOR:\n` +
-        `Is there a physical image, body-language metaphor, or spatial concept hiding under an abstract ` +
-        `translation? Something that involves anatomy, movement, distance, weight, debt, gift?\n` +
-        `Example: "heart" in many verses translates words that originally meant liver, gut, or chest cavity — ` +
-        `organs understood as the seat of emotion in antiquity.\n\n` +
-
-        `Category 4 — SYNTAX OR PREPOSITION:\n` +
-        `Does a preposition, particle, or word-order choice change the agency, location, or direction ` +
-        `of the action? What shifts if you read the structure precisely rather than paraphrastically?\n` +
-        `Example: "in Christ" as a location rather than an instrument — forgiving because you are inside ` +
-        `something, not merely pointing to someone else's example.\n\n` +
-
-        `Category 5 — STRUCTURE OR RHETORIC:\n` +
-        `Does the verse have a ladder structure, asyndeton (no conjunctions between items), parallelism, ` +
-        `compression, reversal, or chiasm? Does the sequence escalate or create surprise? ` +
-        `What would be lost if the verse were reordered?\n` +
-        `Example: "Be kind — compassionate — forgiving" without conjunctions in Greek makes the three ` +
-        `actions rush together, each one presupposing the last.\n\n` +
-
-        `Category 6 — TRANSLATION LOSS:\n` +
-        `What does the most common translation smooth over, omit, or accidentally normalize? ` +
-        `What sounds ordinary in ${langName} but was strange or sharp in the original language?\n` +
-        `Example: Russian "простите" (forgive) hides the gift-giving etymology entirely.\n\n` +
-
-        `Category 7 — EXPECTATION REVERSAL:\n` +
-        `What would a careful reader naturally assume this verse is doing, and does the wording, sequence, grammar, or structure show that it is actually doing something sharper, stranger, or more specific? ` +
-        `Does it sound like a definition but function as a contrast, sound like a command but depend on a hidden reason, sound like comfort but carry pressure, or sound ordinary while the wording is unusually precise?\n\n` +
-
-        `ADDITIONAL HIGH-YIELD DISCOVERY PATTERNS:\n` +
-        `After scanning the 7 categories above, also check these two patterns before moving to Step 2:\n\n` +
-
-        `Pattern A — MEANINGFUL ABSENCE:\n` +
-        `What does the verse not say that the reader might expect it to say? ` +
-        `Is there a missing explanation, missing emotion, missing command, missing subject, missing reason, or missing transition? ` +
-        `Does that absence change the force of the verse?\n\n` +
-
-        `Pattern B — AGENCY / PRESSURE POINT:\n` +
-        `Map who acts, who receives, who speaks, who is silent, who initiates, and who merely responds. ` +
-        `Then identify the load-bearing word, phrase, or clause: the detail that would change the whole verse if it were removed, translated differently, or moved elsewhere.\n\n` +
-
-        `Do not force original-language discoveries. If the strongest discovery is structural, rhetorical, based on absence, based on agency, or based on the exact wording of the verse, prefer that over a weaker Greek/Hebrew word note. Original-language claims must be concrete and modest.\n\n` +
-
-        // ── STEP 2: REJECTION TEST ─────────────────────────────────────────
-        `STEP 2 — REJECTION TEST (apply to every candidate from Step 1):\n` +
-        `For each candidate, ask this single question:\n` +
-        `"Could this angle be written without knowing anything specific about the wording, ` +
-        `original language, structure, sequence, grammar, translation, or exact phrasing of this verse?"\n\n` +
-        `If the answer is YES — reject immediately. ` +
-        `Angles that survive rejection must be rooted in something that exists in this specific verse, not in a general biblical theme.\n\n` +
-
-        `REJECTED immediately (examples of what fails the test):\n` +
-        `- "Forgiveness depends on receiving mercy" — this is a theological claim, not a textual observation\n` +
-        `- "Kindness comes before forgiveness" — barely requires reading the verse\n` +
-        `- "Compassion is important in relationships" — requires no knowledge of the verse at all\n` +
-        `- "The verse has three parts" — true of countless verses; says nothing specific\n` +
-        `- "Mutuality matters" — could be said about almost any verse on relationships\n\n` +
-
-        `PASS the test (examples of what survives):\n` +
-        `- "The verb Paul chose for 'forgive' means to give as a gift, not to cancel a debt" — specific to the Greek word choice\n` +
-        `- "Compassion does not live in the heart here — it lives in the gut" — specific to εὔσπλαγχνοι\n` +
-        `- "Paul lists three actions without conjunctions — the sentence accelerates rather than enumerates" — specific to Greek syntax\n` +
-        `- "The phrase 'in Christ' makes forgiveness a location, not an instrument" — specific to this preposition\n` +
-        `- "Russian 'простите' may hide the fact that Paul did not choose the debt-cancelling verb" — specific to translation gap\n\n` +
-
-        // ── STEP 3: BUILD CARDS ────────────────────────────────────────────
-        `STEP 3 — BUILD THE STRONGEST DIVERSE DISCOVERIES INTO CARDS:\n` +
-        `Return between 4 and 8 cards.\n` +
-        `Start with the strongest 4 discoveries from DIFFERENT categories. Add a 5th, 6th, 7th, or 8th card ONLY if the extra card is genuinely distinct and would likely deserve a score of 82+ under a strict Scriptura AI evaluation.\n` +
-        `Do not fill the list just to reach 8. If only 4 strong angles exist, return exactly 4. If 5 or 6 strong angles exist, return 5 or 6. If the verse is unusually rich and 7 or 8 distinct strong angles exist, return 7 or 8.\n` +
-        `The final set must not be a chain of word studies. Include a range of discovery types. No two cards may make the same basic point. Do not include weaker duplicates, alternate phrasings of the same angle, or generic applications.\n\n` +
-
-        `QUALITY THRESHOLD FOR EXTRA CARDS:\n` +
-        `Cards 1–4 must be the best surviving discoveries.\n` +
-        `Cards 5–8 are optional and must pass a higher bar: they must be distinct, text-grounded, non-obvious, and likely strong enough to become public cards after evaluation.\n` +
-        `If an optional card feels merely useful, familiar, decorative, or only moderately interesting, do not include it.\n\n` +
-
-        `TITLE STANDARD:\n` +
-        `The title must be a sharp, concrete statement of the discovery — not a topic, not a theme. ` +
-        `It should make the reader immediately think: "What do you mean? Show me."\n\n` +
-        `BAD: "The Importance of Compassion", "Forgiveness in Context", "Paul's Teaching on Kindness"\n` +
-        `GOOD: "The Verb That Turns Forgiveness from Bookkeeping into a Gift", ` +
-        `"Compassion Does Not Live in the Heart Here", ` +
-        `"Paul Uses Three Words Without Conjunctions — and the Sentence Accelerates", ` +
-        `"The Phrase 'In Christ' Makes Forgiveness a Location, Not an Instrument"\n\n` +
-
-        `TEASER STANDARD:\n` +
-        `2-3 sentences. Begin with the discovery, not with "This verse…" or "Paul says…". ` +
-        `Explain the hidden mechanism. Make the reader want to expand the card.\n\n` +
-
-        `ANCHOR STANDARD:\n` +
-        `The exact word, phrase, or structural feature from the verse that the angle is grounded in. ` +
-        `Prefer the visible phrase from the verse. Quote Hebrew, Aramaic, or Greek only if the card is the one allowed lexical/original-language Pearl and the form is essential to the discovery. Never add original-language script merely to make the card look scholarly.\n\n` +
-
-        `WHY_IT_MATTERS STANDARD:\n` +
-        `One sentence. A perceptual shift — how the verse reads differently after seeing this. ` +
-        `Not a moral lesson.\n\n` +
-
-        `Task: Return a JSON array of 4 to 8 angle objects. ` +
-        `Output JSON only — no markdown fences, no prose before or after.\n\n` +
-
-        `Each object has exactly these keys:\n` +
-        `- "title": discovery-driven statement, max 14 words, in ${langName}\n` +
-        `- "teaser": 2-3 sentences, starts with the discovery not a summary, in ${langName}\n` +
-        `- "anchor": exact word/phrase/structure from the verse; prefer the visible phrase and include an original-language form only for the one allowed lexical Pearl if verified and essential, in ${langName}\n` +
-        `- "why_it_matters": 1 sentence, perceptual shift, in ${langName}\n\n` +
-
-        `No banned words. No generic angles. No angle that fails the rejection test.\n\n` +
-
-        `Output — valid JSON array only. The array length must be 4, 5, 6, 7, or 8 depending on how many strong distinct discoveries actually exist:\n` +
-        `[{"title":"...","teaser":"...","anchor":"...","why_it_matters":"..."}]` +
-        `\n\nREMINDER: JSON only. All strings in ${langName}. Every angle must survive the rejection test. Do not pad the array with weak material. The final set must be diverse: at most one primary lexical/original-language Pearl and at least three non-lexical discoveries.`
-      );
-
-    // ─── WORD ─────────────────────────────────────────────────────────────────
     case "word":
-      return (
-        `${fence}\n\n` +
-        `Verse: ${args.reference}\n"${args.verseText}"\n\n` +
-        `${originalLanguagePrompt}\n\n` +
-        `All string values must be written in ${langName}.\n\n` +
-        `${EDITORIAL_VOICE(langName)}\n\n` +
-        `${JARGON_BAN}\n\n` +
-
-        `[SCRIPTURA AI — WORD LENS PROTOCOL v2.0]\n\n` +
-
-        `ROLE:\n` +
-        `You are the Word Lens for Scriptura AI.\n` +
-        `Your task is to make the verse more visible by examining its most important Greek, Hebrew, or Aramaic words and expressions.\n` +
-        `This lens is more specialized than Pearls: Pearls may choose any strong textual angle, but Word Lens must focus on words, roots, expressions, forms, repeated terms, and translation gaps.\n\n` +
-
-        `OUTPUT LANGUAGE:\n` +
-        `All reader-facing explanation must be written in ${langName}.\n` +
-        `Original-language forms may appear in their own script only when they are verified by the supplied packet and useful for the discovery.\n\n` +
-
-        `SOURCE DISCIPLINE — VERY IMPORTANT:\n` +
-        `If a supplied Greek, Hebrew, or Aramaic packet appears above, it is the controlling source for original-language claims.\n` +
-        `Use it to verify word forms, lemmas, repeated roots, morphology, transliteration, and basic sense data.\n` +
-        `Do not invent Hebrew, Aramaic, or Greek words, transliterations, roots, morphology, or semantic claims.\n` +
-        `If the packet does not support a claim, do not make that claim.\n` +
-        `If the packet is empty or does not cover the needed word, say less and base the card on the visible wording or translation gap.\n\n` +
-
-        `SOURCE DATA STYLE RULE:\n` +
-        `Use the packet internally, but do not expose raw database language.\n` +
-        `Do not write “Strong”, “morphology”, “morphology code”, “gloss”, “lemma”, “packet”, “dataset”, “STEPBible”, “lexicon”, or “source packet” in reader-facing text.\n` +
-        `Do not write “Стронг”, “морфология”, “морфологический код”, “глосса”, “лемма”, “пакет”, “датасет”, “STEPBible”, or “лексикон” in Russian reader-facing text.\n` +
-        `Do not turn the card into a technical parsing note. Translate the evidence into ordinary language.\n\n` +
-
-        `WORD LENS DIFFERENCE FROM PEARLS:\n` +
-        `Pearls select the strongest discoveries of any kind.\n` +
-        `Word Lens should map the verse through its most revealing words and expressions.\n` +
-        `It may use more original-language forms than Pearls, but every form must serve a clear reading shift.\n` +
-        `The reader should feel: “I now see why this word matters.” Not: “I saw a list of technical data.”\n\n` +
-
-        `DISCOVERY HUNT — INTERNAL ONLY:\n` +
-        `Scan the verse and choose 5 to 7 of the strongest word-level discoveries.\n` +
-        `Do not force seven. Return 5 if only five are strong. Return 6 or 7 only if the extra cards are genuinely distinct and useful.\n\n` +
-
-        `Look especially for:\n` +
-        `1. SEMANTIC RANGE — a word carries more force, texture, or range than the translation can show.\n` +
-        `2. ROOT / FAMILY — repeated roots, related words, or a word family create a pattern in the verse.\n` +
-        `3. WORD CHOICE — the author uses this word rather than a possible near-synonym.\n` +
-        `4. PHYSICAL IMAGE — an abstract translation hides a concrete image: body, movement, weight, space, breath, hand, face, path, house, debt, gift.\n` +
-        `5. GRAMMATICAL FORM — tense, aspect, voice, mood, participle, imperative, or plural/singular changes the feel of the action.\n` +
-        `6. PREPOSITION / PARTICLE — a small word changes direction, agency, location, emphasis, or relationship.\n` +
-        `7. TRANSLATION GAP — a familiar ${langName} word smooths, narrows, domesticates, or over-interprets the original expression.\n` +
-        `8. CONTRAST INSIDE THE VERSE — two words push against each other or form a hidden pair.\n\n` +
-
-        `REJECTION TEST:\n` +
-        `Reject a candidate if it could be written without knowing the actual word, expression, form, repeated root, grammar, or translation gap in this verse.\n` +
-        `Reject generic vocabulary notes.\n` +
-        `Reject decorative etymology.\n` +
-        `Reject claims that sound impressive but do not change how the verse reads.\n` +
-        `Reject any original-language claim not grounded in the supplied packet.\n\n` +
-
-        `SEMANTIC HUMILITY:\n` +
-        `Avoid overstatement.\n` +
-        `Do not write “the word really means only…” unless the supplied data makes that unavoidable.\n` +
-        `Prefer careful formulations:\n` +
-        `- “can carry the sense of…”\n` +
-        `- “in this context, it can sound closer to…”\n` +
-        `- “the translation makes it feel like…, while the wording leaves room for…”\n` +
-        `- “the form gives the action a more direct / ongoing / compressed feel…”\n\n` +
-
-        `CARD SHAPE:\n` +
-        `Each card must be a small word-discovery card, not a long article.\n` +
-        `It should have one clear word or expression at the center.\n` +
-        `It should explain what the familiar reading misses and how the word changes perception.\n\n` +
-
-        `TITLE STANDARD:\n` +
-        `The title must be a discovery statement, not a topic label.\n` +
-        `BAD: “The Word for New”, “Greek Vocabulary”, “Important Verb”.\n` +
-        `GOOD: “The ‘New’ Here Is Not Merely New in Time”.\n` +
-        `GOOD: “The Verb Makes the Old World Leave the Room”.\n` +
-        `GOOD: “This Small Preposition Changes the Direction of the Verse”.\n\n` +
-
-        `TEASER STANDARD:\n` +
-        `2–4 sentences. Begin with the discovery, not with “The Hebrew word…” or “The Greek word…”.\n` +
-        `Mention the original form only after the reader understands why it matters.\n\n` +
-
-        `ORIGINAL FIELD STANDARD:\n` +
-        `Use the original form from the supplied packet.\n` +
-        `Include transliteration only if it is available or can be safely inferred from the supplied packet.\n` +
-        `If transliteration is uncertain, use the original form alone.\n` +
-        `Do not include Strong numbers, morphology codes, raw gloss lists, or source names.\n\n` +
-
-        `GAP STANDARD:\n` +
-        `One concise sentence in ${langName}: what the familiar translation or ordinary reading loses, smooths, or makes too simple.\n\n` +
-
-        `WHY_IT_MATTERS STANDARD:\n` +
-        `One sentence in ${langName}: the reading shift created by seeing this word more clearly.\n` +
-        `This must be perceptual, not devotional.\n\n` +
-
-        `Task: Return a JSON array of 5 to 7 word-card objects.\n` +
-        `Output JSON only — no markdown fences, no prose before or after.\n\n` +
-
-        `Each object has exactly these keys:\n` +
-        `- "title": discovery-driven statement, max 14 words, in ${langName}\n` +
-        `- "teaser": 2–4 sentences, begins with the discovery not a generic vocabulary note, in ${langName}\n` +
-        `- "original": verified original word/expression from the supplied packet; original script plus transliteration only if safe\n` +
-        `- "gap": 1 sentence — what the familiar reading or ${langName} translation loses, in ${langName}\n` +
-        `- "why_it_matters": 1 sentence, perceptual shift, in ${langName}\n\n` +
-
-        `Return valid JSON array only. The array length must be 5, 6, or 7 depending on how many strong distinct word-level discoveries actually exist.\n` +
-        `Do not pad with weak words. Do not invent original-language data. Do not expose technical labels.\n\n` +
-        `[{"title":"...","teaser":"...","original":"...","gap":"...","why_it_matters":"..."}]`
-      );
-
-    // ─── CONTEXT ──────────────────────────────────────────────────────────────
-    case "context": {
-      const chapterReference =
-        args.chapterReference ?? "the chapter containing the target verse";
-      const chapterText = args.chapterText?.trim();
-
-      return (
-        `${fence}\n\n` +
-        `Target verse: ${args.reference}\n"${args.verseText}"\n\n` +
-        `Full chapter context: ${chapterReference}\n` +
-        (chapterText
-          ? `"${chapterText}"\n\n`
-          : `[CHAPTER TEXT WAS NOT PROVIDED. Use only stable biblical context you can confidently reconstruct, but clearly prioritize local context and avoid guessing specific verse wording.]\n\n`) +
-        `All string values must be written in ${langName}.\n\n` +
-        `${EDITORIAL_VOICE(langName)}\n\n` +
-        `${JARGON_BAN}\n\n` +
-
-        `TASK: Build a real Context Lens. Do NOT create ordinary insight cards, word studies, translation observations, or general reflections.\n\n` +
-
-        `A context card is valid ONLY if the idea becomes visible because the target verse is read inside a larger unit.\n` +
-        `If the same idea could be written by looking only at the target verse, reject it.\n\n` +
-
-        `WORK IN THREE LAYERS, IN THIS ORDER:\n\n` +
-
-        `LAYER 1 — NEAREST MEANING UNIT:\n` +
-        `From the full chapter, identify the closest meaningful unit around the target verse. ` +
-        `Usually this means the few verses before and after, but do not mechanically choose 3–5 verses. ` +
-        `Find the actual paragraph, scene, prayer movement, argument step, contrast, or turn of thought.\n\n` +
-        `Ask:\n` +
-        `- Where does this local thought begin and end?\n` +
-        `- Is the target verse an answer, hinge, climax, transition, explanation, contrast, correction, or conclusion?\n` +
-        `- What does the local movement make visible that the isolated verse hides?\n\n` +
-
-        `LAYER 2 — WHOLE CHAPTER MOVEMENT:\n` +
-        `Read the whole chapter as a flow. Identify what the chapter is doing before and after the target verse.\n\n` +
-        `Ask:\n` +
-        `- What is the chapter's main movement?\n` +
-        `- Why does this verse appear at this exact point?\n` +
-        `- What changes if the reader sees the whole chapter around it?\n` +
-        `- Does the verse summarize, sharpen, redirect, or deepen the chapter's argument?\n\n` +
-
-        `LAYER 3 — BOOK / WHOLE-BIBLE CONTEXT, ONLY IF USEFUL:\n` +
-        `Use broader book-level or whole-Bible context only if it genuinely changes the reading of the target verse. ` +
-        `Do not force cross-references. Do not create generic biblical-theology cards. ` +
-        `A broad-context card must still explain how it illuminates this specific verse in this specific chapter.\n\n` +
-
-        `STRICT REJECTION TEST:\n` +
-        `Reject any candidate if it is:\n` +
-        `- a lexical observation about a word;\n` +
-        `- a translation-gap observation;\n` +
-        `- a generic spiritual lesson;\n` +
-        `- a normal "interesting thought" that does not require the chapter;\n` +
-        `- a paraphrase of the target verse;\n` +
-        `- a card that could also appear under the Word Lens or Pearls Lens.\n\n` +
-
-        `VALID CONTEXT DISCOVERIES LOOK LIKE THIS:\n` +
-        `- "This line is not a definition; in the prayer movement, it functions as Jesus' appeal to the Father."\n` +
-        `- "The previous verses make this verse the hinge between authority received and life given."\n` +
-        `- "The chapter's movement shows that this phrase is not isolated doctrine but part of a farewell-prayer logic."\n` +
-        `- "The next verses reveal that the verse is not only about knowledge but about being drawn into the Son's mission."\n\n` +
-
-        `INVALID CONTEXT DISCOVERIES:\n` +
-        `- "The word means more than intellectual knowledge." That belongs to Word Lens.\n` +
-        `- "This verse teaches that eternal life is important." Too generic.\n` +
-        `- "The verse has a deep meaning." Empty.\n` +
-        `- "Knowing God means relationship." Could be written from the target verse alone unless the surrounding chapter changes it.\n\n` +
-
-        `OUTPUT GOAL:\n` +
-        `Return 3 context cards. Each card must come from a different contextual layer if possible:\n` +
-        `1. nearest meaning unit / paragraph;\n` +
-        `2. whole chapter movement;\n` +
-        `3. broader book or biblical context, only if genuinely useful. If broad context is weak, use another strong local/chapter card instead.\n\n` +
-
-        `JSON FORMAT:\n` +
-        `Return JSON only. No markdown fences. No prose before or after.\n\n` +
-        `The output must have exactly this shape:\n` +
-        `{\n` +
-        `  "thesis": "one elegant sentence in ${langName} explaining what the chapter context changes about the target verse",\n` +
-        `  "cards": [\n` +
-        `    {\n` +
-        `      "title": "sharp context-driven discovery, max 12 words, in ${langName}",\n` +
-        `      "teaser": "2-3 sentences. Start with the contextual discovery, not with a summary of the verse. Explain what the surrounding unit reveals.",\n` +
-        `      "shift": "the specific contextual shift: nearest verses, chapter movement, or broader setting that changes the reading",\n` +
-        `      "why_it_matters": "one sentence: how the verse reads differently after seeing this context"\n` +
-        `    },\n` +
-        `    {\n` +
-        `      "title": "...",\n` +
-        `      "teaser": "...",\n` +
-        `      "shift": "...",\n` +
-        `      "why_it_matters": "..."\n` +
-        `    },\n` +
-        `    {\n` +
-        `      "title": "...",\n` +
-        `      "teaser": "...",\n` +
-        `      "shift": "...",\n` +
-        `      "why_it_matters": "..."\n` +
-        `    }\n` +
-        `  ]\n` +
-        `}\n\n` +
-        `REMINDER: JSON only. All string values in ${langName}. Every card must pass the context-only rejection test.`
-      );
-    }
-
-    // ─── TRANSLATIONS ─────────────────────────────────────────────────────────
-    case "translations": {
-      return (
-        `${fence}\n\n` +
-        `Verse: ${args.reference}\n"${args.verseText}"\n\n` +
-        `${originalLanguagePrompt}\n\n` +
-        `All string values must be written in ${langName} unless a field explicitly contains a Bible translation label, transliteration, or original-language form.\n\n` +
-        `${EDITORIAL_VOICE(langName)}\n\n` +
-        `${JARGON_BAN}\n\n` +
-
-        `[SCRIPTURA AI — TRANSLATION DISCOVERY / COMPARISON LENS PROTOCOL v2.3]\n\n` +
-
-        `═══════════════════════════════════════════\n` +
-        `ROLE\n` +
-        `═══════════════════════════════════════════\n\n` +
-
-        `You are the Translation Discovery Lens for the Scriptura AI PWA.\n\n` +
-        `Your job is not to explain the whole verse and not to produce a word study.\n` +
-        `Your job is to reveal how translation choices shape the reader’s understanding of the verse by comparing respected renderings, translation strategies, and the original-language reason behind the differences.\n\n` +
-
-        `This lens should feel like a refined comparison desk:\n` +
-        `- familiar wording;\n` +
-        `- NWT wording where relevant;\n` +
-        `- formal / literal renderings;\n` +
-        `- readable renderings;\n` +
-        `- traditional renderings;\n` +
-        `- the original-language reason that helps explain why translations differ.\n\n` +
-
-        `Audience: serious general Bible readers.\n` +
-        `Tone: calm, precise, confident — never sensational, never apologetic, never devotional.\n` +
-        `Style: a quiet expert comparing renderings and showing what each one makes the reader notice.\n\n` +
-        `Default output language: ${langName}.\n\n` +
-
-        `═══════════════════════════════════════════\n` +
-        `LENS BOUNDARIES — CRITICAL\n` +
-        `═══════════════════════════════════════════\n\n` +
-
-        `Do not let this lens become Lexis / Word Lens.\n` +
-        `If the main point is merely “this Greek/Hebrew/Aramaic word means X,” reject it as Word Lens material.\n\n` +
-        `Do not let this lens become Pearls.\n` +
-        `If the main point is a general textual discovery with no translation comparison, reject it as Pearls material.\n\n` +
-        `A valid Translation Lens card must involve a translation choice or rendering contrast:\n` +
-        `- familiar vs literal;\n` +
-        `- formal vs readable;\n` +
-        `- traditional vs explicit;\n` +
-        `- title vs divine name;\n` +
-        `- supplied word vs visible wording;\n` +
-        `- broad vs narrow;\n` +
-        `- smooth vs sharp;\n` +
-        `- one version preserving ambiguity while another resolves it.\n\n` +
-
-        `The original-language packet is not the main agenda.\n` +
-        `Use it as explanation and verification only: to explain why translations differ, to prevent invented Greek/Hebrew/Aramaic claims, and to display a short original form only when it genuinely clarifies the comparison.\n\n` +
-
-        `Do NOT build the output as a list of “what the displayed ${langName} text lost compared with Hebrew/Greek.”\n` +
-        `This is not a critique of one local translation. It is a comparison of translation decisions.\n\n` +
-
-        `═══════════════════════════════════════════\n` +
-        `LANGUAGE-SPECIFIC DISCOVERY RULE\n` +
-        `═══════════════════════════════════════════\n\n` +
-
-        `This lens is language-specific.\n` +
-        `Do not merely translate an English or Russian insight into ${langName}.\n` +
-        `Find the translation effect that a ${langName} reader would actually feel.\n\n` +
-
-        `If ${langName} has its own lexical contrast, familiar religious phrasing, traditional wording, or reader assumption, use that.\n` +
-        `For example, a Russian reader may feel a difference between "знать" and "познавать"; a Spanish reader may feel a different difference between "saber" and "conocer"; an English reader may feel another difference between "know", "come to know", and "take in knowledge".\n\n` +
-
-        `The Greek/Hebrew/Aramaic packet is shared across languages, but the translation discovery must be shaped for the output language.\n\n` +
-
-        `═══════════════════════════════════════════\n` +
-        `COMPARISON SOURCE STRATEGY\n` +
-        `═══════════════════════════════════════════\n\n` +
-
-        `Before writing, compare the verse through a small portfolio of respected translation strategies. Do not overload the reader with a long list.\n\n` +
-
-        `Always consider NWT when relevant:\n` +
-        `- NWT 2013 for modern New World Translation wording.\n` +
-        `- NWT Reference Bible 1984 / NWT Ref. when a more literal note, marginal reading, cross-reference style, or older wording is useful.\n\n` +
-
-        `For English comparison, consider major translations such as NWT, KJV, ASV, NASB, ESV, NIV, NRSV, NET, and JPS for the Hebrew Bible when useful.\n` +
-        `For Russian comparison, consider the displayed RSTJ / Synodal tradition and contrast it with literal, formal, NWT-style, or readable renderings when useful.\n` +
-        `For Spanish comparison, consider Reina-Valera style, NWT, formal renderings, and readable renderings when useful.\n\n` +
-
-        `Use abbreviations naturally when helpful: NWT, NWT Ref., KJV, ASV, NASB, ESV, NIV, NRSV, NET, JPS, RSTJ, Synodal, RVR.\n\n` +
-
-        `QUOTE DISCIPLINE:\n` +
-        `Use exact short translation wording only when you are confident.\n` +
-        `If you are not certain of exact published wording, do not fabricate a full quote. Use strategy labels instead: LITERAL, FORMAL, READABLE, TRADITIONAL, CLOSER TO THE SENSE, БУКВАЛЬНО, ФОРМАЛЬНО, ТРАДИЦИОННО, БЛИЖЕ К СМЫСЛУ.\n` +
-        `Short phrase comparisons are enough. Do not quote whole verses.\n\n` +
-
-        `═══════════════════════════════════════════\n` +
-        `CORE PRINCIPLE — TRANSLATION WOW\n` +
-        `═══════════════════════════════════════════\n\n` +
-
-        `A Translation Wow has three properties:\n\n` +
-
-        `1. NON-OBVIOUS\n` +
-        `The reader would likely miss it while reading a familiar translation.\n\n` +
-
-        `2. VERIFIABLE\n` +
-        `It is grounded in translation comparison, original-language wording, grammar, idiom, textual tradition, supplied words, or a rendering tradition.\n\n` +
-
-        `3. CONSEQUENTIAL\n` +
-        `It changes how the reader understands the verse’s emphasis, tone, force, agency, timing, relationship, or implication.\n\n` +
-
-        `If a finding lacks any of the three, discard it and look for a stronger translation issue.\n\n` +
-
-        `A Translation Wow is NOT:\n` +
-        `- a general Bible comment;\n` +
-        `- a devotional lesson;\n` +
-        `- a raw list of versions;\n` +
-        `- “the Greek/Hebrew word means…” without a real translation contrast;\n` +
-        `- translation trivia with no consequence;\n` +
-        `- “both renderings are valid” as the final insight;\n` +
-        `- a broad theological conclusion detached from wording.\n\n` +
-
-        `A Translation Wow IS:\n` +
-        `- a familiar rendering that quietly narrows or widens the original;\n` +
-        `- a formal translation preserving something a readable translation smooths;\n` +
-        `- a literal rendering that exposes an idiom or image;\n` +
-        `- a supplied word that makes interpretation look like text;\n` +
-        `- a translation choice that changes tone, agency, timing, emotional force, or reader assumption;\n` +
-        `- a rendering tradition that makes the verse feel more familiar than the original wording is;\n` +
-        `- a divine-name rendering that changes the reader’s perception of the speaker, covenant, or context.\n\n` +
-
-        `═══════════════════════════════════════════\n` +
-        `SEMANTIC HUMILITY RULE — VERY IMPORTANT\n` +
-        `═══════════════════════════════════════════\n\n` +
-
-        `Never overstate original-language claims.\n\n` +
-        `Avoid absolute formulas like:\n` +
-        `- "X does not mean A; it means B."\n` +
-        `- "The Greek word means exactly..."\n` +
-        `- "The original says not this, but that."\n` +
-        `- "This translation is inaccurate because..."\n\n` +
-
-        `Prefer careful formulas like:\n` +
-        `- "This rendering makes the phrase feel..." \n` +
-        `- "A more literal rendering preserves..." \n` +
-        `- "NWT highlights..." \n` +
-        `- "Formal translations often keep..." \n` +
-        `- "Readable translations tend to smooth..." \n` +
-        `- "The original wording helps explain why translators differ..." \n` +
-        `- "This rendering narrows the reader’s perception rather than simply getting the word wrong."\n\n` +
-
-        `Strong claims are allowed only when the supplied data directly supports them.\n` +
-        `If the packet gives a lemma, gloss, Strong’s number, or morphology, you may use it internally. But do not expose it as source metadata and do not build a large semantic claim that goes beyond the packet.\n\n` +
-
-        `Do not use modern word-etymology examples unless they directly clarify the translation issue and are historically safe.\n\n` +
-
-        `═══════════════════════════════════════════\n` +
-        `DISCOVERY HUNT — INTERNAL ONLY\n` +
-        `═══════════════════════════════════════════\n\n` +
-
-        `Before writing, scan the verse for translation-comparison candidates.\n\n` +
-
-        `Look especially for:\n\n` +
-
-        `1. TRANSLATION DIFFERENCE\n` +
-        `Where do respected translations differ in wording, syntax, supplied words, divine-name rendering, tense/aspect, agency, or tone?\n\n` +
-
-        `2. ORIGINAL-LANGUAGE CAUSE\n` +
-        `After finding a translation difference, ask whether it is caused by semantic range, grammar, word order, idiom, ambiguity, textual tradition, or translator interpretation.\n\n` +
-
-        `3. READER ASSUMPTION\n` +
-        `What does the familiar rendering make the ${langName} reader assume?\n\n` +
-
-        `4. HIDDEN ALTERNATIVE\n` +
-        `What does another rendering preserve, expose, or leave open?\n\n` +
-
-        `5. READING SHIFT\n` +
-        `How does the translation choice change the way the verse is read?\n\n` +
-
-        `Also check these high-value comparison patterns:\n` +
-        `- TITLE VS NAME: LORD / Господь / Señor versus Jehovah / Yahweh / the tetragrammaton.\n` +
-        `- LITERAL VS SMOOTH: a literal rendering keeps an image or oddness that a smooth version makes ordinary.\n` +
-        `- FORMAL VS READABLE: one preserves structure, repetition, or ambiguity; another clarifies.\n` +
-        `- BROAD VS NARROW: one chooses a broad word; another chooses a narrower interpretation.\n` +
-        `- SUPPLIED WORDS: a translation adds a word for clarity that quietly decides interpretation.\n` +
-        `- TIMING / ASPECT: translations differ in completed, ongoing, future, immediate, or habitual feel.\n` +
-        `- AGENCY / VOICE: translations shift who acts, receives, or appears responsible.\n` +
-        `- TONE: one rendering sounds tender, legal, severe, royal, intimate, poetic, or administrative.\n` +
-        `- WORDING TRADITION: a familiar traditional phrase hides a sharper or stranger rendering.\n\n` +
-
-        `For each candidate, rate internally:\n` +
-        `- Non-obvious? 1–5\n` +
-        `- Verifiable? 1–5\n` +
-        `- Consequential? 1–5\n` +
-        `- Translation-comparison centered? 1–5\n` +
-        `- Language-specific for ${langName}? 1–5\n\n` +
-
-        `Only the strongest comparison-centered candidates become cards.\n\n` +
-
-        `═══════════════════════════════════════════\n` +
-        `SOURCE DISCIPLINE\n` +
-        `═══════════════════════════════════════════\n\n` +
-
-        `Use only verified or supplied data. Never invent.\n\n` +
-
-        `The supplied original-language packet, when present, is the only source for:\n` +
-        `- Greek, Hebrew, or Aramaic forms;\n` +
-        `- Strong’s numbers;\n` +
-        `- morphology;\n` +
-        `- lemma;\n` +
-        `- basic glosses.\n\n` +
-
-        `If the packet does not contain a form, Strong’s number, morphology, lemma, or gloss, do not invent it.\n\n` +
-
-        `SOURCE DATA STYLE RULE — CRITICAL:\n` +
-        `The supplied original-language packet is for internal verification only.\n` +
-        `Do not expose raw technical labels to the reader.\n` +
-        `Do not write “gloss”, “packet”, “dataset”, “morphology code”, “Strong”, “STEPBible”, “lemma”, “lexicon”, or “source packet” in the reader-facing card body.\n` +
-        `Do not write “глосс”, “глосса”, “пакет”, “датасет”, “морфология”, “морфологический код”, “Стронг”, “Strong”, “STEPBible”, “лемма”, “лексикон” in Russian reader-facing prose.\n` +
-        `Do not use “GLOSS”, “ГЛОССА”, “LEMMA”, “ЛЕММА”, “MORPHOLOGY”, “МОРФОЛОГИЯ”, “STRONG”, “СТРОНГ”, “SOURCE”, “ИСТОЧНИК”, “ORIGINAL”, or “ОРИГИНАЛ” as visible quote labels.\n` +
-        `Use the verified data silently, then translate it into natural reader language.\n` +
-        `Mention the Hebrew, Aramaic, or Greek form only when it directly helps explain a translation difference.\n` +
-        `If morphology matters, explain the effect in ordinary language, not as a raw code.\n\n` +
-
-        `Preferred source order when available:\n` +
-        `1. Visible translation comparison / respected rendering traditions\n` +
-        `2. NWT 2013 and NWT Reference Bible 1984 / NWT Ref. when relevant\n` +
-        `3. Supplied original-language packet as explanation and verification\n` +
-        `4. Formal translations\n` +
-        `5. Readable/dynamic translations\n` +
-        `6. Jewish translation tradition for Hebrew Bible\n` +
-        `7. Septuagint/Peshitta only if relevant to the translation issue\n\n` +
-
-        `For Psalms, verify Masoretic vs Septuagint numbering when relevant.\n\n` +
-
-        `═══════════════════════════════════════════\n` +
-        `REJECTION TEST\n` +
-        `═══════════════════════════════════════════\n\n` +
-
-        `Reject a candidate if:\n` +
-        `- it could appear unchanged in Lexis / Word Lens;\n` +
-        `- it does not compare translation choices;\n` +
-        `- it merely says one translation “lost” a Hebrew/Greek nuance without showing how another rendering handles it;\n` +
-        `- it attacks or praises a translation tradition instead of explaining reader effect;\n` +
-        `- it is not consequential for how the verse is read;\n` +
-        `- it becomes a general commentary or devotional application.\n\n` +
-
-        `═══════════════════════════════════════════\n` +
-        `OUTPUT FORMAT\n` +
-        `═══════════════════════════════════════════\n\n` +
-
-        `Return 3 to 5 comparison cards.\n` +
-        `Each card should focus on ONE translation issue and show how different renderings guide the reader differently.\n` +
-        `Cards should be concise, elegant, and comparison-driven.\n\n` +
-
-        `Card pattern:\n` +
-        `1. Name the translation difference.\n` +
-        `2. Show 2–4 short rendering options or labels.\n` +
-        `3. Explain why the difference exists, using original-language data only if useful.\n` +
-        `4. Explain how the reader’s perception changes.\n\n` +
-
-        `The output should still have the polished v2.2 funnel feel:\n` +
-        `- familiar wording / reader assumption;\n` +
-        `- the translation comparison discovery;\n` +
-        `- how the reading changes;\n` +
-        `- optional: why translators choose differently;\n` +
-        `- optional: why the reader may never have noticed.\n\n` +
-
-        `Total length: 250–600 words.\n` +
-        `Shorter and sharper is better. A translation discovery does not need volume. It needs precision.\n\n` +
-
-        `═══════════════════════════════════════════\n` +
-        `QUALITY STANDARD\n` +
-        `═══════════════════════════════════════════\n\n` +
-
-        `The output is weak if it does not include:\n\n` +
-        `1. A visible comparison of renderings or translation strategies.\n` +
-        `2. A concrete wording difference.\n` +
-        `3. A reason why the difference exists.\n` +
-        `4. A reader-perception shift.\n` +
-        `5. Evidence, not assertion.\n` +
-        `6. Language-specific sensitivity for ${langName}.\n` +
-        `7. At least one recognized translation label when useful, especially NWT when relevant.\n\n` +
-
-        `Reject output if it becomes:\n` +
-        `- a Lexis-style word study;\n` +
-        `- a critique of only the displayed ${langName} text;\n` +
-        `- general commentary;\n` +
-        `- devotional application;\n` +
-        `- apologetic argument;\n` +
-        `- translation trivia;\n` +
-        `- a raw list of versions;\n` +
-        `- unsupported Greek/Hebrew claims;\n` +
-        `- overconfident claims about what a word “really means”;\n` +
-        `- decorative etymology not needed for the verse;\n` +
-        `- reader-facing source metadata such as “gloss”, “Strong”, “morphology”, “packet”, “STEPBible”, “lemma”, or their Russian equivalents.\n\n` +
-
-        `═══════════════════════════════════════════\n` +
-        `PRE-OUTPUT CHECKLIST\n` +
-        `═══════════════════════════════════════════\n\n` +
-
-        `Before output, verify mentally:\n\n` +
-        `□ Is this really about translation comparison?\n` +
-        `□ Does each card compare renderings or translation strategies?\n` +
-        `□ Did I avoid turning this into Lexis / Word Lens?\n` +
-        `□ Did I include NWT / NWT Ref. where relevant?\n` +
-        `□ Is the discovery non-obvious to a serious reader?\n` +
-        `□ Is it verifiable from supplied or confidently known data?\n` +
-        `□ Did I identify the familiar assumption?\n` +
-        `□ Did I explain what wording creates the shift?\n` +
-        `□ Did I explain how the reader’s perception changes?\n` +
-        `□ Did I avoid devotional and apologetic framing?\n` +
-        `□ Did I avoid “X is not A, it is B” unless absolutely supported?\n` +
-        `□ Did I avoid decorative modern etymology?\n` +
-        `□ Did I write for a ${langName} reader?\n` +
-        `□ Did I avoid exposing technical labels such as gloss, Strong, morphology, lemma, packet, or STEPBible?\n` +
-        `□ Did I use only reader-friendly quote labels?\n` +
-        `□ Did I keep the answer under 600 words?\n\n` +
-
-        `═══════════════════════════════════════════\n` +
-        `APP OUTPUT CONTRACT\n` +
-        `═══════════════════════════════════════════\n\n` +
-
-        `Return valid JSON only. No markdown fences. No prose before or after.\n\n` +
-
-        `The JSON object must have exactly this shape:\n\n` +
-        `{\n` +
-        `  "cards": [\n` +
-        `    {\n` +
-        `      "kicker": "short comparison label in ${langName}",\n` +
-        `      "title": "sharp title in ${langName}",\n` +
-        `      "body": [\n` +
-        `        "paragraph 1 in ${langName}",\n` +
-        `        "paragraph 2 in ${langName} if needed"\n` +
-        `      ],\n` +
-        `      "quotes": [\n` +
-        `        {"label": "NWT", "text": "short phrase if confident"},\n` +
-        `        {"label": "ESV", "text": "short phrase if confident"},\n` +
-        `        {"label": "LITERAL", "text": "short cautious rendering if useful"}\n` +
-        `      ]\n` +
-        `    }\n` +
-        `  ],\n` +
-        `  "summary": "one sentence in ${langName} naming the main translation comparison insight"\n` +
-        `}\n\n` +
-
-        `Create 3 to 5 cards.\n` +
-        `The "quotes" array is optional for each card, but most cards should include 2–4 short comparison lines if useful.\n` +
-        `Use reader-facing quote labels only. Do not use labels such as “GLOSS”, “STRONG”, “MORPHOLOGY”, “LEMMA”, “ORIGINAL”, “SOURCE”, “ГЛОССА”, “СТРОНГ”, “МОРФОЛОГИЯ”, “ЛЕММА”, “ОРИГИНАЛ”, or “ИСТОЧНИК”.\n` +
-        `Good labels: NWT, NWT REF, KJV, ASV, NASB, ESV, NIV, NRSV, NET, JPS, RSTJ, SYNODAL, RVR, LITERAL, FORMAL, READABLE, TRADITIONAL, CLOSER TO THE SENSE, БУКВАЛЬНО, ФОРМАЛЬНО, ТРАДИЦИОННО, БЛИЖЕ К СМЫСЛУ.\n` +
-        `If uncertain of exact published wording, use strategy labels such as LITERAL, FORMAL, READABLE, TRADITIONAL, or CLOSER TO THE SENSE rather than fabricating a translation quote.\n\n` +
-
-        `Do not use the old format with "versions", "divergences", or "verdict".\n` +
-        `REMINDER: This is Translation Lens, not Lexis. Compare translations first; use original-language data only to explain the comparison. Return JSON only.`
-      );
-    }
+      return buildWordPrompt({
+        reference: args.reference,
+        verseText: args.verseText,
+        langName,
+        fence,
+        originalLanguagePrompt,
+      });
+
+    case "context":
+      return buildContextLensPrompt({
+        reference: args.reference,
+        verseText: args.verseText,
+        langName,
+        fence,
+        chapterText: args.chapterText,
+        chapterReference: args.chapterReference,
+      });
+
+    case "translations":
+      return buildTranslationsPrompt({
+        reference: args.reference,
+        verseText: args.verseText,
+        langName,
+        fence,
+        originalLanguagePrompt,
+      });
   }
+}
+
+function buildAnglesPrompt(args: {
+  reference: string;
+  verseText: string;
+  langName: string;
+  fence: string;
+  originalLanguagePrompt: string;
+}): string {
+  return (
+    `${args.fence}\n\n` +
+    `Verse: ${args.reference}\n"${args.verseText}"\n\n` +
+    `${args.originalLanguagePrompt}\n\n` +
+    `All string values must be written in ${args.langName}.\n\n` +
+    `${EDITORIAL_VOICE(args.langName)}\n\n` +
+    `${JARGON_BAN}\n\n` +
+
+    `[SCRIPTURA AI — PEARLS FALLBACK WRITER v3.0]\n\n` +
+
+    `ROLE\n` +
+    `You write “Pearls” — literary mini-essays on one Bible verse.\n` +
+    `A Pearl is not a note, not a summary, not a dictionary entry, and not a sermon.\n` +
+    `A Pearl is a shift in reading: a mature Bible reader should feel, “I have read this verse many times, but I did not notice that.”\n\n` +
+
+    `IMPORTANT ENGINEERING CONTEXT\n` +
+    `The app needs JSON so it can render cards. JSON is only the container. It must not make the writing dry.\n` +
+    `Inside the JSON fields, write like a literary editor, not like a form-filling assistant.\n\n` +
+
+    `IMAGINE THE READER\n` +
+    `Imagine a table with twenty Christians who have studied the Bible for thirty years.\n` +
+    `They already know the verse. They do not need a general lesson.\n` +
+    `Your task is to help them quietly notice a textual detail that changes how the verse feels.\n\n` +
+
+    `TONE\n` +
+    `Quiet observation. Literary, meditative, concrete.\n` +
+    `No academic dust. No preaching tone. No motivational slogans.\n` +
+    `The voice should sound like someone who has reread the verse many times and suddenly saw one detail more clearly.\n\n` +
+
+    `WHAT TO LOOK FOR\n` +
+    `First, silently hunt for many possible angles. Do not write cards immediately.\n\n` +
+    `Look for:\n` +
+    `- structural asymmetry: one element is specified while another is left open;\n` +
+    `- sequence: what comes first, what comes last, and what changes if the order moves;\n` +
+    `- rhetorical pressure: a reason, contrast, hinge, escalation, reversal, or compressed logic;\n` +
+    `- meaningful absence: what the verse does not say but the reader expected it to say;\n` +
+    `- agency: who acts, who receives, who speaks, who is silent, who initiates;\n` +
+    `- visible grammar: singular/plural, repeated words, verbs, command/statement, cause/effect;\n` +
+    `- image: body, path, light, house, hand, mouth, weight, distance, debt, gift, table, door;\n` +
+    `- expectation reversal: a verse that sounds like one kind of sentence but functions as another;\n` +
+    `- immediate context only when it sharpens the target verse;\n` +
+    `- original-language or translation detail only when it is truly the strongest discovery.\n\n` +
+
+    `ORIGINAL-LANGUAGE PACKET — USE CAREFULLY\n` +
+    `The supplied Greek/Hebrew/Aramaic packet is for verification, not for decoration.\n` +
+    `Do not turn Pearls into a second Word Lens.\n` +
+    `At most ONE final Pearl may be primarily lexical/original-language.\n` +
+    `Never invent original-language forms, transliterations, roots, morphology, or semantic claims.\n` +
+    `Do not write raw labels like Strong, morphology, lemma, gloss, packet, STEPBible, dataset, Стронг, морфология, лемма, глосса, пакет, датасет.\n` +
+    `Do not quote a long Greek/Hebrew phrase as the anchor for a general reader.\n` +
+    `If you must show an original-language word, give an immediate reader bridge: γνοὺς — «узнав».\n` +
+    `Never put Greek/Hebrew/Aramaic script in the title.\n` +
+    `Prefer a short visible phrase from the verse as the anchor.\n\n` +
+
+    `REJECTION TEST\n` +
+    `Reject any angle if it could be written without noticing the exact wording, structure, sequence, grammar, image, contrast, absence, agency, immediate context, or verified original-language detail of THIS verse.\n\n` +
+    `Reject immediately:\n` +
+    `- general moral lessons;\n` +
+    `- paraphrases of the verse;\n` +
+    `- “this teaches us...” observations;\n` +
+    `- generic theology not physically anchored in the wording;\n` +
+    `- pretty but empty reflections;\n` +
+    `- technical word notes that do not change the reading;\n` +
+    `- duplicate angles in different clothes.\n\n` +
+
+    `WRITING STANDARD\n` +
+    `Each Pearl must have four fields, but the heart is the teaser.\n` +
+    `The teaser should read like a small literary mini-essay, not a compressed bullet.\n` +
+    `It may use rhythm, image, contrast, and a slightly longer sentence if it helps.\n` +
+    `It must still be precise and anchored.\n\n` +
+
+    `TITLE\n` +
+    `A strong phrase that carries the discovery. 5–12 words when possible.\n` +
+    `Not a question. Not a command. Not a topic label.\n` +
+    `Bad: “The Importance of Faith”, “A Lesson About Love”, “Knowing God”.\n` +
+    `Good: “The Sentence Turns on One Quiet Verb”, “The Missing Explanation Carries the Weight”, “The Light Is Not Advice Here”.\n\n` +
+
+    `ANCHOR\n` +
+    `A short quotation or concrete place in the verse.\n` +
+    `Use the reader’s language first.\n` +
+    `If original-language script appears, it must be short and immediately explained in ${args.langName}.\n` +
+    `Do not use a whole Greek/Hebrew clause as a naked anchor.\n\n` +
+
+    `TEASER\n` +
+    `4–6 sentences, or roughly 4–7 natural reading lines.\n` +
+    `Start with the discovery itself, not with “This verse says...” or “Here we see...”.\n` +
+    `Let the first sentence create a turn in perception.\n` +
+    `Do not over-explain the mechanism like a manual.\n` +
+    `Do not flatten the paragraph into dry instruction.\n\n` +
+
+    `WHY_IT_MATTERS\n` +
+    `2–3 lines or one rich sentence.\n` +
+    `Not a moral like “therefore we should...”\n` +
+    `Say what changes in the way the verse is read, felt, or used in faith.\n\n` +
+
+    `DO NOT USE THESE PHRASES\n` +
+    `- “This verse teaches us...”\n` +
+    `- “Here we see...”\n` +
+    `- “It is important to note...”\n` +
+    `- “The original language shows...” as a lazy opening\n` +
+    `- “This reminds us...” unless the sentence becomes genuinely specific\n` +
+    `- “surprisingly”, “amazingly”, “beautifully”, “powerfully” as a substitute for making the reader feel it\n\n` +
+
+    `PORTFOLIO RULE\n` +
+    `Return 4 to 7 Pearls.\n` +
+    `Return only strong, distinct angles. Do not pad to reach 7.\n` +
+    `The set should feel varied: structure, image, agency, absence, sequence, rhetoric, context, and at most one primary lexical/original-language card.\n\n` +
+
+    `OUTPUT CONTRACT\n` +
+    `Return valid JSON only. No markdown fences. No prose before or after.\n` +
+    `Return a JSON array. Each object must have exactly these keys:\n` +
+    `- "title": one strong phrase in ${args.langName}\n` +
+    `- "anchor": short quotation or concrete place in the verse, in ${args.langName}; original-language only with immediate bridge\n` +
+    `- "teaser": literary mini-essay paragraph, 4–6 sentences, in ${args.langName}\n` +
+    `- "why_it_matters": 2–3 lines or one rich sentence, in ${args.langName}\n\n` +
+    `Example shape only:\n` +
+    `[\n` +
+    `  {\n` +
+    `    "title": "...",\n` +
+    `    "anchor": "...",\n` +
+    `    "teaser": "...",\n` +
+    `    "why_it_matters": "..."\n` +
+    `  }\n` +
+    `]\n\n` +
+    `FINAL REMINDER\n` +
+    `JSON only. But write the content as Pearls — quiet, literary, text-anchored mini-essays.`
+  );
+}
+
+function buildWordPrompt(args: {
+  reference: string;
+  verseText: string;
+  langName: string;
+  fence: string;
+  originalLanguagePrompt: string;
+}): string {
+  return (
+    `${args.fence}\n\n` +
+    `Verse: ${args.reference}\n"${args.verseText}"\n\n` +
+    `${args.originalLanguagePrompt}\n\n` +
+    `All string values must be written in ${args.langName}.\n\n` +
+    `${EDITORIAL_VOICE(args.langName)}\n\n` +
+    `${JARGON_BAN}\n\n` +
+
+    `[SCRIPTURA AI — WORD LENS PROTOCOL]\n\n` +
+
+    `ROLE\n` +
+    `You are the Word Lens for Scriptura AI.\n` +
+    `Your task is to make the verse more visible through words, expressions, forms, repeated terms, and translation gaps.\n\n` +
+
+    `SOURCE DISCIPLINE\n` +
+    `Use the supplied original-language packet as the controlling source for original-language claims.\n` +
+    `Do not invent Greek, Hebrew, or Aramaic words, transliterations, roots, morphology, or semantic claims.\n` +
+    `If the packet does not support a claim, do not make that claim.\n` +
+    `Do not expose raw database language: Strong, morphology, gloss, lemma, packet, STEPBible, dataset, Стронг, морфология, глосса, лемма, пакет.\n\n` +
+
+    `WHAT TO FIND\n` +
+    `Find 5 to 7 strong word-level observations. Do not force seven.\n` +
+    `Look for semantic range, repeated roots, word choice, physical image, grammatical form, preposition/particle, translation gap, or inner contrast.\n\n` +
+
+    `REJECTION TEST\n` +
+    `Reject any candidate if it could be written without noticing the actual word, expression, form, grammar, or translation gap in this verse.\n` +
+    `Reject generic vocabulary notes and decorative etymology.\n\n` +
+
+    `STYLE\n` +
+    `Reader-facing language must be elegant and concrete.\n` +
+    `Begin with the discovery, not with technical labels.\n` +
+    `Mention original forms only when they help the reader see the verse.\n\n` +
+
+    `OUTPUT CONTRACT\n` +
+    `Return valid JSON only. No markdown fences. No prose before or after.\n` +
+    `Return a JSON array of 5 to 7 objects. Each object has exactly these keys:\n` +
+    `- "title": discovery statement, max 14 words, in ${args.langName}\n` +
+    `- "teaser": 2–4 sentences, in ${args.langName}\n` +
+    `- "original": verified original word/expression from the supplied packet; original script plus transliteration only if safe\n` +
+    `- "gap": one sentence about what the familiar reading or translation loses, in ${args.langName}\n` +
+    `- "why_it_matters": one sentence about the reading shift, in ${args.langName}\n\n` +
+    `[{"title":"...","teaser":"...","original":"...","gap":"...","why_it_matters":"..."}]`
+  );
+}
+
+function buildContextLensPrompt(args: {
+  reference: string;
+  verseText: string;
+  langName: string;
+  fence: string;
+  chapterText?: string | null;
+  chapterReference?: string | null;
+}): string {
+  const chapterReference =
+    args.chapterReference ?? "the chapter containing the target verse";
+  const chapterText = args.chapterText?.trim();
+
+  return (
+    `${args.fence}\n\n` +
+    `Target verse: ${args.reference}\n"${args.verseText}"\n\n` +
+    `Full chapter context: ${chapterReference}\n` +
+    (chapterText
+      ? `"${chapterText}"\n\n`
+      : `[CHAPTER TEXT WAS NOT PROVIDED. Use only stable biblical context you can confidently reconstruct, but avoid guessing exact wording.]\n\n`) +
+    `All string values must be written in ${args.langName}.\n\n` +
+    `${EDITORIAL_VOICE(args.langName)}\n\n` +
+    `${JARGON_BAN}\n\n` +
+
+    `[SCRIPTURA AI — CONTEXT LENS]\n\n` +
+
+    `ROLE\n` +
+    `Build a real Context Lens. Do not create ordinary Pearls, word studies, translation observations, or general reflections.\n\n` +
+
+    `A context card is valid only if the idea becomes visible because the target verse is read inside a larger unit.\n` +
+    `If the same idea could be written by looking only at the target verse, reject it.\n\n` +
+
+    `WORK IN THREE LAYERS\n` +
+    `1. Nearest meaning unit: paragraph, scene, argument step, prayer movement, contrast, or turn of thought.\n` +
+    `2. Whole chapter movement: why this verse appears at this exact point.\n` +
+    `3. Broader book / whole-Bible context only if it genuinely changes the reading of this verse.\n\n` +
+
+    `STRICT REJECTION TEST\n` +
+    `Reject lexical observations, translation-gap observations, generic spiritual lessons, paraphrases, and cards that could belong to Word Lens or Pearls.\n\n` +
+
+    `OUTPUT CONTRACT\n` +
+    `Return valid JSON only. No markdown fences. No prose before or after.\n` +
+    `The output must have exactly this shape:\n` +
+    `{\n` +
+    `  "thesis": "one elegant sentence in ${args.langName} explaining what the chapter context changes about the target verse",\n` +
+    `  "cards": [\n` +
+    `    {\n` +
+    `      "title": "sharp context-driven discovery, max 12 words, in ${args.langName}",\n` +
+    `      "teaser": "2-3 sentences in ${args.langName}",\n` +
+    `      "shift": "the specific contextual shift in ${args.langName}",\n` +
+    `      "why_it_matters": "one sentence in ${args.langName}"\n` +
+    `    }\n` +
+    `  ]\n` +
+    `}\n\n` +
+    `Return exactly 3 cards.`
+  );
+}
+
+function buildTranslationsPrompt(args: {
+  reference: string;
+  verseText: string;
+  langName: string;
+  fence: string;
+  originalLanguagePrompt: string;
+}): string {
+  return (
+    `${args.fence}\n\n` +
+    `Verse: ${args.reference}\n"${args.verseText}"\n\n` +
+    `${args.originalLanguagePrompt}\n\n` +
+    `All string values must be written in ${args.langName} unless a field explicitly contains a Bible translation label, transliteration, or original-language form.\n\n` +
+    `${EDITORIAL_VOICE(args.langName)}\n\n` +
+    `${JARGON_BAN}\n\n` +
+
+    `[SCRIPTURA AI — TRANSLATION DISCOVERY LENS]\n\n` +
+
+    `ROLE\n` +
+    `You are the Translation Discovery Lens.\n` +
+    `Your job is to reveal how translation choices shape the reader’s understanding of the verse.\n` +
+    `Do not explain the whole verse. Do not write a Word Lens card. Compare renderings and show what each rendering makes the reader notice.\n\n` +
+
+    `LENS BOUNDARIES\n` +
+    `A valid Translation Lens card must involve a translation choice or rendering contrast: familiar vs literal, formal vs readable, traditional vs explicit, title vs divine name, broad vs narrow, smooth vs sharp, preserved ambiguity vs resolved interpretation.\n` +
+    `If the main point is only “this word means X,” reject it as Word Lens material.\n` +
+    `If the main point is a general textual discovery with no translation comparison, reject it as Pearls material.\n\n` +
+
+    `SOURCE DISCIPLINE\n` +
+    `Use the supplied original-language packet only to explain why translations differ and to avoid invented claims.\n` +
+    `Do not expose raw technical labels: gloss, Strong, morphology, lemma, packet, STEPBible, глосса, Стронг, морфология, лемма, пакет.\n` +
+    `Use exact published wording only when confident. If not confident, use strategy labels: LITERAL, FORMAL, READABLE, TRADITIONAL, CLOSER TO THE SENSE, БУКВАЛЬНО, ФОРМАЛЬНО, ТРАДИЦИОННО.\n\n` +
+
+    `WHAT TO FIND\n` +
+    `Find 3 to 5 comparison cards. Each card should:\n` +
+    `1. name the translation difference;\n` +
+    `2. show 2–4 short rendering options or labels when useful;\n` +
+    `3. explain why the difference exists;\n` +
+    `4. explain how the reader’s perception changes.\n\n` +
+
+    `SEMANTIC HUMILITY\n` +
+    `Avoid absolute claims like “the original does not mean A; it means B” unless directly supported.\n` +
+    `Prefer: “this rendering makes the phrase feel…”, “a more literal rendering preserves…”, “readable translations tend to smooth…”, “the wording helps explain why translators differ…”.\n\n` +
+
+    `OUTPUT CONTRACT\n` +
+    `Return valid JSON only. No markdown fences. No prose before or after.\n` +
+    `The JSON object must have exactly this shape:\n` +
+    `{\n` +
+    `  "cards": [\n` +
+    `    {\n` +
+    `      "kicker": "short comparison label in ${args.langName}",\n` +
+    `      "title": "sharp title in ${args.langName}",\n` +
+    `      "body": ["paragraph 1 in ${args.langName}", "paragraph 2 in ${args.langName} if needed"],\n` +
+    `      "quotes": [\n` +
+    `        {"label": "NWT", "text": "short phrase if confident"},\n` +
+    `        {"label": "LITERAL", "text": "short cautious rendering if useful"}\n` +
+    `      ]\n` +
+    `    }\n` +
+    `  ],\n` +
+    `  "summary": "one sentence in ${args.langName} naming the main translation comparison insight"\n` +
+    `}\n\n` +
+    `Create 3 to 5 cards.`
+  );
 }
