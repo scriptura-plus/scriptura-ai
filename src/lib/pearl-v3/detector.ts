@@ -1,0 +1,117 @@
+import "server-only";
+
+import { callPearlClaude } from "./claude";
+import type { PearlV3Angle, PearlV3VerseContext } from "./types";
+
+const SYSTEM = `Ты — внимательный читатель библейского текста, ищущий наблюдения для зрелой аудитории, которая знает Библию десятилетиями.`;
+
+function buildUserPrompt(ctx: PearlV3VerseContext): string {
+  return `ЦЕНТРАЛЬНЫЙ СТИХ:
+${ctx.centralRef}
+«${ctx.centralText}»
+
+КОНТЕКСТ (вся глава, центральный стих помечен [ЦЕНТР]):
+${ctx.chapterText}
+
+ЗАДАЧА
+
+Найди максимум углов в ЦЕНТРАЛЬНОМ стихе. Угол — это наблюдение о тексте, которое может вызвать у зрелого читателя (тридцать лет изучает Библию) ощущение «этого я не замечал».
+
+Углы могут опираться на связь центрального стиха с другими стихами главы — это нормально и желательно, если наблюдение остаётся ПРО центральный стих, а не уходит в обсуждение окружающего текста.
+
+ЧТО ИСКАТЬ
+
+- Структурные асимметрии (один элемент уточнён, другой нет; что поставлено первым, что в конце)
+- Риторические механизмы (warrant, hedge, escalation, инверсия, парадокс)
+- Нарративные паттерны (повторы, рамки, контрасты, обещания и их исполнения, что названо и что намеренно НЕ названо)
+- Логические связки внутри стиха («ибо», «потому что», «итак», «и» — что они связывают и как)
+- Грамматические особенности, видимые в русском (вид глагола, залог, наклонение, единственное/множественное число)
+- Эхо или сдвиги по отношению к ближайшему контексту
+
+ЧТО НЕ ИСКАТЬ
+
+- Общие моральные выводы («это учит нас быть добрыми»)
+- Перефразы стиха другими словами
+- Внешний исторический или культурный контекст
+- Сравнение переводов или анализ оригинала (это другие линзы, не твоя задача)
+- Информацию справочного характера
+
+ВАЖНО
+
+Будь жадным. Найди 7-15 углов. Лучше слишком много, чем слишком мало. Не самоограничивайся, не оценивай себя, не критикуй найденное. Не пиши «это слабый угол» — это решит другой агент. Твоя задача — видеть максимум.
+
+ФОРМАТ ОТВЕТА (строго, ничего лишнего перед или после):
+
+УГОЛ 1
+Якорь: <конкретное слово, фраза или место в центральном стихе>
+Наблюдение: <что замечено, 2-4 строки>
+Почему интересно: <почему это сдвиг для зрелого читателя, 1-2 строки>
+
+УГОЛ 2
+Якорь: ...
+Наблюдение: ...
+Почему интересно: ...
+
+(и так далее)`;
+}
+
+export async function runPearlV3Detector(
+  ctx: PearlV3VerseContext,
+): Promise<{ rawOutput: string; angles: PearlV3Angle[] }> {
+  const rawOutput = await callPearlClaude({
+    system: SYSTEM,
+    user: buildUserPrompt(ctx),
+    maxTokens: 8000,
+  });
+
+  return {
+    rawOutput,
+    angles: parseAngles(rawOutput),
+  };
+}
+
+function parseAngles(raw: string): PearlV3Angle[] {
+  const blocks = raw.split(/\n(?=УГОЛ\s+\d+)/i);
+  const angles: PearlV3Angle[] = [];
+
+  for (const block of blocks) {
+    const headerMatch = block.trimStart().match(/^УГОЛ\s+(\d+)/i);
+    if (!headerMatch) continue;
+
+    const index = Number(headerMatch[1]);
+    if (!Number.isFinite(index)) continue;
+
+    const anchor = extractField(block, "Якорь");
+    const observation = extractField(block, "Наблюдение");
+    const whyInteresting = extractField(block, "Почему интересно");
+
+    if (!anchor || !observation) continue;
+
+    angles.push({
+      index,
+      anchor,
+      observation,
+      whyInteresting: whyInteresting ?? "",
+    });
+  }
+
+  return angles;
+}
+
+function extractField(block: string, label: string): string | null {
+  const labels = ["Якорь", "Наблюдение", "Почему интересно"];
+  const others = labels.filter((item) => item !== label).map((item) => `${item}:`);
+  const stopPattern = [...others, "УГОЛ "]
+    .map((item) => item.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .join("|");
+
+  const re = new RegExp(
+    `${label}:\\s*([\\s\\S]*?)(?=\\n\\s*(?:${stopPattern})|$)`,
+    "i",
+  );
+
+  const match = block.match(re);
+  if (!match) return null;
+
+  return match[1].trim();
+}
