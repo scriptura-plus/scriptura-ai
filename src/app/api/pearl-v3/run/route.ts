@@ -20,8 +20,29 @@ function getNumber(value: unknown): number | undefined {
   return Number.isFinite(numeric) ? numeric : undefined;
 }
 
+function isAuthorized(request: Request): boolean {
+  const adminSecret = process.env.ADMIN_SECRET?.trim();
+
+  // Local development fallback:
+  // if ADMIN_SECRET is not set locally, allow testing on localhost/dev only.
+  // Vercel preview/production should have ADMIN_SECRET and require x-admin-secret.
+  if (!adminSecret) {
+    return process.env.NODE_ENV !== "production";
+  }
+
+  const providedSecret = request.headers.get("x-admin-secret")?.trim();
+  return providedSecret === adminSecret;
+}
+
 export async function POST(request: Request) {
   try {
+    if (!isAuthorized(request)) {
+      return NextResponse.json(
+        { ok: false, error: "Unauthorized" },
+        { status: 401 },
+      );
+    }
+
     const body = await request.json();
 
     const reference = getString(body?.reference);
