@@ -21,6 +21,10 @@ import {
   getAngleCardsByCanonicalRef,
 } from "@/lib/cache/angleCards";
 import {
+  getPublishedLensSet,
+  publishedCardsToAngleCardsJson,
+} from "@/lib/cache/publishedLensSets";
+import {
   getResearchArticle,
   saveResearchArticle,
   updateResearchArticleExtractionStatus,
@@ -954,6 +958,42 @@ export async function POST(req: Request) {
         lang,
       });
 
+      const publishedPearlSet = await getPublishedLensSet({
+        canonicalRef: normalizedReference.canonical_ref ?? reference,
+        lang,
+        lensId: "pearl",
+      });
+
+      if (publishedPearlSet.error) {
+        console.warn("[PUBLISHED_LENS_SETS] pearl read failed", {
+          reference,
+          canonical_ref: normalizedReference.canonical_ref,
+          lang,
+          error: publishedPearlSet.error,
+        });
+      }
+
+      if (publishedPearlSet.data?.cards.length) {
+        console.log("[PUBLISHED_LENS_SETS] pearl hit", {
+          reference,
+          canonical_ref: normalizedReference.canonical_ref,
+          lang,
+          set_id: publishedPearlSet.data.set.id,
+          version: publishedPearlSet.data.set.version,
+          cards: publishedPearlSet.data.cards.length,
+        });
+
+        return NextResponse.json({
+          text: publishedCardsToAngleCardsJson(publishedPearlSet.data.cards),
+          cached: true,
+          source: "published_lens_sets",
+          canonical_ref: normalizedReference.canonical_ref,
+          published_lens_id: "pearl",
+          published_set_id: publishedPearlSet.data.set.id,
+          published_version: publishedPearlSet.data.set.version,
+        });
+      }
+
       const angleCardsText = await buildAnglesResponseFromCards({
         reference,
         lang,
@@ -1470,4 +1510,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
+
+
 
