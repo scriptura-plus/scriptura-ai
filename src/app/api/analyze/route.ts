@@ -1,4 +1,4 @@
-import { after, NextResponse } from "next/server";
+﻿import { after, NextResponse } from "next/server";
 import { createHash } from "crypto";
 import { runAI, resolveAIModel } from "@/lib/ai/runAI";
 import { isProvider, defaultProvider, type Provider } from "@/lib/ai/providers";
@@ -143,14 +143,14 @@ function getExtraArticleTitle(id: ExtraId, lang: Lang): string {
       scripture_links: "Scripture Links",
     },
     ru: {
-      text_findings: "Текстовые находки",
-      historical_scene: "Историческая сцена",
-      scripture_links: "Связи с другими стихами",
+      text_findings: "Ð¢ÐµÐºÑÑ‚Ð¾Ð²Ñ‹Ðµ Ð½Ð°Ñ…Ð¾Ð´ÐºÐ¸",
+      historical_scene: "Ð˜ÑÑ‚Ð¾Ñ€Ð¸Ñ‡ÐµÑÐºÐ°Ñ ÑÑ†ÐµÐ½Ð°",
+      scripture_links: "Ð¡Ð²ÑÐ·Ð¸ Ñ Ð´Ñ€ÑƒÐ³Ð¸Ð¼Ð¸ ÑÑ‚Ð¸Ñ…Ð°Ð¼Ð¸",
     },
     es: {
       text_findings: "Hallazgos textuales",
-      historical_scene: "Escena histórica",
-      scripture_links: "Conexiones bíblicas",
+      historical_scene: "Escena histÃ³rica",
+      scripture_links: "Conexiones bÃ­blicas",
     },
   };
 
@@ -158,8 +158,8 @@ function getExtraArticleTitle(id: ExtraId, lang: Lang): string {
 }
 
 function getWordLensArticleTitle(lang: Lang): string {
-  if (lang === "ru") return "Word Lens / Лексика";
-  if (lang === "es") return "Word Lens / Léxico";
+  if (lang === "ru") return "Word Lens / Ð›ÐµÐºÑÐ¸ÐºÐ°";
+  if (lang === "es") return "Word Lens / LÃ©xico";
   return "Word Lens / Lexicon";
 }
 
@@ -410,9 +410,9 @@ function buildWordLensContentText(args: {
   });
 
   return [
-    `# Word Lens / Lexicon — ${args.reference}`,
+    `# Word Lens / Lexicon â€” ${args.reference}`,
     "",
-    "This is a set of word-card observations produced by the Word Lens. Extract only public-worthy pearl candidates where a word, form, particle, preposition, semantic range, or translation gap changes how the verse is read. Do not extract a candidate if it is merely “the word means X.”",
+    "This is a set of word-card observations produced by the Word Lens. Extract only public-worthy pearl candidates where a word, form, particle, preposition, semantic range, or translation gap changes how the verse is read. Do not extract a candidate if it is merely â€œthe word means X.â€",
     "",
     ...chunks,
   ].join("\n");
@@ -1470,3 +1470,4 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
