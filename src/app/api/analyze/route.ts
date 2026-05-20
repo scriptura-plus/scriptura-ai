@@ -15,6 +15,7 @@ import {
   EXTRA_ORDER,
 } from "@/lib/prompts/buildExtraPrompt";
 import { buildExpandPrompt } from "@/lib/prompts/buildExpandPrompt";
+import { runPearlV3 } from "@/lib/pearl-v3/runPearlV3";
 import { getCachedResult, saveCachedResult } from "@/lib/cache/cachedResults";
 import {
   getAngleCards,
@@ -22,7 +23,9 @@ import {
 } from "@/lib/cache/angleCards";
 import {
   getPublishedLensSet,
+  mapPearlV3ResultToPublishedCards,
   publishedCardsToAngleCardsJson,
+  savePublishedLensSet,
 } from "@/lib/cache/publishedLensSets";
 import {
   getResearchArticle,
@@ -34,7 +37,6 @@ import {
   normalizeLensDiscoveryOutput,
   saveLensDiscoveryCards,
 } from "@/lib/cache/lensDiscoveryCards";
-
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 160;
@@ -994,6 +996,92 @@ export async function POST(req: Request) {
         });
       }
 
+      try {
+        console.log("[PUBLISHED_LENS_SETS] pearl miss; generating Pearl v3", {
+          reference,
+          canonical_ref: normalizedReference.canonical_ref,
+          lang,
+          provider,
+        });
+
+        const pearlResult = await runPearlV3({
+          reference,
+          verseText,
+          lang,
+          provider,
+          options: {
+            writeLimit: 12,
+            targetCount: 6,
+            minScore: 70,
+            includeRaw: false,
+          },
+        });
+
+        const publishedCards = mapPearlV3ResultToPublishedCards(pearlResult);
+
+        if (publishedCards.length > 0) {
+          const savedPearlSet = await savePublishedLensSet({
+            canonicalRef: pearlResult.canonicalRef ?? normalizedReference.canonical_ref ?? reference,
+            referenceLabel: pearlResult.verseContext.centralRef ?? reference,
+            lang,
+            lensId: "pearl",
+            sourcePipeline: "pearl_v3_auto_public",
+            sourceModel: pearlResult.model,
+            generatedAt: new Date().toISOString(),
+            metadata: {
+              reference,
+              provider,
+              debug: pearlResult.debug,
+              lexiconAvailable: pearlResult.lexiconAvailable,
+            },
+            cards: publishedCards,
+          });
+
+          if (savedPearlSet.error) {
+            console.warn("[PUBLISHED_LENS_SETS] pearl save failed; falling back to legacy", {
+              reference,
+              canonical_ref: normalizedReference.canonical_ref,
+              lang,
+              error: savedPearlSet.error,
+            });
+          } else if (savedPearlSet.data?.cards.length) {
+            console.log("[PUBLISHED_LENS_SETS] pearl generated and saved", {
+              reference,
+              canonical_ref: normalizedReference.canonical_ref,
+              lang,
+              set_id: savedPearlSet.data.set.id,
+              version: savedPearlSet.data.set.version,
+              cards: savedPearlSet.data.cards.length,
+            });
+
+            return NextResponse.json({
+              text: publishedCardsToAngleCardsJson(savedPearlSet.data.cards),
+              cached: true,
+              source: "published_lens_sets",
+              canonical_ref: normalizedReference.canonical_ref,
+              published_lens_id: "pearl",
+              published_set_id: savedPearlSet.data.set.id,
+              published_version: savedPearlSet.data.set.version,
+              generated: true,
+              model: pearlResult.model,
+            });
+          }
+        } else {
+          console.warn("[PUBLISHED_LENS_SETS] Pearl v3 produced no publishable cards; falling back to legacy", {
+            reference,
+            canonical_ref: normalizedReference.canonical_ref,
+            lang,
+          });
+        }
+      } catch (error) {
+        console.warn("[PUBLISHED_LENS_SETS] pearl generation failed; falling back to legacy", {
+          reference,
+          canonical_ref: normalizedReference.canonical_ref,
+          lang,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+
       const angleCardsText = await buildAnglesResponseFromCards({
         reference,
         lang,
@@ -1510,6 +1598,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
+
+
+
+
 
 
 
