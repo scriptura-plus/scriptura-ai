@@ -1,4 +1,4 @@
-import "server-only";
+﻿import "server-only";
 
 const MISSING_KEY =
   "ANTHROPIC_API_KEY is not set on the server. Add it to .env.local or Vercel project settings and restart.";
@@ -6,7 +6,7 @@ const MISSING_KEY =
 export const PEARL_V3_MODEL =
   process.env.PEARL_V3_ANTHROPIC_MODEL?.trim() ||
   process.env.ANTHROPIC_PEARL_V3_MODEL?.trim() ||
-  "claude-opus-4-5";
+  "claude-sonnet-4-6";
 
 const RETRYABLE_STATUSES = new Set([500, 502, 503, 504, 529]);
 const MAX_ATTEMPTS = 4;
@@ -143,3 +143,4 @@ export async function callPearlClaude(opts: PearlClaudeOptions): Promise<string>
 
   throw new Error(getClaudeUserMessage(lastStatus, lastBody));
 }
+
