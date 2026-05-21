@@ -310,7 +310,9 @@ function buildWordPrompt(args: {
 ` +
     `5. Root/title signal: a root, title, or named role changes how this verse reads. Reject root trivia or sound-play that does not shift the verse.
 ` +
-    `6. Repetition / verbal pattern: repeated words, shared roots, or verbal links in the original are hidden or softened in translation.
+    `6. Repetition / verbal pattern: repeated words, shared roots, or verbal links in the original are hidden, softened, broken, or replaced by different wording in translation. If the target-language translation preserves the repetition clearly, reject the card as Pearl territory rather than Lexicon.
+` +
+    `7. Lexical-cultural background: a historically known word-image, object, or cultural usage may be used only when it is tightly tied to the original word itself and changes how THIS verse reads. Keep it cautious and reader-facing. Do not turn Lexicon into a history lecture. Reject cultural background that is not anchored in the original word.
 
 ` +
 
@@ -325,6 +327,10 @@ function buildWordPrompt(args: {
     `- decorative etymology or sound games;
 ` +
     `- a card that merely repeats what an ordinary Pearl can already see from the translation;
+` +
+    `- repetition cards where the repetition is already clearly preserved in the target-language translation;
+` +
+    `- cultural or historical claims that are not tightly anchored in an original word from this verse;
 ` +
     `- technical parsing that does not make the verse read differently;
 ` +
@@ -354,7 +360,7 @@ function buildWordPrompt(args: {
 ` +
     `teaser: the main body of the card — a literary mini-essay of 4 to 7 natural reading lines. This is where the discovery is developed.
 ` +
-    `original: the original-language word or short expression the card rests on, with transliteration when available. Keep it short and readable.
+    `original: a short reader bridge, not a bare Greek/Hebrew word. Include the original-language word or short expression, transliteration when available, and the phrase it corresponds to in the reader's verse. Example for Russian: “ἁπλοῦς (haplous) — слово за русским «чисто»”; “λύχνος (luchnos) — «светильник» в фразе «светильник тела»”. Keep it compact and public-friendly.
 ` +
     `gap: 1 to 3 lines naming what the translation or ordinary reading smooths over. This field is public-facing: no internal labels, no verification flags.
 ` +
@@ -374,7 +380,7 @@ function buildWordPrompt(args: {
 ` +
     `- "teaser": string in ${args.langName}
 ` +
-    `- "original": string; original word/expression with transliteration when available
+    `- "original": string; reader bridge with original word/expression, transliteration when available, and the corresponding phrase in the reader's verse
 ` +
     `- "gap": string in ${args.langName}
 ` +
@@ -404,7 +410,7 @@ function buildWordPrompt(args: {
 ` +
     `FINAL REMINDER
 ` +
-    `Return only strong Lexicon discoveries. A short honest set is better than a padded set. But do not suppress a strong synonym-contrast or semantic-range discovery merely because the packet does not list every possible synonym. Write it carefully and let the moderator verify later.`
+    `Return only strong Lexicon discoveries. A short honest set is better than a padded set. But do not suppress a strong synonym-contrast, semantic-range, or tightly word-anchored cultural discovery merely because the packet does not list every possible synonym or background detail. Write it carefully and let the moderator verify later.`
   );
 }
 
