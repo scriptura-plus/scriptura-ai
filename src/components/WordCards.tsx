@@ -376,20 +376,25 @@ export function WordCards({
   const cards = parsedCards;
   const safeIndex = Math.min(currentIndex, cards.length - 1);
   const currentCard = cards[safeIndex];
-  const canGoPrevious = safeIndex > 0;
-  const canGoNext = safeIndex < cards.length - 1;
+  const hasMultipleCards = cards.length > 1;
   const isCurrentExpanded = expandedIndex === safeIndex;
 
   function goPrevious() {
-    if (!canGoPrevious) return;
+    if (!hasMultipleCards) return;
     setExpandedIndex(null);
-    setCurrentIndex((value) => Math.max(0, value - 1));
+    setCurrentIndex((value) => {
+      const current = Math.min(value, cards.length - 1);
+      return current === 0 ? cards.length - 1 : current - 1;
+    });
   }
 
   function goNext() {
-    if (!canGoNext) return;
+    if (!hasMultipleCards) return;
     setExpandedIndex(null);
-    setCurrentIndex((value) => Math.min(cards.length - 1, value + 1));
+    setCurrentIndex((value) => {
+      const current = Math.min(value, cards.length - 1);
+      return current === cards.length - 1 ? 0 : current + 1;
+    });
   }
 
   function handleTouchStart(event: TouchEvent<HTMLDivElement>) {
@@ -814,13 +819,12 @@ export function WordCards({
         />
       </div>
 
-      {cards.length > 1 && (
+      {hasMultipleCards && (
         <div className="angle-carousel-nav">
           <button
             type="button"
             className="angle-carousel-btn"
             onClick={goPrevious}
-            disabled={!canGoPrevious}
           >
             ← {getPreviousLabel(lang)}
           </button>
@@ -829,7 +833,6 @@ export function WordCards({
             type="button"
             className="angle-carousel-btn is-primary"
             onClick={goNext}
-            disabled={!canGoNext}
           >
             {getNextLabel(lang)} →
           </button>
