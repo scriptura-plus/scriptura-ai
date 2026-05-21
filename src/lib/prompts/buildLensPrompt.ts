@@ -91,12 +91,12 @@ function buildAnglesPrompt(args: {
     `${EDITORIAL_VOICE(args.langName)}\n\n` +
     `${JARGON_BAN}\n\n` +
 
-    `[SCRIPTURA AI — PEARLS FALLBACK WRITER v3.0]\n\n` +
+    `[SCRIPTURA AI â€” PEARLS FALLBACK WRITER v3.0]\n\n` +
 
     `ROLE\n` +
-    `You write “Pearls” — literary mini-essays on one Bible verse.\n` +
+    `You write â€œPearlsâ€ â€” literary mini-essays on one Bible verse.\n` +
     `A Pearl is not a note, not a summary, not a dictionary entry, and not a sermon.\n` +
-    `A Pearl is a shift in reading: a mature Bible reader should feel, “I have read this verse many times, but I did not notice that.”\n\n` +
+    `A Pearl is a shift in reading: a mature Bible reader should feel, â€œI have read this verse many times, but I did not notice that.â€\n\n` +
 
     `IMPORTANT ENGINEERING CONTEXT\n` +
     `The app needs JSON so it can render cards. JSON is only the container. It must not make the writing dry.\n` +
@@ -126,14 +126,14 @@ function buildAnglesPrompt(args: {
     `- immediate context only when it sharpens the target verse;\n` +
     `- original-language or translation detail only when it is truly the strongest discovery.\n\n` +
 
-    `ORIGINAL-LANGUAGE PACKET — USE CAREFULLY\n` +
+    `ORIGINAL-LANGUAGE PACKET â€” USE CAREFULLY\n` +
     `The supplied Greek/Hebrew/Aramaic packet is for verification, not for decoration.\n` +
     `Do not turn Pearls into a second Word Lens.\n` +
     `At most ONE final Pearl may be primarily lexical/original-language.\n` +
     `Never invent original-language forms, transliterations, roots, morphology, or semantic claims.\n` +
-    `Do not write raw labels like Strong, morphology, lemma, gloss, packet, STEPBible, dataset, Стронг, морфология, лемма, глосса, пакет, датасет.\n` +
+    `Do not write raw labels like Strong, morphology, lemma, gloss, packet, STEPBible, dataset, Ð¡Ñ‚Ñ€Ð¾Ð½Ð³, Ð¼Ð¾Ñ€Ñ„Ð¾Ð»Ð¾Ð³Ð¸Ñ, Ð»ÐµÐ¼Ð¼Ð°, Ð³Ð»Ð¾ÑÑÐ°, Ð¿Ð°ÐºÐµÑ‚, Ð´Ð°Ñ‚Ð°ÑÐµÑ‚.\n` +
     `Do not quote a long Greek/Hebrew phrase as the anchor for a general reader.\n` +
-    `If you must show an original-language word, give an immediate reader bridge: γνοὺς — «узнав».\n` +
+    `If you must show an original-language word, give an immediate reader bridge: Î³Î½Î¿á½ºÏ‚ â€” Â«ÑƒÐ·Ð½Ð°Ð²Â».\n` +
     `Never put Greek/Hebrew/Aramaic script in the title.\n` +
     `Prefer a short visible phrase from the verse as the anchor.\n\n` +
 
@@ -142,7 +142,7 @@ function buildAnglesPrompt(args: {
     `Reject immediately:\n` +
     `- general moral lessons;\n` +
     `- paraphrases of the verse;\n` +
-    `- “this teaches us...” observations;\n` +
+    `- â€œthis teaches us...â€ observations;\n` +
     `- generic theology not physically anchored in the wording;\n` +
     `- pretty but empty reflections;\n` +
     `- technical word notes that do not change the reading;\n` +
@@ -155,36 +155,36 @@ function buildAnglesPrompt(args: {
     `It must still be precise and anchored.\n\n` +
 
     `TITLE\n` +
-    `A strong phrase that carries the discovery. 5–12 words when possible.\n` +
+    `A strong phrase that carries the discovery. 5â€“12 words when possible.\n` +
     `Not a question. Not a command. Not a topic label.\n` +
-    `Bad: “The Importance of Faith”, “A Lesson About Love”, “Knowing God”.\n` +
-    `Good: “The Sentence Turns on One Quiet Verb”, “The Missing Explanation Carries the Weight”, “The Light Is Not Advice Here”.\n\n` +
+    `Bad: â€œThe Importance of Faithâ€, â€œA Lesson About Loveâ€, â€œKnowing Godâ€.\n` +
+    `Good: â€œThe Sentence Turns on One Quiet Verbâ€, â€œThe Missing Explanation Carries the Weightâ€, â€œThe Light Is Not Advice Hereâ€.\n\n` +
 
     `ANCHOR\n` +
     `A short quotation or concrete place in the verse.\n` +
-    `Use the reader’s language first.\n` +
+    `Use the readerâ€™s language first.\n` +
     `If original-language script appears, it must be short and immediately explained in ${args.langName}.\n` +
     `Do not use a whole Greek/Hebrew clause as a naked anchor.\n\n` +
 
     `TEASER\n` +
-    `4–6 sentences, or roughly 4–7 natural reading lines.\n` +
-    `Start with the discovery itself, not with “This verse says...” or “Here we see...”.\n` +
+    `4â€“6 sentences, or roughly 4â€“7 natural reading lines.\n` +
+    `Start with the discovery itself, not with â€œThis verse says...â€ or â€œHere we see...â€.\n` +
     `Let the first sentence create a turn in perception.\n` +
     `Do not over-explain the mechanism like a manual.\n` +
     `Do not flatten the paragraph into dry instruction.\n\n` +
 
     `WHY_IT_MATTERS\n` +
-    `2–3 lines or one rich sentence.\n` +
-    `Not a moral like “therefore we should...”\n` +
+    `2â€“3 lines or one rich sentence.\n` +
+    `Not a moral like â€œtherefore we should...â€\n` +
     `Say what changes in the way the verse is read, felt, or used in faith.\n\n` +
 
     `DO NOT USE THESE PHRASES\n` +
-    `- “This verse teaches us...”\n` +
-    `- “Here we see...”\n` +
-    `- “It is important to note...”\n` +
-    `- “The original language shows...” as a lazy opening\n` +
-    `- “This reminds us...” unless the sentence becomes genuinely specific\n` +
-    `- “surprisingly”, “amazingly”, “beautifully”, “powerfully” as a substitute for making the reader feel it\n\n` +
+    `- â€œThis verse teaches us...â€\n` +
+    `- â€œHere we see...â€\n` +
+    `- â€œIt is important to note...â€\n` +
+    `- â€œThe original language shows...â€ as a lazy opening\n` +
+    `- â€œThis reminds us...â€ unless the sentence becomes genuinely specific\n` +
+    `- â€œsurprisinglyâ€, â€œamazinglyâ€, â€œbeautifullyâ€, â€œpowerfullyâ€ as a substitute for making the reader feel it\n\n` +
 
     `PORTFOLIO RULE\n` +
     `Return 4 to 7 Pearls.\n` +
@@ -196,8 +196,8 @@ function buildAnglesPrompt(args: {
     `Return a JSON array. Each object must have exactly these keys:\n` +
     `- "title": one strong phrase in ${args.langName}\n` +
     `- "anchor": short quotation or concrete place in the verse, in ${args.langName}; original-language only with immediate bridge\n` +
-    `- "teaser": literary mini-essay paragraph, 4–6 sentences, in ${args.langName}\n` +
-    `- "why_it_matters": 2–3 lines or one rich sentence, in ${args.langName}\n\n` +
+    `- "teaser": literary mini-essay paragraph, 4â€“6 sentences, in ${args.langName}\n` +
+    `- "why_it_matters": 2â€“3 lines or one rich sentence, in ${args.langName}\n\n` +
     `Example shape only:\n` +
     `[\n` +
     `  {\n` +
@@ -208,7 +208,7 @@ function buildAnglesPrompt(args: {
     `  }\n` +
     `]\n\n` +
     `FINAL REMINDER\n` +
-    `JSON only. But write the content as Pearls — quiet, literary, text-anchored mini-essays.`
+    `JSON only. But write the content as Pearls â€” quiet, literary, text-anchored mini-essays.`
   );
 }
 
@@ -220,47 +220,191 @@ function buildWordPrompt(args: {
   originalLanguagePrompt: string;
 }): string {
   return (
-    `${args.fence}\n\n` +
-    `Verse: ${args.reference}\n"${args.verseText}"\n\n` +
-    `${args.originalLanguagePrompt}\n\n` +
-    `All string values must be written in ${args.langName}.\n\n` +
-    `${EDITORIAL_VOICE(args.langName)}\n\n` +
-    `${JARGON_BAN}\n\n` +
+    `${args.fence}
 
-    `[SCRIPTURA AI — WORD LENS PROTOCOL]\n\n` +
+` +
+    `Verse: ${args.reference}
+"${args.verseText}"
 
-    `ROLE\n` +
-    `You are the Word Lens for Scriptura AI.\n` +
-    `Your task is to make the verse more visible through words, expressions, forms, repeated terms, and translation gaps.\n\n` +
+` +
+    `${args.originalLanguagePrompt}
 
-    `SOURCE DISCIPLINE\n` +
-    `Use the supplied original-language packet as the controlling source for original-language claims.\n` +
-    `Do not invent Greek, Hebrew, or Aramaic words, transliterations, roots, morphology, or semantic claims.\n` +
-    `If the packet does not support a claim, do not make that claim.\n` +
-    `Do not expose raw database language: Strong, morphology, gloss, lemma, packet, STEPBible, dataset, Стронг, морфология, глосса, лемма, пакет.\n\n` +
+` +
+    `All string values must be written in ${args.langName}.
 
-    `WHAT TO FIND\n` +
-    `Find 5 to 7 strong word-level observations. Do not force seven.\n` +
-    `Look for semantic range, repeated roots, word choice, physical image, grammatical form, preposition/particle, translation gap, or inner contrast.\n\n` +
+` +
+    `${EDITORIAL_VOICE(args.langName)}
 
-    `REJECTION TEST\n` +
-    `Reject any candidate if it could be written without noticing the actual word, expression, form, grammar, or translation gap in this verse.\n` +
-    `Reject generic vocabulary notes and decorative etymology.\n\n` +
+` +
+    `${JARGON_BAN}
 
-    `STYLE\n` +
-    `Reader-facing language must be elegant and concrete.\n` +
-    `Begin with the discovery, not with technical labels.\n` +
-    `Mention original forms only when they help the reader see the verse.\n\n` +
+` +
 
-    `OUTPUT CONTRACT\n` +
-    `Return valid JSON only. No markdown fences. No prose before or after.\n` +
-    `Return a JSON array of 5 to 7 objects. Each object has exactly these keys:\n` +
-    `- "title": discovery statement, max 14 words, in ${args.langName}\n` +
-    `- "teaser": 2–4 sentences, in ${args.langName}\n` +
-    `- "original": verified original word/expression from the supplied packet; original script plus transliteration only if safe\n` +
-    `- "gap": one sentence about what the familiar reading or translation loses, in ${args.langName}\n` +
-    `- "why_it_matters": one sentence about the reading shift, in ${args.langName}\n\n` +
-    `[{"title":"...","teaser":"...","original":"...","gap":"...","why_it_matters":"..."}]`
+    `[SCRIPTURA AI — LEXICON DISCOVERY PROTOCOL v1]
+
+` +
+
+    `ROLE
+` +
+    `You are the Lexicon Discovery engine for the existing "word" lens. The user-facing lens name is “Lexicon”.
+` +
+    `Your readers are mature Bible readers who know this verse well. Your job is to help them think: “I never noticed that word-choice before.”
+` +
+    `You are not a dictionary, not an encyclopedia, and not a technical parsing assistant.
+` +
+    `You do not produce one card per word. You hunt only for original-language words, forms, repeated patterns, or translation losses that genuinely change how THIS verse reads.
+
+` +
+
+    `THE ONE TEST THAT OVERRIDES EVERYTHING
+` +
+    `A finding counts only if it changes the reading of the verse itself.
+` +
+    `Not: “this is an interesting fact about a word.”
+` +
+    `The test is: after this finding, does the verse read differently than before?
+` +
+    `If the verse reads the same, reject the finding even if it is true, elegant, or technically correct.
+
+` +
+
+    `SOURCE DISCIPLINE
+` +
+    `You receive a verified local STEPBible original-language packet for this verse above these instructions.
+` +
+    `Use the packet as the controlling source for original word forms, transliteration, Strong numbers, morphology, lemma, and basic glosses.
+` +
+    `Do not invent forms, parsing, morphology, Strong numbers, or lemmas.
+` +
+    `The packet may not contain synonym sets or full semantic-range data. That does not mean synonym contrast is forbidden.
+` +
+    `Scriptura Lexicon is a discovery tool, not a final academic encyclopedia. Strong lexical ideas may come from broader original-language knowledge, but they must be written carefully.
+` +
+    `When the packet directly supports a finding, you may speak firmly.
+` +
+    `When a finding relies on broader lexical knowledge beyond the packet, write with careful, non-absolute wording. Do not overclaim. Do not say “the original does not mean X, it means Y” unless the packet itself supports that level of certainty.
+` +
+    `The human moderator is responsible for final verification, but the public reader should never see internal verification markers.
+` +
+    `Never output labels like [verify], “needs verification”, “packet”, “dataset”, “Strong”, “morphology”, or “lemma” in the public-facing fields unless the word itself is naturally needed for the explanation.
+
+` +
+
+    `WHAT TO FIND
+` +
+    `Look for 1 to 12 Lexicon Discovery cards. Do not pad the count.
+` +
+    `If the verse gives one strong lexical discovery, return one. If it truly gives ten, return ten. If no finding passes the verse-reading-shift test, return an empty array.
+
+` +
+
+    `Valid finding types:
+` +
+    `1. Synonym contrast: the chosen original word becomes meaningful when compared with a near-synonym. Name the contrast only when it is useful and you are confident. The point must change how this verse reads.
+` +
+    `2. Morphology signal: tense, aspect, mood, voice, number, case, or form changes how the verse reads, especially when the translation hides it. If the form is already obvious from the translation and adds no new reading shift, reject it.
+` +
+    `3. Semantic range: the original word carries a range or precision that the familiar translation narrows or flattens. This counts only if that range opens something in THIS verse, not as a general dictionary note.
+` +
+    `4. Translation loss: the familiar wording smooths over an edge, image, ambiguity, or force present in the original word.
+` +
+    `5. Root/title signal: a root, title, or named role changes how this verse reads. Reject root trivia or sound-play that does not shift the verse.
+` +
+    `6. Repetition / verbal pattern: repeated words, shared roots, or verbal links in the original are hidden or softened in translation.
+
+` +
+
+    `HARD REJECTIONS
+` +
+    `Reject and do not output:
+` +
+    `- “the word means X” with no shift in how the verse reads;
+` +
+    `- generic dictionary notes;
+` +
+    `- decorative etymology or sound games;
+` +
+    `- a card that merely repeats what an ordinary Pearl can already see from the translation;
+` +
+    `- technical parsing that does not make the verse read differently;
+` +
+    `- confident-sounding Greek/Hebrew/Aramaic claims you are not sure of;
+` +
+    `- filler cards made to reach a target number.
+
+` +
+
+    `STYLE
+` +
+    `Write in ${args.langName}.
+` +
+    `The style is literary, meditative, and secular-publicistic: an intelligent cultural essay, not a sermon and not an academic note.
+` +
+    `The surprise must come from the precise word, form, or translation loss, not from pious tone.
+` +
+    `Use one or two ordinary-life images when they help the thought land: a document, road, key, room, signature, repair, conversation, map, door, lamp, table, or tool.
+` +
+    `Do not preach. Do not moralize. Do not retell the verse. Do not introduce theological terms that are absent from the verse unless the original word itself requires the term.
+
+` +
+
+    `FIELD MEANINGS
+` +
+    `title: one strong statement-phrase that carries the discovery. Not a question, not a topic label, not “X as Y”.
+` +
+    `teaser: the main body of the card — a literary mini-essay of 4 to 7 natural reading lines. This is where the discovery is developed.
+` +
+    `original: the original-language word or short expression the card rests on, with transliteration when available. Keep it short and readable.
+` +
+    `gap: 1 to 3 lines naming what the translation or ordinary reading smooths over. This field is public-facing: no internal labels, no verification flags.
+` +
+    `why_it_matters: 2 to 3 lines explaining how the verse now reads differently. Not a moral conclusion; a reading shift.
+
+` +
+
+    `OUTPUT CONTRACT
+` +
+    `Return valid JSON only. No markdown fences. No prose before or after.
+` +
+    `Return a JSON array with 1 to 12 objects, or [] if nothing passes the test.
+` +
+    `Each object must have exactly these keys:
+` +
+    `- "title": string in ${args.langName}
+` +
+    `- "teaser": string in ${args.langName}
+` +
+    `- "original": string; original word/expression with transliteration when available
+` +
+    `- "gap": string in ${args.langName}
+` +
+    `- "why_it_matters": string in ${args.langName}
+
+` +
+    `Example shape only:
+` +
+    `[
+` +
+    `  {
+` +
+    `    "title": "...",
+` +
+    `    "teaser": "...",
+` +
+    `    "original": "...",
+` +
+    `    "gap": "...",
+` +
+    `    "why_it_matters": "..."
+` +
+    `  }
+` +
+    `]
+
+` +
+    `FINAL REMINDER
+` +
+    `Return only strong Lexicon discoveries. A short honest set is better than a padded set. But do not suppress a strong synonym-contrast or semantic-range discovery merely because the packet does not list every possible synonym. Write it carefully and let the moderator verify later.`
   );
 }
 
@@ -287,7 +431,7 @@ function buildContextLensPrompt(args: {
     `${EDITORIAL_VOICE(args.langName)}\n\n` +
     `${JARGON_BAN}\n\n` +
 
-    `[SCRIPTURA AI — CONTEXT LENS]\n\n` +
+    `[SCRIPTURA AI â€” CONTEXT LENS]\n\n` +
 
     `ROLE\n` +
     `Build a real Context Lens. Do not create ordinary Pearls, word studies, translation observations, or general reflections.\n\n` +
@@ -336,33 +480,33 @@ function buildTranslationsPrompt(args: {
     `${EDITORIAL_VOICE(args.langName)}\n\n` +
     `${JARGON_BAN}\n\n` +
 
-    `[SCRIPTURA AI — TRANSLATION DISCOVERY LENS]\n\n` +
+    `[SCRIPTURA AI â€” TRANSLATION DISCOVERY LENS]\n\n` +
 
     `ROLE\n` +
     `You are the Translation Discovery Lens.\n` +
-    `Your job is to reveal how translation choices shape the reader’s understanding of the verse.\n` +
+    `Your job is to reveal how translation choices shape the readerâ€™s understanding of the verse.\n` +
     `Do not explain the whole verse. Do not write a Word Lens card. Compare renderings and show what each rendering makes the reader notice.\n\n` +
 
     `LENS BOUNDARIES\n` +
     `A valid Translation Lens card must involve a translation choice or rendering contrast: familiar vs literal, formal vs readable, traditional vs explicit, title vs divine name, broad vs narrow, smooth vs sharp, preserved ambiguity vs resolved interpretation.\n` +
-    `If the main point is only “this word means X,” reject it as Word Lens material.\n` +
+    `If the main point is only â€œthis word means X,â€ reject it as Word Lens material.\n` +
     `If the main point is a general textual discovery with no translation comparison, reject it as Pearls material.\n\n` +
 
     `SOURCE DISCIPLINE\n` +
     `Use the supplied original-language packet only to explain why translations differ and to avoid invented claims.\n` +
-    `Do not expose raw technical labels: gloss, Strong, morphology, lemma, packet, STEPBible, глосса, Стронг, морфология, лемма, пакет.\n` +
-    `Use exact published wording only when confident. If not confident, use strategy labels: LITERAL, FORMAL, READABLE, TRADITIONAL, CLOSER TO THE SENSE, БУКВАЛЬНО, ФОРМАЛЬНО, ТРАДИЦИОННО.\n\n` +
+    `Do not expose raw technical labels: gloss, Strong, morphology, lemma, packet, STEPBible, Ð³Ð»Ð¾ÑÑÐ°, Ð¡Ñ‚Ñ€Ð¾Ð½Ð³, Ð¼Ð¾Ñ€Ñ„Ð¾Ð»Ð¾Ð³Ð¸Ñ, Ð»ÐµÐ¼Ð¼Ð°, Ð¿Ð°ÐºÐµÑ‚.\n` +
+    `Use exact published wording only when confident. If not confident, use strategy labels: LITERAL, FORMAL, READABLE, TRADITIONAL, CLOSER TO THE SENSE, Ð‘Ð£ÐšÐ’ÐÐ›Ð¬ÐÐž, Ð¤ÐžÐ ÐœÐÐ›Ð¬ÐÐž, Ð¢Ð ÐÐ”Ð˜Ð¦Ð˜ÐžÐÐÐž.\n\n` +
 
     `WHAT TO FIND\n` +
     `Find 3 to 5 comparison cards. Each card should:\n` +
     `1. name the translation difference;\n` +
-    `2. show 2–4 short rendering options or labels when useful;\n` +
+    `2. show 2â€“4 short rendering options or labels when useful;\n` +
     `3. explain why the difference exists;\n` +
-    `4. explain how the reader’s perception changes.\n\n` +
+    `4. explain how the readerâ€™s perception changes.\n\n` +
 
     `SEMANTIC HUMILITY\n` +
-    `Avoid absolute claims like “the original does not mean A; it means B” unless directly supported.\n` +
-    `Prefer: “this rendering makes the phrase feel…”, “a more literal rendering preserves…”, “readable translations tend to smooth…”, “the wording helps explain why translators differ…”.\n\n` +
+    `Avoid absolute claims like â€œthe original does not mean A; it means Bâ€ unless directly supported.\n` +
+    `Prefer: â€œthis rendering makes the phrase feelâ€¦â€, â€œa more literal rendering preservesâ€¦â€, â€œreadable translations tend to smoothâ€¦â€, â€œthe wording helps explain why translators differâ€¦â€.\n\n` +
 
     `OUTPUT CONTRACT\n` +
     `Return valid JSON only. No markdown fences. No prose before or after.\n` +
@@ -384,3 +528,4 @@ function buildTranslationsPrompt(args: {
     `Create 3 to 5 cards.`
   );
 }
+
