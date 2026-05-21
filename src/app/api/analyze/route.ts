@@ -1,4 +1,4 @@
-import { after, NextResponse } from "next/server";
+﻿import { after, NextResponse } from "next/server";
 import { createHash } from "crypto";
 import { runAI, resolveAIModel } from "@/lib/ai/runAI";
 import { isProvider, defaultProvider, type Provider } from "@/lib/ai/providers";
@@ -15,11 +15,18 @@ import {
   EXTRA_ORDER,
 } from "@/lib/prompts/buildExtraPrompt";
 import { buildExpandPrompt } from "@/lib/prompts/buildExpandPrompt";
+import { runPearlV3 } from "@/lib/pearl-v3/runPearlV3";
 import { getCachedResult, saveCachedResult } from "@/lib/cache/cachedResults";
 import {
   getAngleCards,
   getAngleCardsByCanonicalRef,
 } from "@/lib/cache/angleCards";
+import {
+  getPublishedLensSet,
+  mapPearlV3ResultToPublishedCards,
+  publishedCardsToAngleCardsJson,
+  savePublishedLensSet,
+} from "@/lib/cache/publishedLensSets";
 import {
   getResearchArticle,
   saveResearchArticle,
@@ -30,7 +37,6 @@ import {
   normalizeLensDiscoveryOutput,
   saveLensDiscoveryCards,
 } from "@/lib/cache/lensDiscoveryCards";
-
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 160;
@@ -143,14 +149,14 @@ function getExtraArticleTitle(id: ExtraId, lang: Lang): string {
       scripture_links: "Scripture Links",
     },
     ru: {
-      text_findings: "Текстовые находки",
-      historical_scene: "Историческая сцена",
-      scripture_links: "Связи с другими стихами",
+      text_findings: "Ð¢ÐµÐºÑÑ‚Ð¾Ð²Ñ‹Ðµ Ð½Ð°Ñ…Ð¾Ð´ÐºÐ¸",
+      historical_scene: "Ð˜ÑÑ‚Ð¾Ñ€Ð¸Ñ‡ÐµÑÐºÐ°Ñ ÑÑ†ÐµÐ½Ð°",
+      scripture_links: "Ð¡Ð²ÑÐ·Ð¸ Ñ Ð´Ñ€ÑƒÐ³Ð¸Ð¼Ð¸ ÑÑ‚Ð¸Ñ…Ð°Ð¼Ð¸",
     },
     es: {
       text_findings: "Hallazgos textuales",
-      historical_scene: "Escena histórica",
-      scripture_links: "Conexiones bíblicas",
+      historical_scene: "Escena histÃ³rica",
+      scripture_links: "Conexiones bÃ­blicas",
     },
   };
 
@@ -158,8 +164,8 @@ function getExtraArticleTitle(id: ExtraId, lang: Lang): string {
 }
 
 function getWordLensArticleTitle(lang: Lang): string {
-  if (lang === "ru") return "Word Lens / Лексика";
-  if (lang === "es") return "Word Lens / Léxico";
+  if (lang === "ru") return "Word Lens / Ð›ÐµÐºÑÐ¸ÐºÐ°";
+  if (lang === "es") return "Word Lens / LÃ©xico";
   return "Word Lens / Lexicon";
 }
 
@@ -410,9 +416,9 @@ function buildWordLensContentText(args: {
   });
 
   return [
-    `# Word Lens / Lexicon — ${args.reference}`,
+    `# Word Lens / Lexicon â€” ${args.reference}`,
     "",
-    "This is a set of word-card observations produced by the Word Lens. Extract only public-worthy pearl candidates where a word, form, particle, preposition, semantic range, or translation gap changes how the verse is read. Do not extract a candidate if it is merely “the word means X.”",
+    "This is a set of word-card observations produced by the Word Lens. Extract only public-worthy pearl candidates where a word, form, particle, preposition, semantic range, or translation gap changes how the verse is read. Do not extract a candidate if it is merely â€œthe word means X.â€",
     "",
     ...chunks,
   ].join("\n");
@@ -954,6 +960,128 @@ export async function POST(req: Request) {
         lang,
       });
 
+      const publishedPearlSet = await getPublishedLensSet({
+        canonicalRef: normalizedReference.canonical_ref ?? reference,
+        lang,
+        lensId: "pearl",
+      });
+
+      if (publishedPearlSet.error) {
+        console.warn("[PUBLISHED_LENS_SETS] pearl read failed", {
+          reference,
+          canonical_ref: normalizedReference.canonical_ref,
+          lang,
+          error: publishedPearlSet.error,
+        });
+      }
+
+      if (publishedPearlSet.data?.cards.length) {
+        console.log("[PUBLISHED_LENS_SETS] pearl hit", {
+          reference,
+          canonical_ref: normalizedReference.canonical_ref,
+          lang,
+          set_id: publishedPearlSet.data.set.id,
+          version: publishedPearlSet.data.set.version,
+          cards: publishedPearlSet.data.cards.length,
+        });
+
+        return NextResponse.json({
+          text: publishedCardsToAngleCardsJson(publishedPearlSet.data.cards),
+          cached: true,
+          source: "published_lens_sets",
+          canonical_ref: normalizedReference.canonical_ref,
+          published_lens_id: "pearl",
+          published_set_id: publishedPearlSet.data.set.id,
+          published_version: publishedPearlSet.data.set.version,
+        });
+      }
+
+      try {
+        console.log("[PUBLISHED_LENS_SETS] pearl miss; generating Pearl v3", {
+          reference,
+          canonical_ref: normalizedReference.canonical_ref,
+          lang,
+          provider,
+        });
+
+        const pearlResult = await runPearlV3({
+          reference,
+          verseText,
+          lang,
+          provider,
+          options: {
+            writeLimit: 12,
+            targetCount: 6,
+            minScore: 70,
+            includeRaw: false,
+          },
+        });
+
+        const publishedCards = mapPearlV3ResultToPublishedCards(pearlResult);
+
+        if (publishedCards.length > 0) {
+          const savedPearlSet = await savePublishedLensSet({
+            canonicalRef: pearlResult.canonicalRef ?? normalizedReference.canonical_ref ?? reference,
+            referenceLabel: pearlResult.verseContext.centralRef ?? reference,
+            lang,
+            lensId: "pearl",
+            sourcePipeline: "pearl_v3_auto_public",
+            sourceModel: pearlResult.model,
+            generatedAt: new Date().toISOString(),
+            metadata: {
+              reference,
+              provider,
+              debug: pearlResult.debug,
+              lexiconAvailable: pearlResult.lexiconAvailable,
+            },
+            cards: publishedCards,
+          });
+
+          if (savedPearlSet.error) {
+            console.warn("[PUBLISHED_LENS_SETS] pearl save failed; falling back to legacy", {
+              reference,
+              canonical_ref: normalizedReference.canonical_ref,
+              lang,
+              error: savedPearlSet.error,
+            });
+          } else if (savedPearlSet.data?.cards.length) {
+            console.log("[PUBLISHED_LENS_SETS] pearl generated and saved", {
+              reference,
+              canonical_ref: normalizedReference.canonical_ref,
+              lang,
+              set_id: savedPearlSet.data.set.id,
+              version: savedPearlSet.data.set.version,
+              cards: savedPearlSet.data.cards.length,
+            });
+
+            return NextResponse.json({
+              text: publishedCardsToAngleCardsJson(savedPearlSet.data.cards),
+              cached: true,
+              source: "published_lens_sets",
+              canonical_ref: normalizedReference.canonical_ref,
+              published_lens_id: "pearl",
+              published_set_id: savedPearlSet.data.set.id,
+              published_version: savedPearlSet.data.set.version,
+              generated: true,
+              model: pearlResult.model,
+            });
+          }
+        } else {
+          console.warn("[PUBLISHED_LENS_SETS] Pearl v3 produced no publishable cards; falling back to legacy", {
+            reference,
+            canonical_ref: normalizedReference.canonical_ref,
+            lang,
+          });
+        }
+      } catch (error) {
+        console.warn("[PUBLISHED_LENS_SETS] pearl generation failed; falling back to legacy", {
+          reference,
+          canonical_ref: normalizedReference.canonical_ref,
+          lang,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+
       const angleCardsText = await buildAnglesResponseFromCards({
         reference,
         lang,
@@ -1470,3 +1598,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
+
+
+
+
+
+
+
+
