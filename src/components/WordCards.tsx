@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useState, type ReactNode, type TouchEvent } from "react";
 import { dictionary, type Lang } from "@/lib/i18n/dictionary";
 import type { Provider } from "@/lib/ai/providers";
 import { extractJSONArray } from "@/lib/ai/parseJSON";
@@ -13,19 +13,71 @@ export type WordCard = {
   why_it_matters: string;
 };
 
-function extractCards(raw: string): WordCard[] | null {
-  const parsed = extractJSONArray<WordCard>(raw);
-  if (!parsed) return null;
+function normalizeCard(c: unknown): WordCard | null {
+  if (!c || typeof c !== "object") return null;
+  const o = c as Record<string, unknown>;
 
-  return parsed.filter(
-    (c) =>
-      typeof c === "object" &&
-      typeof c.title === "string" &&
-      typeof c.teaser === "string" &&
-      typeof c.original === "string" &&
-      typeof c.gap === "string" &&
-      typeof c.why_it_matters === "string",
-  );
+  const title = String(o.title ?? o.heading ?? o.name ?? "").trim();
+  const teaser = String(o.teaser ?? o.body ?? o.text ?? o.discovery ?? "").trim();
+  const original = String(
+    o.original ??
+      o.original_word ??
+      o.greek ??
+      o.hebrew ??
+      o.aramaic ??
+      o.form ??
+      o.word_form ??
+      ""
+  ).trim();
+  const gap = String(
+    o.gap ??
+      o.translation_gap ??
+      o.translation_shift ??
+      o.semantic_gap ??
+      o.observation ??
+      ""
+  ).trim();
+  const why_it_matters = String(
+    o.why_it_matters ??
+      o.whyItMatters ??
+      o.why ??
+      o.significance ??
+      o.meaning_shift ??
+      ""
+  ).trim();
+
+  if (!title || !teaser || !original || !gap || !why_it_matters) return null;
+
+  return { title, teaser, original, gap, why_it_matters };
+}
+
+function extractCards(raw: string): WordCard[] | null {
+  if (!raw || !raw.trim()) {
+    console.error("[WordCards] rawText is empty");
+    return null;
+  }
+
+  const parsed = extractJSONArray<unknown>(raw);
+  if (!parsed) {
+    console.error(
+      "[WordCards] extractJSONArray returned null. Raw preview:",
+      raw.slice(0, 500),
+    );
+    return null;
+  }
+
+  const cards = parsed
+    .map(normalizeCard)
+    .filter((card): card is WordCard => card !== null);
+
+  if (cards.length === 0) {
+    console.error(
+      "[WordCards] All cards filtered out. Parsed sample:",
+      JSON.stringify(parsed[0]),
+    );
+  }
+
+  return cards;
 }
 
 function getCollapseLabel(lang: Lang): string {
@@ -44,6 +96,41 @@ function getShareLabel(lang: Lang): string {
   if (lang === "ru") return "Поделиться этой мыслью";
   if (lang === "es") return "Compartir esta idea";
   return "Share this insight";
+}
+
+function getPreviousLabel(lang: Lang): string {
+  if (lang === "ru") return "Назад";
+  if (lang === "es") return "Anterior";
+  return "Previous";
+}
+
+function getNextLabel(lang: Lang): string {
+  if (lang === "ru") return "Дальше";
+  if (lang === "es") return "Siguiente";
+  return "Next";
+}
+
+function getOriginalLabel(lang: Lang): string {
+  if (lang === "ru") return "оригинал";
+  if (lang === "es") return "original";
+  return "original";
+}
+
+function getGapLabel(lang: Lang): string {
+  if (lang === "ru") return "Что теряется";
+  if (lang === "es") return "Qué se pierde";
+  return "What gets lost";
+}
+
+function getWhyLabel(lang: Lang): string {
+  if (lang === "ru") return "Почему это важно";
+  if (lang === "es") return "Por qué importa";
+  return "Why it matters";
+}
+
+function formatCardNumber(value: number): string {
+  if (value < 10) return String(value).padStart(2, "0");
+  return String(value);
 }
 
 function stripCodeFence(text: string): string {
@@ -75,9 +162,57 @@ function splitArticleParagraphs(text: string): string[] {
   if (paragraphs.length > 1) return paragraphs;
 
   return normalized
-    .split(/(?<=[.!?])\s+(?=[А-ЯA-ZЁ])/g)
+    .split(/(?<=[.!?…])\s+(?=[А-ЯA-ZЁ])/g)
     .map((p) => p.trim())
     .filter((p) => p.length > 20);
+}
+
+function splitSentences(text: string): string[] {
+  return text
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(/(?<=[.!?…])\s+(?=[А-ЯA-ZЁ«])/g)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+}
+
+function splitReadingParagraphs(text: string): string[] {
+  const normalized = normalizeArticleText(text);
+
+  const explicitParagraphs = normalized
+    .split(/\n\s*\n/g)
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  if (explicitParagraphs.length > 1) return explicitParagraphs;
+
+  const sentences = splitSentences(normalized);
+  if (sentences.length <= 3) return [normalized];
+
+  const paragraphs: string[] = [];
+  let current: string[] = [];
+  let currentLength = 0;
+
+  sentences.forEach((sentence, index) => {
+    current.push(sentence);
+    currentLength += sentence.length;
+
+    const isLast = index === sentences.length - 1;
+    const shouldBreak =
+      !isLast &&
+      (current.length >= 2 || currentLength >= 260) &&
+      paragraphs.length < 2;
+
+    if (shouldBreak) {
+      paragraphs.push(current.join(" "));
+      current = [];
+      currentLength = 0;
+    }
+  });
+
+  if (current.length > 0) paragraphs.push(current.join(" "));
+
+  return paragraphs.length > 0 ? paragraphs : [normalized];
 }
 
 function cleanInlineMarkdown(text: string): string {
@@ -89,10 +224,8 @@ function cleanInlineMarkdown(text: string): string {
 
 function isHeadingLike(text: string): boolean {
   const cleaned = cleanInlineMarkdown(text);
-
   if (cleaned.length > 90) return false;
   if (/[.!?]$/.test(cleaned)) return false;
-
   return /^#{1,4}\s+/.test(text.trim()) || cleaned.split(/\s+/).length <= 8;
 }
 
@@ -109,10 +242,10 @@ function getSentenceCandidates(paragraphs: string[]): string[] {
   return paragraphs
     .flatMap((paragraph) =>
       removeMarkdownMarkers(paragraph)
-        .split(/(?<=[.!?])\s+/g)
+        .split(/(?<=[.!?…])\s+/g)
         .map((sentence) => sentence.trim()),
     )
-    .filter((sentence) => sentence.length >= 70 && sentence.length <= 190);
+    .filter((sentence) => sentence.length >= 70 && sentence.length <= 210);
 }
 
 function pickPullQuote(paragraphs: string[], title: string): string {
@@ -120,7 +253,7 @@ function pickPullQuote(paragraphs: string[], title: string): string {
 
   const strong =
     candidates.find((sentence) =>
-      /(не просто|именно|становится|превращает|показывает|открывает|меняет|центр|ключ|слово|нюанс|смысл)/i.test(
+      /(не просто|именно|становится|превращает|показывает|открывает|меняет|центр|ключ|слово|нюанс|смысл|теперь)/i.test(
         sentence,
       ),
     ) ?? candidates[0];
@@ -200,13 +333,9 @@ function EditorialArticle({
             {shouldInsertDivider && <div className="editorial-divider" />}
 
             {isHeadingLike(paragraph) ? (
-              <h4 className="editorial-subhead">
-                {renderInlineText(cleaned)}
-              </h4>
+              <h4 className="editorial-subhead">{renderInlineText(cleaned)}</h4>
             ) : (
-              <p className="editorial-paragraph">
-                {renderInlineText(cleaned)}
-              </p>
+              <p className="editorial-paragraph">{renderInlineText(cleaned)}</p>
             )}
           </div>
         );
@@ -229,9 +358,14 @@ export function WordCards({
   provider: Provider;
 }) {
   const t = dictionary[lang];
-  const cards = extractCards(rawText);
+  const parsedCards = extractCards(rawText);
 
-  if (!cards || cards.length === 0) {
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
+  const [touchStartX, setTouchStartX] = useState<number | null>(null);
+  const [touchStartY, setTouchStartY] = useState<number | null>(null);
+
+  if (!parsedCards || parsedCards.length === 0) {
     return (
       <div className="card error">
         {t.error} (Could not parse word cards — the AI may have returned non-JSON.)
@@ -239,59 +373,514 @@ export function WordCards({
     );
   }
 
+  const cards = parsedCards;
+  const safeIndex = Math.min(currentIndex, cards.length - 1);
+  const currentCard = cards[safeIndex];
+  const canGoPrevious = safeIndex > 0;
+  const canGoNext = safeIndex < cards.length - 1;
+  const isCurrentExpanded = expandedIndex === safeIndex;
+
+  function goPrevious() {
+    if (!canGoPrevious) return;
+    setExpandedIndex(null);
+    setCurrentIndex((value) => Math.max(0, value - 1));
+  }
+
+  function goNext() {
+    if (!canGoNext) return;
+    setExpandedIndex(null);
+    setCurrentIndex((value) => Math.min(cards.length - 1, value + 1));
+  }
+
+  function handleTouchStart(event: TouchEvent<HTMLDivElement>) {
+    if (isCurrentExpanded) return;
+
+    const touch = event.touches[0];
+    if (!touch) return;
+
+    setTouchStartX(touch.clientX);
+    setTouchStartY(touch.clientY);
+  }
+
+  function handleTouchEnd(event: TouchEvent<HTMLDivElement>) {
+    if (isCurrentExpanded) return;
+    if (touchStartX === null || touchStartY === null) return;
+
+    const touch = event.changedTouches[0];
+    if (!touch) return;
+
+    const diffX = touch.clientX - touchStartX;
+    const diffY = touch.clientY - touchStartY;
+
+    setTouchStartX(null);
+    setTouchStartY(null);
+
+    const absX = Math.abs(diffX);
+    const absY = Math.abs(diffY);
+
+    if (absX < 45) return;
+    if (absY > absX * 0.8) return;
+
+    if (diffX < 0) {
+      goNext();
+    } else {
+      goPrevious();
+    }
+  }
+
   return (
-    <div className="angle-cards-stack">
-      {cards.map((card, i) => (
+    <div className="angle-cards-carousel word-cards-carousel">
+      <style>{`
+        .angle-cards-carousel {
+          display: grid;
+          gap: 14px;
+        }
+
+        .angle-carousel-stage {
+          touch-action: pan-y;
+          animation: angleCardFadeIn 240ms ease both;
+        }
+
+        .angle-carousel-stage.is-expanded {
+          touch-action: auto;
+        }
+
+        @keyframes angleCardFadeIn {
+          from {
+            opacity: 0.72;
+            transform: translateY(5px);
+          }
+
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        .angle-card-premium {
+          position: relative;
+          overflow: hidden;
+          border: 1px solid rgba(138, 90, 43, 0.16);
+          border-radius: 30px;
+          padding: 30px 30px 26px;
+          background:
+            radial-gradient(circle at 18% 0%, rgba(255, 255, 255, 0.88), transparent 38%),
+            linear-gradient(180deg, rgba(255, 253, 248, 0.94) 0%, rgba(250, 244, 233, 0.92) 100%);
+          box-shadow:
+            0 28px 70px rgba(83, 58, 32, 0.10),
+            0 1px 0 rgba(255, 255, 255, 0.8) inset;
+        }
+
+        .angle-card-premium::before {
+          content: "";
+          position: absolute;
+          left: 30px;
+          right: 30px;
+          top: 83px;
+          height: 1px;
+          background: linear-gradient(
+            90deg,
+            rgba(138, 90, 43, 0.22),
+            rgba(138, 90, 43, 0.055),
+            rgba(138, 90, 43, 0)
+          );
+          pointer-events: none;
+        }
+
+        .angle-card-topline {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 14px;
+          margin-bottom: 28px;
+        }
+
+        .angle-card-progress {
+          display: inline-flex;
+          align-items: baseline;
+          gap: 6px;
+          padding: 0;
+          border: 0;
+          background: transparent;
+          box-shadow: none;
+          font-variant-numeric: tabular-nums;
+          letter-spacing: 0.12em;
+          text-transform: uppercase;
+        }
+
+        .angle-card-progress-current {
+          font-size: 11px;
+          line-height: 1;
+          font-weight: 760;
+          color: rgba(65, 74, 81, 0.44);
+        }
+
+        .angle-card-progress-separator {
+          font-size: 11px;
+          line-height: 1;
+          font-weight: 500;
+          color: rgba(138, 90, 43, 0.34);
+        }
+
+        .angle-card-progress-total {
+          font-size: 11px;
+          line-height: 1;
+          font-weight: 650;
+          color: rgba(65, 74, 81, 0.38);
+        }
+
+        .angle-expand-btn {
+          border: 1px solid rgba(138, 90, 43, 0.22);
+          border-radius: 999px;
+          background: rgba(255, 252, 246, 0.72);
+          color: rgba(68, 90, 110, 0.92);
+          padding: 11px 18px;
+          font: inherit;
+          font-size: 14px;
+          font-weight: 760;
+          cursor: pointer;
+          box-shadow: 0 6px 16px rgba(42, 31, 22, 0.045);
+          transition:
+            transform 0.14s ease,
+            box-shadow 0.14s ease,
+            background 0.14s ease;
+        }
+
+        .angle-expand-btn:hover {
+          transform: translateY(-1px);
+          background: rgba(255, 253, 250, 0.94);
+          box-shadow: 0 10px 22px rgba(42, 31, 22, 0.075);
+        }
+
+        .angle-card-title {
+          margin: 0;
+          max-width: 760px;
+          color: #2d251e;
+          font-family: Georgia, "Times New Roman", serif;
+          font-size: clamp(26px, 4.8vw, 42px);
+          line-height: 1.06;
+          letter-spacing: -0.035em;
+          font-weight: 760;
+        }
+
+        .angle-title-rule {
+          display: grid;
+          grid-template-columns: 78px 1fr;
+          align-items: center;
+          gap: 14px;
+          margin: 24px 0 18px;
+        }
+
+        .angle-title-rule::before,
+        .angle-title-rule::after {
+          content: "";
+          height: 1px;
+          background: rgba(138, 90, 43, 0.22);
+        }
+
+        .angle-anchor-box {
+          display: grid;
+          gap: 8px;
+          margin: 20px 0 24px;
+          padding: 17px 18px;
+          border: 1px solid rgba(190, 147, 91, 0.26);
+          border-radius: 20px;
+          background:
+            linear-gradient(180deg, rgba(255, 251, 244, 0.72), rgba(247, 238, 224, 0.56));
+        }
+
+        .angle-anchor-label {
+          color: rgba(150, 95, 43, 0.82);
+          font-size: 11px;
+          font-weight: 850;
+          letter-spacing: 0.16em;
+          text-transform: uppercase;
+        }
+
+        .angle-anchor-text {
+          color: rgba(65, 54, 43, 0.82);
+          font-family: Georgia, "Times New Roman", serif;
+          font-size: 16px;
+          line-height: 1.55;
+          font-style: italic;
+        }
+
+        .angle-card-body {
+          display: grid;
+          gap: 13px;
+          margin-top: 2px;
+        }
+
+        .angle-card-paragraph {
+          margin: 0;
+          color: rgba(47, 41, 35, 0.89);
+          font-size: 17px;
+          line-height: 1.86;
+          letter-spacing: -0.006em;
+        }
+
+        .angle-card-paragraph:first-child::first-letter {
+          float: left;
+          margin: 8px 9px 0 0;
+          color: rgba(120, 80, 42, 0.62);
+          font-family: Georgia, "Times New Roman", serif;
+          font-size: 52px;
+          line-height: 0.78;
+          font-weight: 720;
+        }
+
+        .angle-why {
+          margin-top: 24px;
+          padding-top: 18px;
+          border-top: 1px solid rgba(138, 90, 43, 0.18);
+        }
+
+        .angle-why + .angle-why {
+          margin-top: 16px;
+          padding-top: 16px;
+          border-top-color: rgba(138, 90, 43, 0.12);
+        }
+
+        .angle-why-label {
+          display: block;
+          margin-bottom: 7px;
+          color: rgba(69, 103, 132, 0.92);
+          font-size: 13px;
+          line-height: 1;
+          font-weight: 850;
+        }
+
+        .angle-why-text {
+          display: block;
+          color: rgba(76, 67, 58, 0.82);
+          font-size: 16px;
+          line-height: 1.74;
+        }
+
+        .editorial-footer {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 14px;
+          margin-top: 26px;
+          padding-top: 20px;
+          border-top: 1px solid rgba(138, 90, 43, 0.14);
+        }
+
+        .editorial-footer-label {
+          color: rgba(92, 82, 72, 0.58);
+          font-size: 13px;
+        }
+
+        .editorial-share-btn {
+          border: 1px solid rgba(138, 90, 43, 0.20);
+          border-radius: 999px;
+          background: rgba(255, 253, 250, 0.78);
+          color: rgba(69, 103, 132, 0.95);
+          padding: 10px 18px;
+          font: inherit;
+          font-size: 14px;
+          font-weight: 800;
+          cursor: pointer;
+          box-shadow: 0 5px 14px rgba(42, 31, 22, 0.035);
+        }
+
+        .angle-expansion {
+          margin-top: 26px;
+          padding-top: 24px;
+          border-top: 1px solid rgba(138, 90, 43, 0.16);
+        }
+
+        .angle-carousel-nav {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 12px;
+          margin-top: 8px;
+        }
+
+        .angle-carousel-btn {
+          border: 1px solid rgba(138, 90, 43, 0.16);
+          border-radius: 999px;
+          background: rgba(255, 253, 250, 0.72);
+          color: rgba(47, 41, 35, 0.72);
+          padding: 13px 16px;
+          font: inherit;
+          font-size: 14px;
+          font-weight: 760;
+          cursor: pointer;
+          box-shadow: 0 6px 16px rgba(42, 31, 22, 0.045);
+          transition:
+            opacity 0.14s ease,
+            transform 0.14s ease,
+            box-shadow 0.14s ease,
+            background 0.14s ease;
+        }
+
+        .angle-carousel-btn:hover:not(:disabled) {
+          transform: translateY(-1px);
+          box-shadow: 0 10px 22px rgba(42, 31, 22, 0.075);
+          background: rgba(255, 253, 250, 0.9);
+        }
+
+        .angle-carousel-btn:disabled {
+          opacity: 0.32;
+          cursor: not-allowed;
+          box-shadow: none;
+        }
+
+        .angle-carousel-btn.is-primary {
+          background: linear-gradient(180deg, #2f2923 0%, #1f1a16 100%);
+          color: #fffaf3;
+          border-color: rgba(47, 41, 35, 0.24);
+          box-shadow: 0 12px 24px rgba(42, 31, 22, 0.145);
+        }
+
+        .angle-carousel-btn.is-primary:disabled {
+          background: rgba(255, 253, 250, 0.72);
+          color: rgba(47, 41, 35, 0.42);
+        }
+
+        @media (max-width: 620px) {
+          .angle-card-premium {
+            border-radius: 24px;
+            padding: 24px 22px 22px;
+          }
+
+          .angle-card-premium::before {
+            left: 22px;
+            right: 22px;
+            top: 76px;
+          }
+
+          .angle-card-topline {
+            margin-bottom: 24px;
+          }
+
+          .angle-title-rule {
+            grid-template-columns: 48px 1fr;
+            margin: 20px 0 15px;
+          }
+
+          .angle-anchor-box {
+            margin: 17px 0 20px;
+            padding: 15px 16px;
+            border-radius: 18px;
+          }
+
+          .angle-card-paragraph {
+            font-size: 16px;
+            line-height: 1.78;
+          }
+
+          .angle-card-paragraph:first-child::first-letter {
+            font-size: 43px;
+            margin-top: 7px;
+          }
+
+          .angle-why-text {
+            font-size: 15px;
+            line-height: 1.68;
+          }
+
+          .angle-carousel-nav {
+            gap: 9px;
+          }
+
+          .angle-carousel-btn {
+            padding: 12px 13px;
+            font-size: 13px;
+          }
+        }
+      `}</style>
+
+      <div
+        key={`${currentCard.title}-${safeIndex}`}
+        className={`angle-carousel-stage${isCurrentExpanded ? " is-expanded" : ""}`}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+      >
         <WordCardItem
-          key={`${card.title}-${i}`}
-          index={i}
-          card={card}
+          index={safeIndex}
+          totalCount={cards.length}
+          card={currentCard}
           reference={reference}
           verseText={verseText}
           lang={lang}
           provider={provider}
+          expanded={isCurrentExpanded}
+          onExpandedChange={(nextExpanded) =>
+            setExpandedIndex(nextExpanded ? safeIndex : null)
+          }
         />
-      ))}
+      </div>
+
+      {cards.length > 1 && (
+        <div className="angle-carousel-nav">
+          <button
+            type="button"
+            className="angle-carousel-btn"
+            onClick={goPrevious}
+            disabled={!canGoPrevious}
+          >
+            ← {getPreviousLabel(lang)}
+          </button>
+
+          <button
+            type="button"
+            className="angle-carousel-btn is-primary"
+            onClick={goNext}
+            disabled={!canGoNext}
+          >
+            {getNextLabel(lang)} →
+          </button>
+        </div>
+      )}
     </div>
   );
 }
 
 function WordCardItem({
   index,
+  totalCount,
   card,
   reference,
   verseText,
   lang,
   provider,
+  expanded,
+  onExpandedChange,
 }: {
   index: number;
+  totalCount: number;
   card: WordCard;
   reference: string;
   verseText: string;
   lang: Lang;
   provider: Provider;
+  expanded: boolean;
+  onExpandedChange: (expanded: boolean) => void;
 }) {
   const t = dictionary[lang];
   const collapseLabel = getCollapseLabel(lang);
   const shareLabel = getShareLabel(lang);
+  const bodyParagraphs = splitReadingParagraphs(card.teaser);
 
-  const [expanded, setExpanded] = useState(false);
   const [article, setArticle] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [shareState, setShareState] = useState<"idle" | "copied">("idle");
 
-  const cardNumber = String(index + 1).padStart(2, "0");
+  const cardNumber = formatCardNumber(index + 1);
+  const totalNumber = String(totalCount);
 
   async function handleExpand() {
     if (expanded) {
-      setExpanded(false);
+      onExpandedChange(false);
       if (error) setError("");
       return;
     }
 
-    setExpanded(true);
-
+    onExpandedChange(true);
     if (article) return;
 
     setLoading(true);
@@ -315,7 +904,6 @@ function WordCardItem({
       });
 
       const j = (await r.json()) as { text?: string; error?: string };
-
       if (!r.ok) throw new Error(j?.error || t.error);
 
       setArticle(j.text ?? "");
@@ -327,7 +915,17 @@ function WordCardItem({
   }
 
   async function handleShare() {
-    const shareText = `${reference} — ${card.title}\n\n${article}\n\n${t.shareFrom}`;
+    const baseText =
+      article ||
+      [
+        card.teaser,
+        "",
+        `${getGapLabel(lang)}: ${card.gap}`,
+        "",
+        `${getWhyLabel(lang)}: ${card.why_it_matters}`,
+      ].join("\n");
+
+    const shareText = `${reference} — ${card.title}\n\n${baseText}\n\n${t.shareFrom}`;
 
     if (typeof navigator !== "undefined" && navigator.share) {
       try {
@@ -338,7 +936,6 @@ function WordCardItem({
       } catch {
         // user dismissed share sheet
       }
-
       return;
     }
 
@@ -354,7 +951,14 @@ function WordCardItem({
   return (
     <article className={`angle-card angle-card-premium${expanded ? " is-expanded" : ""}`}>
       <div className="angle-card-topline">
-        <div className="angle-card-index">{cardNumber}</div>
+        <div
+          className="angle-card-index angle-card-progress"
+          aria-label={`${index + 1} of ${totalCount}`}
+        >
+          <span className="angle-card-progress-current">{cardNumber}</span>
+          <span className="angle-card-progress-separator">—</span>
+          <span className="angle-card-progress-total">{totalNumber}</span>
+        </div>
 
         <button
           type="button"
@@ -367,25 +971,43 @@ function WordCardItem({
 
       <h3 className="angle-card-title">{card.title}</h3>
 
-      <div className="angle-card-divider" />
+      <div className="angle-title-rule" />
 
       <div className="angle-anchor-box">
-        <div className="angle-anchor-label">{t.original}</div>
+        <div className="angle-anchor-label">{getOriginalLabel(lang)}</div>
         <div className="angle-anchor-text">“{card.original}”</div>
       </div>
 
       <div className="angle-card-body">
-        <p className="angle-card-teaser">{card.teaser}</p>
+        {bodyParagraphs.map((paragraph, paragraphIndex) => (
+          <p
+            className="angle-card-paragraph"
+            key={`${paragraph.slice(0, 28)}-${paragraphIndex}`}
+          >
+            {paragraph}
+          </p>
+        ))}
       </div>
 
       <div className="angle-why">
-        <span className="angle-why-label">{t.gap}: </span>
+        <span className="angle-why-label">{getGapLabel(lang)}</span>
         <span className="angle-why-text">{card.gap}</span>
       </div>
 
       <div className="angle-why">
-        <span className="angle-why-label">{t.whyItMatters}: </span>
+        <span className="angle-why-label">{getWhyLabel(lang)}</span>
         <span className="angle-why-text">{card.why_it_matters}</span>
+      </div>
+
+      <div className="editorial-footer">
+        <div className="editorial-footer-label">{shareLabel}</div>
+        <button
+          type="button"
+          className="editorial-share-btn"
+          onClick={handleShare}
+        >
+          {shareState === "copied" ? t.copied : t.share}
+        </button>
       </div>
 
       {expanded && (
