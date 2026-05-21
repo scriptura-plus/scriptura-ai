@@ -123,12 +123,6 @@ function getAnchorLabel(lang: Lang): string {
   return "anchor";
 }
 
-function getThesisLabel(lang: Lang): string {
-  if (lang === "ru") return "главная мысль";
-  if (lang === "es") return "idea central";
-  return "central thought";
-}
-
 function getWhyLabel(lang: Lang): string {
   if (lang === "ru") return "Почему это важно";
   if (lang === "es") return "Por qué importa";
@@ -270,20 +264,27 @@ function pickPullQuote(paragraphs: string[], title: string): string {
   return title;
 }
 
-function pickCardThesis(card: AngleCard): string {
-  const fromWhy = splitSentences(card.why_it_matters).find(
-    (sentence) => sentence.length >= 55 && sentence.length <= 190
-  );
+function removeTerminalPeriod(text: string): string {
+  return text.trim().replace(/[.。]$/, "");
+}
 
-  if (fromWhy) return fromWhy.replace(/[.。]$/, "");
+function splitWhyForDisplay(text: string): {
+  deck: string | null;
+  whyText: string;
+} {
+  const sentences = splitSentences(text);
 
-  const fromTeaser = splitSentences(card.teaser).find(
-    (sentence) => sentence.length >= 70 && sentence.length <= 190
-  );
+  if (sentences.length >= 2) {
+    return {
+      deck: removeTerminalPeriod(sentences[0]),
+      whyText: sentences.slice(1).join(" "),
+    };
+  }
 
-  if (fromTeaser) return fromTeaser.replace(/[.。]$/, "");
-
-  return card.title;
+  return {
+    deck: null,
+    whyText: text.trim(),
+  };
 }
 
 function renderInlineText(text: string): ReactNode[] {
@@ -662,35 +663,6 @@ export function AngleCards({
           font-weight: 720;
         }
 
-        .angle-thesis {
-          position: relative;
-          margin: 26px 0 22px;
-          padding: 22px 24px 22px 27px;
-          border-left: 3px solid rgba(138, 90, 43, 0.44);
-          background:
-            linear-gradient(90deg, rgba(145, 102, 54, 0.085), rgba(255, 253, 248, 0));
-        }
-
-        .angle-thesis-label {
-          display: block;
-          margin-bottom: 8px;
-          color: rgba(150, 95, 43, 0.82);
-          font-size: 10px;
-          font-weight: 850;
-          letter-spacing: 0.18em;
-          text-transform: uppercase;
-        }
-
-        .angle-thesis-text {
-          margin: 0;
-          max-width: 680px;
-          color: rgba(42, 34, 28, 0.9);
-          font-family: Georgia, "Times New Roman", serif;
-          font-size: clamp(19px, 2.6vw, 27px);
-          line-height: 1.34;
-          letter-spacing: -0.018em;
-        }
-
         .angle-why {
           margin-top: 26px;
           padding-top: 20px;
@@ -838,16 +810,6 @@ export function AngleCards({
             margin-top: 7px;
           }
 
-          .angle-thesis {
-            margin: 22px 0 19px;
-            padding: 18px 18px 18px 20px;
-          }
-
-          .angle-thesis-text {
-            font-size: 20px;
-            line-height: 1.36;
-          }
-
           .angle-why-text {
             font-size: 15px;
             line-height: 1.68;
@@ -934,7 +896,7 @@ function AngleCardItem({
   const t = dictionary[lang];
   const collapseLabel = getCollapseLabel(lang);
   const shareLabel = getShareLabel(lang);
-  const thesis = pickCardThesis(card);
+  const whyDisplay = splitWhyForDisplay(card.why_it_matters);
   const bodyParagraphs = splitReadingParagraphs(card.teaser);
 
   const [article, setArticle] = useState("");
@@ -1034,7 +996,9 @@ function AngleCardItem({
 
       <div className="angle-title-rule" />
 
-      <p className="angle-card-deck">{thesis}</p>
+      {whyDisplay.deck && (
+        <p className="angle-card-deck">{whyDisplay.deck}</p>
+      )}
 
       <div className="angle-anchor-box">
         <div className="angle-anchor-label">{getAnchorLabel(lang)}</div>
@@ -1052,14 +1016,9 @@ function AngleCardItem({
         ))}
       </div>
 
-      <aside className="angle-thesis">
-        <span className="angle-thesis-label">{getThesisLabel(lang)}</span>
-        <p className="angle-thesis-text">{thesis}</p>
-      </aside>
-
       <div className="angle-why">
         <span className="angle-why-label">{getWhyLabel(lang)}</span>
-        <span className="angle-why-text">{card.why_it_matters}</span>
+        <span className="angle-why-text">{whyDisplay.whyText}</span>
       </div>
 
       <div className="editorial-footer">
