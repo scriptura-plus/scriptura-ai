@@ -1,4 +1,4 @@
-import "server-only";
+﻿import "server-only";
 
 import type { Provider } from "@/lib/ai/providers";
 import type { Lang } from "@/lib/i18n/dictionary";
@@ -28,8 +28,8 @@ export async function runPearlV3(args: {
   provider: Provider;
   options?: PearlV3RunOptions;
 }): Promise<PearlV3RunResult> {
-  const writeLimit = clampInteger(args.options?.writeLimit, 8, 1, 20);
-  const targetCount = clampInteger(args.options?.targetCount, 8, 1, 20);
+  const writeLimit = clampInteger(args.options?.writeLimit, 8, 1, 12);
+  const targetCount = clampInteger(args.options?.targetCount, 8, 1, 12);
   const minScore = clampInteger(args.options?.minScore, 70, 1, 100);
   const includeRaw = Boolean(args.options?.includeRaw);
 
@@ -133,3 +133,4 @@ export async function runPearlV3(args: {
       : undefined,
   };
 }
+
