@@ -33,6 +33,7 @@ function normalizeCard(c: unknown): AngleCard | null {
   const anchor = String(
     o.anchor ??
       o["опора"] ??
+      o.anchorQuote ??
       o.keyword ??
       o.key_phrase ??
       o.quote ??
@@ -43,6 +44,7 @@ function normalizeCard(c: unknown): AngleCard | null {
   const why_it_matters = String(
     o.why_it_matters ??
       o.whyItMatters ??
+      o.whyMatters ??
       o["почему_важно"] ??
       o["почему это важно"] ??
       o.significance ??
@@ -115,6 +117,24 @@ function getNextLabel(lang: Lang): string {
   return "Next";
 }
 
+function getAnchorLabel(lang: Lang): string {
+  if (lang === "ru") return "опора";
+  if (lang === "es") return "apoyo";
+  return "anchor";
+}
+
+function getThesisLabel(lang: Lang): string {
+  if (lang === "ru") return "главная мысль";
+  if (lang === "es") return "idea central";
+  return "central thought";
+}
+
+function getWhyLabel(lang: Lang): string {
+  if (lang === "ru") return "Почему это важно";
+  if (lang === "es") return "Por qué importa";
+  return "Why it matters";
+}
+
 function formatCardNumber(value: number): string {
   if (value < 10) return String(value).padStart(2, "0");
   return String(value);
@@ -149,9 +169,57 @@ function splitArticleParagraphs(text: string): string[] {
   if (paragraphs.length > 1) return paragraphs;
 
   return normalized
-    .split(/(?<=[.!?])\s+(?=[А-ЯA-ZЁ])/g)
+    .split(/(?<=[.!?…])\s+(?=[А-ЯA-ZЁ])/g)
     .map((p) => p.trim())
     .filter((p) => p.length > 20);
+}
+
+function splitSentences(text: string): string[] {
+  return text
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(/(?<=[.!?…])\s+(?=[А-ЯA-ZЁ«])/g)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+}
+
+function splitReadingParagraphs(text: string): string[] {
+  const normalized = normalizeArticleText(text);
+
+  const explicitParagraphs = normalized
+    .split(/\n\s*\n/g)
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  if (explicitParagraphs.length > 1) return explicitParagraphs;
+
+  const sentences = splitSentences(normalized);
+  if (sentences.length <= 3) return [normalized];
+
+  const paragraphs: string[] = [];
+  let current: string[] = [];
+  let currentLength = 0;
+
+  sentences.forEach((sentence, index) => {
+    current.push(sentence);
+    currentLength += sentence.length;
+
+    const isLast = index === sentences.length - 1;
+    const shouldBreak =
+      !isLast &&
+      (current.length >= 2 || currentLength >= 260) &&
+      paragraphs.length < 2;
+
+    if (shouldBreak) {
+      paragraphs.push(current.join(" "));
+      current = [];
+      currentLength = 0;
+    }
+  });
+
+  if (current.length > 0) paragraphs.push(current.join(" "));
+
+  return paragraphs.length > 0 ? paragraphs : [normalized];
 }
 
 function cleanInlineMarkdown(text: string): string {
@@ -181,10 +249,10 @@ function getSentenceCandidates(paragraphs: string[]): string[] {
   return paragraphs
     .flatMap((paragraph) =>
       removeMarkdownMarkers(paragraph)
-        .split(/(?<=[.!?])\s+/g)
+        .split(/(?<=[.!?…])\s+/g)
         .map((sentence) => sentence.trim())
     )
-    .filter((sentence) => sentence.length >= 70 && sentence.length <= 190);
+    .filter((sentence) => sentence.length >= 70 && sentence.length <= 210);
 }
 
 function pickPullQuote(paragraphs: string[], title: string): string {
@@ -192,7 +260,7 @@ function pickPullQuote(paragraphs: string[], title: string): string {
 
   const strong =
     candidates.find((sentence) =>
-      /(не просто|именно|становится|превращает|показывает|открывает|меняет|центр|ключ)/i.test(
+      /(не просто|именно|становится|превращает|показывает|открывает|меняет|центр|ключ|пауза|вдруг|теперь)/i.test(
         sentence
       )
     ) ?? candidates[0];
@@ -200,6 +268,22 @@ function pickPullQuote(paragraphs: string[], title: string): string {
   if (strong) return strong.replace(/[.。]$/, "");
 
   return title;
+}
+
+function pickCardThesis(card: AngleCard): string {
+  const fromWhy = splitSentences(card.why_it_matters).find(
+    (sentence) => sentence.length >= 55 && sentence.length <= 190
+  );
+
+  if (fromWhy) return fromWhy.replace(/[.。]$/, "");
+
+  const fromTeaser = splitSentences(card.teaser).find(
+    (sentence) => sentence.length >= 70 && sentence.length <= 190
+  );
+
+  if (fromTeaser) return fromTeaser.replace(/[.。]$/, "");
+
+  return card.title;
 }
 
 function renderInlineText(text: string): ReactNode[] {
@@ -372,12 +456,12 @@ export function AngleCards({
       <style>{`
         .angle-cards-carousel {
           display: grid;
-          gap: 12px;
+          gap: 14px;
         }
 
         .angle-carousel-stage {
           touch-action: pan-y;
-          animation: angleCardFadeIn 220ms ease both;
+          animation: angleCardFadeIn 240ms ease both;
         }
 
         .angle-carousel-stage.is-expanded {
@@ -387,7 +471,7 @@ export function AngleCards({
         @keyframes angleCardFadeIn {
           from {
             opacity: 0.72;
-            transform: translateY(4px);
+            transform: translateY(5px);
           }
 
           to {
@@ -396,49 +480,278 @@ export function AngleCards({
           }
         }
 
+        .angle-card-premium {
+          position: relative;
+          overflow: hidden;
+          border: 1px solid rgba(138, 90, 43, 0.16);
+          border-radius: 30px;
+          padding: 30px 30px 26px;
+          background:
+            radial-gradient(circle at 18% 0%, rgba(255, 255, 255, 0.88), transparent 38%),
+            linear-gradient(180deg, rgba(255, 253, 248, 0.94) 0%, rgba(250, 244, 233, 0.92) 100%);
+          box-shadow:
+            0 28px 70px rgba(83, 58, 32, 0.10),
+            0 1px 0 rgba(255, 255, 255, 0.8) inset;
+        }
+
+        .angle-card-premium::before {
+          content: "";
+          position: absolute;
+          left: 30px;
+          right: 30px;
+          top: 83px;
+          height: 1px;
+          background: linear-gradient(
+            90deg,
+            rgba(138, 90, 43, 0.22),
+            rgba(138, 90, 43, 0.055),
+            rgba(138, 90, 43, 0)
+          );
+          pointer-events: none;
+        }
+
+        .angle-card-topline {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 14px;
+          margin-bottom: 28px;
+        }
+
         .angle-card-progress {
           display: inline-flex;
           align-items: baseline;
-          gap: 4px;
-          width: auto;
-          min-width: 0;
-          height: auto;
-          padding: 2px 2px;
+          gap: 6px;
+          padding: 0;
           border: 0;
-          border-radius: 0;
           background: transparent;
           box-shadow: none;
           font-variant-numeric: tabular-nums;
-          letter-spacing: 0.055em;
-          opacity: 0.52;
+          letter-spacing: 0.12em;
+          text-transform: uppercase;
         }
 
         .angle-card-progress-current {
-          font-size: 12px;
+          font-size: 11px;
           line-height: 1;
-          font-weight: 650;
-          color: rgba(96, 110, 123, 0.72);
+          font-weight: 760;
+          color: rgba(65, 74, 81, 0.44);
         }
 
         .angle-card-progress-separator {
           font-size: 11px;
           line-height: 1;
           font-weight: 500;
-          color: rgba(96, 110, 123, 0.34);
+          color: rgba(138, 90, 43, 0.34);
         }
 
         .angle-card-progress-total {
           font-size: 11px;
           line-height: 1;
-          font-weight: 560;
-          color: rgba(96, 110, 123, 0.44);
+          font-weight: 650;
+          color: rgba(65, 74, 81, 0.38);
+        }
+
+        .angle-expand-btn {
+          border: 1px solid rgba(138, 90, 43, 0.22);
+          border-radius: 999px;
+          background: rgba(255, 252, 246, 0.72);
+          color: rgba(68, 90, 110, 0.92);
+          padding: 11px 18px;
+          font: inherit;
+          font-size: 14px;
+          font-weight: 760;
+          cursor: pointer;
+          box-shadow: 0 6px 16px rgba(42, 31, 22, 0.045);
+          transition:
+            transform 0.14s ease,
+            box-shadow 0.14s ease,
+            background 0.14s ease;
+        }
+
+        .angle-expand-btn:hover {
+          transform: translateY(-1px);
+          background: rgba(255, 253, 250, 0.94);
+          box-shadow: 0 10px 22px rgba(42, 31, 22, 0.075);
+        }
+
+        .angle-card-title {
+          margin: 0;
+          max-width: 760px;
+          color: #2d251e;
+          font-family: Georgia, "Times New Roman", serif;
+          font-size: clamp(26px, 4.8vw, 42px);
+          line-height: 1.06;
+          letter-spacing: -0.035em;
+          font-weight: 760;
+        }
+
+        .angle-title-rule {
+          display: grid;
+          grid-template-columns: 78px 1fr;
+          align-items: center;
+          gap: 14px;
+          margin: 24px 0 18px;
+        }
+
+        .angle-title-rule::before,
+        .angle-title-rule::after {
+          content: "";
+          height: 1px;
+          background: rgba(138, 90, 43, 0.22);
+        }
+
+        .angle-card-deck {
+          max-width: 690px;
+          margin: 0 0 20px;
+          color: rgba(67, 54, 42, 0.82);
+          font-family: Georgia, "Times New Roman", serif;
+          font-size: clamp(17px, 2.2vw, 22px);
+          line-height: 1.46;
+          font-style: italic;
+        }
+
+        .angle-anchor-box {
+          display: grid;
+          gap: 8px;
+          margin: 20px 0 24px;
+          padding: 17px 18px;
+          border: 1px solid rgba(190, 147, 91, 0.26);
+          border-radius: 20px;
+          background:
+            linear-gradient(180deg, rgba(255, 251, 244, 0.72), rgba(247, 238, 224, 0.56));
+        }
+
+        .angle-anchor-label {
+          color: rgba(150, 95, 43, 0.82);
+          font-size: 11px;
+          font-weight: 850;
+          letter-spacing: 0.16em;
+          text-transform: uppercase;
+        }
+
+        .angle-anchor-text {
+          color: rgba(65, 54, 43, 0.82);
+          font-family: Georgia, "Times New Roman", serif;
+          font-size: 16px;
+          line-height: 1.55;
+          font-style: italic;
+        }
+
+        .angle-card-body {
+          display: grid;
+          gap: 13px;
+          margin-top: 2px;
+        }
+
+        .angle-card-paragraph {
+          margin: 0;
+          color: rgba(47, 41, 35, 0.89);
+          font-size: 17px;
+          line-height: 1.86;
+          letter-spacing: -0.006em;
+        }
+
+        .angle-card-paragraph:first-child::first-letter {
+          float: left;
+          margin: 8px 9px 0 0;
+          color: rgba(120, 80, 42, 0.62);
+          font-family: Georgia, "Times New Roman", serif;
+          font-size: 52px;
+          line-height: 0.78;
+          font-weight: 720;
+        }
+
+        .angle-thesis {
+          position: relative;
+          margin: 26px 0 22px;
+          padding: 22px 24px 22px 27px;
+          border-left: 3px solid rgba(138, 90, 43, 0.44);
+          background:
+            linear-gradient(90deg, rgba(145, 102, 54, 0.085), rgba(255, 253, 248, 0));
+        }
+
+        .angle-thesis-label {
+          display: block;
+          margin-bottom: 8px;
+          color: rgba(150, 95, 43, 0.82);
+          font-size: 10px;
+          font-weight: 850;
+          letter-spacing: 0.18em;
+          text-transform: uppercase;
+        }
+
+        .angle-thesis-text {
+          margin: 0;
+          max-width: 680px;
+          color: rgba(42, 34, 28, 0.9);
+          font-family: Georgia, "Times New Roman", serif;
+          font-size: clamp(19px, 2.6vw, 27px);
+          line-height: 1.34;
+          letter-spacing: -0.018em;
+        }
+
+        .angle-why {
+          margin-top: 26px;
+          padding-top: 20px;
+          border-top: 1px solid rgba(138, 90, 43, 0.18);
+        }
+
+        .angle-why-label {
+          display: block;
+          margin-bottom: 7px;
+          color: rgba(69, 103, 132, 0.92);
+          font-size: 13px;
+          line-height: 1;
+          font-weight: 850;
+        }
+
+        .angle-why-text {
+          display: block;
+          color: rgba(76, 67, 58, 0.82);
+          font-size: 16px;
+          line-height: 1.74;
+        }
+
+        .editorial-footer {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 14px;
+          margin-top: 26px;
+          padding-top: 20px;
+          border-top: 1px solid rgba(138, 90, 43, 0.14);
+        }
+
+        .editorial-footer-label {
+          color: rgba(92, 82, 72, 0.58);
+          font-size: 13px;
+        }
+
+        .editorial-share-btn {
+          border: 1px solid rgba(138, 90, 43, 0.20);
+          border-radius: 999px;
+          background: rgba(255, 253, 250, 0.78);
+          color: rgba(69, 103, 132, 0.95);
+          padding: 10px 18px;
+          font: inherit;
+          font-size: 14px;
+          font-weight: 800;
+          cursor: pointer;
+          box-shadow: 0 5px 14px rgba(42, 31, 22, 0.035);
+        }
+
+        .angle-expansion {
+          margin-top: 26px;
+          padding-top: 24px;
+          border-top: 1px solid rgba(138, 90, 43, 0.16);
         }
 
         .angle-carousel-nav {
           display: grid;
           grid-template-columns: 1fr 1fr;
           gap: 12px;
-          margin-top: 6px;
+          margin-top: 8px;
         }
 
         .angle-carousel-btn {
@@ -483,13 +796,61 @@ export function AngleCards({
           color: rgba(47, 41, 35, 0.42);
         }
 
-        .angle-card-premium .angle-expand-btn {
-          box-shadow: 0 5px 14px rgba(42, 31, 22, 0.035);
-        }
+        @media (max-width: 620px) {
+          .angle-card-premium {
+            border-radius: 24px;
+            padding: 24px 22px 22px;
+          }
 
-        @media (max-width: 520px) {
-          .angle-cards-carousel {
-            gap: 10px;
+          .angle-card-premium::before {
+            left: 22px;
+            right: 22px;
+            top: 76px;
+          }
+
+          .angle-card-topline {
+            margin-bottom: 24px;
+          }
+
+          .angle-title-rule {
+            grid-template-columns: 48px 1fr;
+            margin: 20px 0 15px;
+          }
+
+          .angle-card-deck {
+            font-size: 17px;
+            line-height: 1.5;
+          }
+
+          .angle-anchor-box {
+            margin: 17px 0 20px;
+            padding: 15px 16px;
+            border-radius: 18px;
+          }
+
+          .angle-card-paragraph {
+            font-size: 16px;
+            line-height: 1.78;
+          }
+
+          .angle-card-paragraph:first-child::first-letter {
+            font-size: 43px;
+            margin-top: 7px;
+          }
+
+          .angle-thesis {
+            margin: 22px 0 19px;
+            padding: 18px 18px 18px 20px;
+          }
+
+          .angle-thesis-text {
+            font-size: 20px;
+            line-height: 1.36;
+          }
+
+          .angle-why-text {
+            font-size: 15px;
+            line-height: 1.68;
           }
 
           .angle-carousel-nav {
@@ -500,26 +861,6 @@ export function AngleCards({
             padding: 12px 13px;
             font-size: 13px;
           }
-
-          .angle-card-progress {
-            gap: 4px;
-            opacity: 0.60;
-          }
-
-          .angle-card-progress-current {
-            font-size: 11px;
-            font-weight: 620;
-          }
-
-          .angle-card-progress-separator {
-  font-size: 10px;
-}
-
-.angle-card-progress-total {
-  font-size: 10px;
-  color: rgba(96, 110, 123, 0.62);
-  font-weight: 620;
-}
         }
       `}</style>
 
@@ -593,6 +934,8 @@ function AngleCardItem({
   const t = dictionary[lang];
   const collapseLabel = getCollapseLabel(lang);
   const shareLabel = getShareLabel(lang);
+  const thesis = pickCardThesis(card);
+  const bodyParagraphs = splitReadingParagraphs(card.teaser);
 
   const [article, setArticle] = useState("");
   const [loading, setLoading] = useState(false);
@@ -689,23 +1032,37 @@ function AngleCardItem({
 
       <h3 className="angle-card-title">{card.title}</h3>
 
-      <div className="angle-card-divider" />
+      <div className="angle-title-rule" />
+
+      <p className="angle-card-deck">{thesis}</p>
 
       <div className="angle-anchor-box">
-        <div className="angle-anchor-label">{t.anchor}</div>
+        <div className="angle-anchor-label">{getAnchorLabel(lang)}</div>
         <div className="angle-anchor-text">“{card.anchor}”</div>
       </div>
 
       <div className="angle-card-body">
-        <p className="angle-card-teaser">{card.teaser}</p>
+        {bodyParagraphs.map((paragraph, paragraphIndex) => (
+          <p
+            className="angle-card-paragraph"
+            key={`${paragraph.slice(0, 28)}-${paragraphIndex}`}
+          >
+            {paragraph}
+          </p>
+        ))}
       </div>
 
+      <aside className="angle-thesis">
+        <span className="angle-thesis-label">{getThesisLabel(lang)}</span>
+        <p className="angle-thesis-text">{thesis}</p>
+      </aside>
+
       <div className="angle-why">
-        <span className="angle-why-label">{t.whyItMatters}: </span>
+        <span className="angle-why-label">{getWhyLabel(lang)}</span>
         <span className="angle-why-text">{card.why_it_matters}</span>
       </div>
 
-      <div className="editorial-footer" style={{ marginTop: 18 }}>
+      <div className="editorial-footer">
         <div className="editorial-footer-label">{shareLabel}</div>
         <button
           type="button"
