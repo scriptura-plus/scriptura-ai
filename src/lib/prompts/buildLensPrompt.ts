@@ -287,6 +287,10 @@ function buildWordPrompt(args: {
     `The human moderator is responsible for final verification, but the public reader should never see internal verification markers.
 ` +
     `Never output labels like [verify], “needs verification”, “packet”, “dataset”, “Strong”, “morphology”, or “lemma” in the public-facing fields unless the word itself is naturally needed for the explanation.
+` +
+    `Do not output raw morphology/parsing codes such as V-PNM-2P, N-NSM, G2962, H3068, Strong numbers, or dataset labels in public fields. Translate technical parsing into reader language. Say “форма настоящего повелительного наклонения” rather than “V-PNM-2P”. Say “родительный падеж” only if it matters for the reading shift.
+` +
+    `Do not build a card on a technical code itself. The code is only an internal clue; the public discovery must be a readable word-level insight.
 
 ` +
 
@@ -308,7 +312,7 @@ function buildWordPrompt(args: {
 ` +
     `4. Translation loss: the familiar wording smooths over an edge, image, ambiguity, or force present in the original word.
 ` +
-    `5. Root/title signal: a root, title, or named role changes how this verse reads. Reject root trivia or sound-play that does not shift the verse.
+    `5. Root/title signal: a root, title, or named role changes how this verse reads. Reject root trivia or sound-play that does not shift the verse. Be especially careful with divine titles and names: do not claim “not God”, “not Father”, “not Lord”, or similar exclusions unless the verse and packet directly support that contrast and the contrast changes this verse. Prefer wording like “this title emphasizes...” over “this is not...”.
 ` +
     `6. Repetition / verbal pattern: repeated words, shared roots, or verbal links in the original are hidden, softened, broken, or replaced by different wording in translation. If the target-language translation preserves the repetition clearly, reject the card as Pearl territory rather than Lexicon.
 ` +
@@ -331,6 +335,8 @@ function buildWordPrompt(args: {
     `- repetition cards where the repetition is already clearly preserved in the target-language translation;
 ` +
     `- cultural or historical claims that are not tightly anchored in an original word from this verse;
+` +
+    `- unsupported title/name contrast claims, especially divine-title claims, that overstate what the word choice proves;
 ` +
     `- technical parsing that does not make the verse read differently;
 ` +
@@ -360,7 +366,7 @@ function buildWordPrompt(args: {
 ` +
     `teaser: the main body of the card — a literary mini-essay of 4 to 7 natural reading lines. This is where the discovery is developed.
 ` +
-    `original: a short reader bridge, not a bare Greek/Hebrew word. Include the original-language word or short expression, transliteration when available, and the phrase it corresponds to in the reader's verse. Example for Russian: “ἁπλοῦς (haplous) — слово за русским «чисто»”; “λύχνος (luchnos) — «светильник» в фразе «светильник тела»”. Keep it compact and public-friendly.
+    `original: a short reader bridge, not a bare Greek/Hebrew word and not a parsing note. Include the original-language word or short expression, transliteration when available, and the phrase it corresponds to in the reader's verse. Example for Russian: “ἁπλοῦς (haplous) — слово за русским «чисто»”; “λύχνος (luchnos) — «светильник» в фразе «светильник тела»”. Keep it compact and public-friendly. Do not include raw morphology codes, Strong numbers, lemma labels, or dataset language in this field.
 ` +
     `gap: 1 to 3 lines naming what the translation or ordinary reading smooths over. This field is public-facing: no internal labels, no verification flags.
 ` +
@@ -380,7 +386,7 @@ function buildWordPrompt(args: {
 ` +
     `- "teaser": string in ${args.langName}
 ` +
-    `- "original": string; reader bridge with original word/expression, transliteration when available, and the corresponding phrase in the reader's verse
+    `- "original": string; reader bridge with original word/expression, transliteration when available, and the corresponding phrase in the reader's verse; no raw parsing codes or Strong numbers
 ` +
     `- "gap": string in ${args.langName}
 ` +
