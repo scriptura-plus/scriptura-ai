@@ -467,7 +467,7 @@ export function AngleCards({
 
         .angle-carousel-stage {
           touch-action: pan-y;
-          animation: angleCardFadeIn 240ms ease both;
+          animation: angleCardFadeIn 180ms ease both;
         }
 
         .angle-carousel-stage.is-expanded {
@@ -476,8 +476,8 @@ export function AngleCards({
 
         @keyframes angleCardFadeIn {
           from {
-            opacity: 0.72;
-            transform: translateY(5px);
+            opacity: 0.82;
+            transform: translateY(3px);
           }
 
           to {
@@ -489,15 +489,13 @@ export function AngleCards({
         .angle-card-premium {
           position: relative;
           overflow: hidden;
-          border: 1px solid rgba(138, 90, 43, 0.16);
-          border-radius: 30px;
-          padding: 30px 30px 26px;
-          background:
-            radial-gradient(circle at 18% 0%, rgba(255, 255, 255, 0.88), transparent 38%),
-            linear-gradient(180deg, rgba(255, 253, 248, 0.94) 0%, rgba(250, 244, 233, 0.92) 100%);
+          border: 1px solid rgba(112, 91, 67, 0.15);
+          border-radius: 26px;
+          padding: 28px 30px 24px;
+          background: rgba(255, 253, 248, 0.86);
           box-shadow:
-            0 28px 70px rgba(83, 58, 32, 0.10),
-            0 1px 0 rgba(255, 255, 255, 0.8) inset;
+            0 18px 44px rgba(65, 49, 32, 0.075),
+            0 1px 0 rgba(255, 255, 255, 0.72) inset;
         }
 
         .angle-card-premium::before {
@@ -505,14 +503,9 @@ export function AngleCards({
           position: absolute;
           left: 30px;
           right: 30px;
-          top: 83px;
+          top: 76px;
           height: 1px;
-          background: linear-gradient(
-            90deg,
-            rgba(138, 90, 43, 0.22),
-            rgba(138, 90, 43, 0.055),
-            rgba(138, 90, 43, 0)
-          );
+          background: rgba(112, 91, 67, 0.13);
           pointer-events: none;
         }
 
@@ -521,7 +514,7 @@ export function AngleCards({
           align-items: center;
           justify-content: space-between;
           gap: 14px;
-          margin-bottom: 28px;
+          margin-bottom: 26px;
         }
 
         .angle-card-progress {
@@ -537,109 +530,93 @@ export function AngleCards({
           text-transform: uppercase;
         }
 
-        .angle-card-progress-current {
-          font-size: 11px;
-          line-height: 1;
-          font-weight: 760;
-          color: rgba(65, 74, 81, 0.44);
-        }
-
-        .angle-card-progress-separator {
-          font-size: 11px;
-          line-height: 1;
-          font-weight: 500;
-          color: rgba(138, 90, 43, 0.34);
-        }
-
+        .angle-card-progress-current,
+        .angle-card-progress-separator,
         .angle-card-progress-total {
           font-size: 11px;
           line-height: 1;
           font-weight: 650;
-          color: rgba(65, 74, 81, 0.38);
+          color: rgba(65, 74, 81, 0.34);
         }
 
         .angle-expand-btn {
-          border: 1px solid rgba(138, 90, 43, 0.22);
+          border: 1px solid rgba(112, 91, 67, 0.16);
           border-radius: 999px;
-          background: rgba(255, 252, 246, 0.72);
-          color: rgba(68, 90, 110, 0.92);
-          padding: 11px 18px;
+          background: rgba(255, 253, 248, 0.72);
+          color: rgba(65, 86, 105, 0.88);
+          padding: 10px 17px;
           font: inherit;
           font-size: 14px;
-          font-weight: 760;
+          font-weight: 700;
           cursor: pointer;
-          box-shadow: 0 6px 16px rgba(42, 31, 22, 0.045);
+          box-shadow: none;
           transition:
             transform 0.14s ease,
-            box-shadow 0.14s ease,
+            border-color 0.14s ease,
             background 0.14s ease;
         }
 
         .angle-expand-btn:hover {
           transform: translateY(-1px);
-          background: rgba(255, 253, 250, 0.94);
-          box-shadow: 0 10px 22px rgba(42, 31, 22, 0.075);
+          border-color: rgba(65, 86, 105, 0.24);
+          background: rgba(255, 255, 252, 0.92);
         }
 
         .angle-card-title {
           margin: 0;
           max-width: 760px;
-          color: #2d251e;
+          color: #2f2923;
           font-family: Georgia, "Times New Roman", serif;
-          font-size: clamp(26px, 4.8vw, 42px);
-          line-height: 1.06;
-          letter-spacing: -0.035em;
-          font-weight: 760;
+          font-size: clamp(24px, 4.2vw, 36px);
+          line-height: 1.13;
+          letter-spacing: -0.026em;
+          font-weight: 720;
         }
 
         .angle-title-rule {
-          display: grid;
-          grid-template-columns: 78px 1fr;
-          align-items: center;
-          gap: 14px;
-          margin: 24px 0 18px;
+          display: block;
+          height: 1px;
+          margin: 22px 0 18px;
+          background: rgba(112, 91, 67, 0.13);
         }
 
         .angle-title-rule::before,
         .angle-title-rule::after {
-          content: "";
-          height: 1px;
-          background: rgba(138, 90, 43, 0.22);
+          content: none;
         }
 
         .angle-card-deck {
           max-width: 690px;
-          margin: 0 0 20px;
-          color: rgba(67, 54, 42, 0.82);
+          margin: 0 0 18px;
+          color: rgba(67, 54, 42, 0.76);
           font-family: Georgia, "Times New Roman", serif;
-          font-size: clamp(17px, 2.2vw, 22px);
-          line-height: 1.46;
+          font-size: clamp(16px, 2vw, 19px);
+          line-height: 1.52;
           font-style: italic;
         }
 
         .angle-anchor-box {
           display: grid;
-          gap: 8px;
-          margin: 20px 0 24px;
-          padding: 17px 18px;
-          border: 1px solid rgba(190, 147, 91, 0.26);
-          border-radius: 20px;
-          background:
-            linear-gradient(180deg, rgba(255, 251, 244, 0.72), rgba(247, 238, 224, 0.56));
+          gap: 7px;
+          margin: 18px 0 22px;
+          padding: 15px 16px;
+          border: 1px solid rgba(112, 91, 67, 0.14);
+          border-radius: 18px;
+          background: rgba(246, 240, 229, 0.48);
         }
 
         .angle-anchor-label {
-          color: rgba(150, 95, 43, 0.82);
-          font-size: 11px;
-          font-weight: 850;
+          color: rgba(113, 84, 54, 0.68);
+          font-size: 10px;
+          font-weight: 760;
           letter-spacing: 0.16em;
           text-transform: uppercase;
         }
 
         .angle-anchor-text {
-          color: rgba(65, 54, 43, 0.82);
+          color: rgba(65, 54, 43, 0.78);
           font-family: Georgia, "Times New Roman", serif;
-          font-size: 16px;
+          font-size: 15.5px;
           line-height: 1.55;
           font-style: italic;
         }
@@ -647,47 +624,49 @@ export function AngleCards({
         .angle-card-body {
           display: grid;
           gap: 13px;
-          margin-top: 2px;
+          margin-top: 0;
         }
 
         .angle-card-paragraph {
           margin: 0;
-          color: rgba(47, 41, 35, 0.89);
-          font-size: 17px;
-          line-height: 1.86;
-          letter-spacing: -0.006em;
+          color: rgba(47, 41, 35, 0.88);
+          font-size: 16.5px;
+          line-height: 1.78;
+          letter-spacing: -0.004em;
         }
 
         .angle-card-paragraph:first-child::first-letter {
-          float: left;
-          margin: 8px 9px 0 0;
-          color: rgba(120, 80, 42, 0.62);
-          font-family: Georgia, "Times New Roman", serif;
-          font-size: 52px;
-          line-height: 0.78;
-          font-weight: 720;
+          float: none;
+          margin: 0;
+          color: inherit;
+          font: inherit;
         }
 
         .angle-why {
-          margin-top: 26px;
-          padding-top: 20px;
-          border-top: 1px solid rgba(138, 90, 43, 0.18);
+          margin-top: 22px;
+          padding-top: 16px;
+          border-top: 1px solid rgba(112, 91, 67, 0.12);
+        }
+
+        .angle-why + .angle-why {
+          margin-top: 14px;
+          padding-top: 14px;
         }
 
         .angle-why-label {
           display: block;
           margin-bottom: 7px;
-          color: rgba(69, 103, 132, 0.92);
-          font-size: 13px;
+          color: rgba(65, 86, 105, 0.82);
+          font-size: 12px;
           line-height: 1;
-          font-weight: 850;
+          font-weight: 760;
         }
 
         .angle-why-text {
           display: block;
-          color: rgba(76, 67, 58, 0.82);
-          font-size: 16px;
-          line-height: 1.74;
+          color: rgba(76, 67, 58, 0.78);
+          font-size: 15.5px;
+          line-height: 1.68;
         }
 
         .editorial-footer {
@@ -695,33 +674,33 @@ export function AngleCards({
           align-items: center;
           justify-content: space-between;
           gap: 14px;
-          margin-top: 26px;
-          padding-top: 20px;
-          border-top: 1px solid rgba(138, 90, 43, 0.14);
+          margin-top: 24px;
+          padding-top: 18px;
+          border-top: 1px solid rgba(112, 91, 67, 0.11);
         }
 
         .editorial-footer-label {
-          color: rgba(92, 82, 72, 0.58);
+          color: rgba(92, 82, 72, 0.48);
           font-size: 13px;
         }
 
         .editorial-share-btn {
-          border: 1px solid rgba(138, 90, 43, 0.20);
+          border: 1px solid rgba(112, 91, 67, 0.14);
           border-radius: 999px;
-          background: rgba(255, 253, 250, 0.78);
-          color: rgba(69, 103, 132, 0.95);
-          padding: 10px 18px;
+          background: rgba(255, 253, 248, 0.72);
+          color: rgba(65, 86, 105, 0.86);
+          padding: 9px 16px;
           font: inherit;
           font-size: 14px;
-          font-weight: 800;
+          font-weight: 720;
           cursor: pointer;
-          box-shadow: 0 5px 14px rgba(42, 31, 22, 0.035);
+          box-shadow: none;
         }
 
         .angle-expansion {
-          margin-top: 26px;
-          padding-top: 24px;
-          border-top: 1px solid rgba(138, 90, 43, 0.16);
+          margin-top: 24px;
+          padding-top: 22px;
+          border-top: 1px solid rgba(112, 91, 67, 0.13);
         }
 
         .angle-carousel-nav {
@@ -732,27 +711,27 @@ export function AngleCards({
         }
 
         .angle-carousel-btn {
-          border: 1px solid rgba(138, 90, 43, 0.16);
+          border: 1px solid rgba(112, 91, 67, 0.13);
           border-radius: 999px;
-          background: rgba(255, 253, 250, 0.72);
-          color: rgba(47, 41, 35, 0.72);
+          background: rgba(255, 253, 248, 0.62);
+          color: rgba(47, 41, 35, 0.68);
           padding: 13px 16px;
           font: inherit;
           font-size: 14px;
-          font-weight: 760;
+          font-weight: 720;
           cursor: pointer;
-          box-shadow: 0 6px 16px rgba(42, 31, 22, 0.045);
+          box-shadow: none;
           transition:
             opacity 0.14s ease,
             transform 0.14s ease,
-            box-shadow 0.14s ease,
+            border-color 0.14s ease,
             background 0.14s ease;
         }
 
         .angle-carousel-btn:hover:not(:disabled) {
           transform: translateY(-1px);
-          box-shadow: 0 10px 22px rgba(42, 31, 22, 0.075);
-          background: rgba(255, 253, 250, 0.9);
+          border-color: rgba(112, 91, 67, 0.2);
+          background: rgba(255, 253, 248, 0.86);
         }
 
         .angle-carousel-btn:disabled {
@@ -762,62 +741,62 @@ export function AngleCards({
         }
 
         .angle-carousel-btn.is-primary {
-          background: linear-gradient(180deg, #2f2923 0%, #1f1a16 100%);
+          background: rgba(47, 41, 35, 0.92);
           color: #fffaf3;
-          border-color: rgba(47, 41, 35, 0.24);
-          box-shadow: 0 12px 24px rgba(42, 31, 22, 0.145);
+          border-color: rgba(47, 41, 35, 0.18);
+          box-shadow: 0 10px 22px rgba(42, 31, 22, 0.11);
         }
 
         .angle-carousel-btn.is-primary:disabled {
-          background: rgba(255, 253, 250, 0.72);
-          color: rgba(47, 41, 35, 0.42);
+          background: rgba(255, 253, 248, 0.62);
+          color: rgba(47, 41, 35, 0.38);
+          box-shadow: none;
         }
 
         @media (max-width: 620px) {
           .angle-card-premium {
-            border-radius: 24px;
-            padding: 24px 22px 22px;
+            border-radius: 22px;
+            padding: 23px 21px 21px;
           }
 
           .angle-card-premium::before {
-            left: 22px;
-            right: 22px;
-            top: 76px;
+            left: 21px;
+            right: 21px;
+            top: 70px;
           }
 
           .angle-card-topline {
-            margin-bottom: 24px;
+            margin-bottom: 23px;
+          }
+
+          .angle-card-title {
+            font-size: clamp(23px, 7.2vw, 31px);
+            line-height: 1.14;
           }
 
           .angle-title-rule {
-            grid-template-columns: 48px 1fr;
-            margin: 20px 0 15px;
+            margin: 19px 0 16px;
           }
 
           .angle-card-deck {
-            font-size: 17px;
+            font-size: 16px;
             line-height: 1.5;
           }
 
           .angle-anchor-box {
-            margin: 17px 0 20px;
-            padding: 15px 16px;
-            border-radius: 18px;
+            margin: 16px 0 19px;
+            padding: 14px 15px;
+            border-radius: 16px;
           }
 
           .angle-card-paragraph {
             font-size: 16px;
-            line-height: 1.78;
-          }
-
-          .angle-card-paragraph:first-child::first-letter {
-            font-size: 43px;
-            margin-top: 7px;
+            line-height: 1.72;
           }
 
           .angle-why-text {
             font-size: 15px;
-            line-height: 1.68;
+            line-height: 1.64;
           }
 
           .angle-carousel-nav {
