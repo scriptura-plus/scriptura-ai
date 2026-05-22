@@ -190,7 +190,7 @@ export default function VersePublicInventoryPage() {
           </select>
         </label>
 
-        <label>Reference<input
+        <label>Admin Secret<input
             value={adminSecret}
             onChange={(event) => setAdminSecret(event.target.value)}
             placeholder="localtest"
@@ -545,6 +545,7 @@ export default function VersePublicInventoryPage() {
     </main>
   );
 }
+
 
 
 
