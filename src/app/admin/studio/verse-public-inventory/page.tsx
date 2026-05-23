@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type InventoryResponse = {
   ok?: boolean;
@@ -125,6 +125,15 @@ export default function VersePublicInventoryPage() {
   const [data, setData] = useState<InventoryResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [secretSaved, setSecretSaved] = useState(false);
+
+  useEffect(() => {
+    const savedSecret = window.localStorage.getItem("scriptura_admin_secret");
+    if (savedSecret) {
+      setAdminSecret(savedSecret);
+      setSecretSaved(true);
+    }
+  }, []);
 
   const endpoint = useMemo(() => {
     const params = new URLSearchParams({
@@ -141,10 +150,17 @@ export default function VersePublicInventoryPage() {
     setData(null);
 
     try {
+      const cleanSecret = adminSecret.trim();
+
+      if (cleanSecret) {
+        window.localStorage.setItem("scriptura_admin_secret", cleanSecret);
+        setSecretSaved(true);
+      }
+
       const res = await fetch(endpoint, {
         method: "GET",
         headers: {
-          "x-admin-secret": adminSecret.trim(),
+          "x-admin-secret": cleanSecret,
         },
       });
 
@@ -202,6 +218,21 @@ export default function VersePublicInventoryPage() {
           {loading ? "Checking..." : "Check"}
         </button>
       </section>
+
+      <div className="secretHint">
+        <span>{secretSaved ? "Admin Secret saved in this browser." : "Admin Secret will be saved in this browser after a successful check."}</span>
+        <button
+          type="button"
+          className="secondaryButton"
+          onClick={() => {
+            window.localStorage.removeItem("scriptura_admin_secret");
+            setAdminSecret("");
+            setSecretSaved(false);
+          }}
+        >
+          Clear saved secret
+        </button>
+      </div>
 
       <div className="endpoint">{endpoint}</div>
 
@@ -367,6 +398,24 @@ export default function VersePublicInventoryPage() {
         button:disabled {
           cursor: not-allowed;
           opacity: 0.55;
+        }
+
+        .secretHint {
+          max-width: 1100px;
+          margin: -4px auto 16px;
+          display: flex;
+          justify-content: space-between;
+          gap: 12px;
+          align-items: center;
+          color: #7c6650;
+          font-size: 13px;
+        }
+
+        .secondaryButton {
+          background: #eee2d0;
+          color: #5f4c36;
+          padding: 9px 12px;
+          font-size: 13px;
         }
 
         .endpoint {
@@ -545,6 +594,7 @@ export default function VersePublicInventoryPage() {
     </main>
   );
 }
+
 
 
 
