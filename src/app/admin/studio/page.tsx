@@ -20,8 +20,8 @@ const mainSections: StudioCard[] = [
     title: "Кабинет стиха",
     description:
       "Работа с одним выбранным стихом: обзор, будущая сортировка, добавление карточек и сборка статьи.",
-    href: "/admin/studio/verse-public-inventory",
-    badge: "текущий read-only обзор",
+    href: "/admin/studio/verse",
+    badge: "вход в кабинет",
   },
   {
     title: "Knowledge Index",
@@ -250,4 +250,5 @@ export default function StudioHomePage() {
     </main>
   );
 }
+
 
