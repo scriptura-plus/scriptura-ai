@@ -438,11 +438,7 @@ export async function GET(req: Request) {
     }
 
     warnings.push(
-      "TODO: lexicon inventory is not implemented in MVP step 1.",
-      "TODO: translations inventory is not implemented in MVP step 1.",
-      "TODO: context inventory is not implemented in MVP step 1.",
-      "TODO: expanded_articles relation is not implemented in MVP step 1.",
-      "TODO: research_notes are counted only; full details are not implemented in MVP step 1.",
+      "TODO: research_notes are counted only; full details are not implemented in MVP step 2.",
     );
 
     return NextResponse.json({
@@ -475,7 +471,273 @@ export async function GET(req: Request) {
             observationsCachedResults.length > 0,
           notes: observationsNotes,
         },
-        deep: {
+        lexicon: (() => {
+          const sets = allPublishedSets.filter(
+            (row) => row.lens_id === "lexicon" && row.status === "published",
+          );
+          const setIds = sets.map((row) => rowId(row)).filter(Boolean);
+          const publishedCards = allPublishedCards.filter(
+            (row) =>
+              setIds.includes(String(row.set_id ?? "")) &&
+              row.status === "published",
+          ).length;
+          const activeResearchArticles = researchArticles.filter(
+            (row) =>
+              row.article_type === "word_lens_generation" &&
+              row.status === "active",
+          ).length;
+          const totalResearchArticles = researchArticles.filter(
+            (row) => row.article_type === "word_lens_generation",
+          ).length;
+          const cached = cachedResults.filter(
+            (row) => row.lens === "word" && row.status === "active",
+          ).length;
+          const status: InventoryStatus =
+            sets.length > 0 && publishedCards > 0
+              ? "ready"
+              : activeResearchArticles > 0
+                ? "generated_but_not_published"
+                : cached > 0
+                  ? "legacy_only"
+                  : "missing";
+          const source =
+            status === "ready"
+              ? "published_lens_sets"
+              : status === "generated_but_not_published"
+                ? "research_articles"
+                : status === "legacy_only"
+                  ? "cached_results"
+                  : "none";
+
+          return {
+            key: "lexicon",
+            label: "\u041b\u0435\u043a\u0441\u0438\u043a\u0430",
+            uiId: "word",
+            publishedLensId: "lexicon",
+            status,
+            source,
+            counts: {
+              publishedSets: sets.length,
+              publishedCards,
+              researchArticles: activeResearchArticles,
+              researchArticlesTotal: totalResearchArticles,
+              cachedResults: cached,
+            },
+            wouldGenerateIfOpenedPublicly: source === "none",
+            canOpenReadOnly:
+              publishedCards > 0 || activeResearchArticles > 0 || cached > 0,
+            notes:
+              source === "none"
+                ? [
+                    "No read-only lexicon content was found. Opening the public Word/Lexicon section may trigger generation.",
+                  ]
+                : [],
+          };
+        })(),
+        translations: (() => {
+          const sets = allPublishedSets.filter(
+            (row) =>
+              row.lens_id === "translations" && row.status === "published",
+          );
+          const setIds = sets.map((row) => rowId(row)).filter(Boolean);
+          const publishedCards = allPublishedCards.filter(
+            (row) =>
+              setIds.includes(String(row.set_id ?? "")) &&
+              row.status === "published",
+          ).length;
+          const lensDiscoveryActive = lensDiscoveryCards.filter(
+            (row) => row.lens_id === "translations" && row.status === "active",
+          ).length;
+          const lensDiscoveryReserve = lensDiscoveryCards.filter(
+            (row) => row.lens_id === "translations" && row.status === "reserve",
+          ).length;
+          const lensDiscoveryTotal = lensDiscoveryCards.filter(
+            (row) => row.lens_id === "translations",
+          ).length;
+          const cached = cachedResults.filter(
+            (row) => row.lens === "translations" && row.status === "active",
+          ).length;
+          const translationArticleTypes = [
+            "translations_lens_generation",
+            "translation_lens_generation",
+          ];
+          const activeResearchArticles = researchArticles.filter(
+            (row) =>
+              row.status === "active" &&
+              translationArticleTypes.includes(String(row.article_type ?? "")),
+          ).length;
+          const totalResearchArticles = researchArticles.filter((row) =>
+            translationArticleTypes.includes(String(row.article_type ?? "")),
+          ).length;
+          const status: InventoryStatus =
+            sets.length > 0 && publishedCards > 0
+              ? "ready"
+              : lensDiscoveryActive > 0 || activeResearchArticles > 0
+                ? "generated_but_not_published"
+                : cached > 0
+                  ? "legacy_only"
+                  : "missing";
+          const source =
+            status === "ready"
+              ? "published_lens_sets"
+              : lensDiscoveryActive > 0
+                ? "lens_discovery_cards"
+                : activeResearchArticles > 0
+                  ? "research_articles"
+                  : status === "legacy_only"
+                    ? "cached_results"
+                    : "none";
+
+          return {
+            key: "translations",
+            label: "\u041f\u0435\u0440\u0435\u0432\u043e\u0434\u044b",
+            uiId: "translations",
+            publishedLensId: "translations",
+            status,
+            source,
+            counts: {
+              publishedSets: sets.length,
+              publishedCards,
+              lensDiscoveryActive,
+              lensDiscoveryReserve,
+              lensDiscoveryTotal,
+              researchArticles: activeResearchArticles,
+              researchArticlesTotal: totalResearchArticles,
+              cachedResults: cached,
+            },
+            wouldGenerateIfOpenedPublicly: source === "none",
+            canOpenReadOnly:
+              publishedCards > 0 ||
+              lensDiscoveryActive > 0 ||
+              lensDiscoveryReserve > 0 ||
+              activeResearchArticles > 0 ||
+              cached > 0,
+            notes: [
+              "Translations may use lens_discovery_cards; research article usage is counted only for known translation article types.",
+            ],
+          };
+        })(),
+        context: (() => {
+          const sets = allPublishedSets.filter(
+            (row) => row.lens_id === "context" && row.status === "published",
+          );
+          const setIds = sets.map((row) => rowId(row)).filter(Boolean);
+          const publishedCards = allPublishedCards.filter(
+            (row) =>
+              setIds.includes(String(row.set_id ?? "")) &&
+              row.status === "published",
+          ).length;
+          const lensDiscoveryActive = lensDiscoveryCards.filter(
+            (row) => row.lens_id === "context" && row.status === "active",
+          ).length;
+          const lensDiscoveryReserve = lensDiscoveryCards.filter(
+            (row) => row.lens_id === "context" && row.status === "reserve",
+          ).length;
+          const lensDiscoveryTotal = lensDiscoveryCards.filter(
+            (row) => row.lens_id === "context",
+          ).length;
+          const activeResearchArticles = researchArticles.filter(
+            (row) =>
+              row.article_type === "context_lens_generation" &&
+              row.status === "active",
+          ).length;
+          const totalResearchArticles = researchArticles.filter(
+            (row) => row.article_type === "context_lens_generation",
+          ).length;
+          const cached = cachedResults.filter(
+            (row) => row.lens === "context" && row.status === "active",
+          ).length;
+          const status: InventoryStatus =
+            sets.length > 0 && publishedCards > 0
+              ? "ready"
+              : lensDiscoveryActive > 0 || activeResearchArticles > 0
+                ? "generated_but_not_published"
+                : cached > 0
+                  ? "legacy_only"
+                  : "missing";
+          const source =
+            status === "ready"
+              ? "published_lens_sets"
+              : lensDiscoveryActive > 0
+                ? "lens_discovery_cards"
+                : activeResearchArticles > 0
+                  ? "research_articles"
+                  : status === "legacy_only"
+                    ? "cached_results"
+                    : "none";
+
+          return {
+            key: "context",
+            label: "\u041a\u043e\u043d\u0442\u0435\u043a\u0441\u0442",
+            uiId: "context",
+            publishedLensId: "context",
+            status,
+            source,
+            counts: {
+              publishedSets: sets.length,
+              publishedCards,
+              lensDiscoveryActive,
+              lensDiscoveryReserve,
+              lensDiscoveryTotal,
+              researchArticles: activeResearchArticles,
+              researchArticlesTotal: totalResearchArticles,
+              cachedResults: cached,
+            },
+            wouldGenerateIfOpenedPublicly: source === "none",
+            canOpenReadOnly:
+              publishedCards > 0 ||
+              lensDiscoveryActive > 0 ||
+              lensDiscoveryReserve > 0 ||
+              activeResearchArticles > 0 ||
+              cached > 0,
+            notes: [
+              "Context public path uses a special request shape and should be verified before relying on this status.",
+            ],
+          };
+        })(),
+        expanded_articles: (() => {
+          const expandedArticleTypes = [
+            "expanded_article",
+            "expand-angle",
+            "expand_angle",
+            "angle_expansion",
+          ];
+          const active = researchArticles.filter(
+            (row) =>
+              row.status === "active" &&
+              expandedArticleTypes.includes(String(row.article_type ?? "")),
+          ).length;
+          const total = researchArticles.filter((row) =>
+            expandedArticleTypes.includes(String(row.article_type ?? "")),
+          ).length;
+          const status: InventoryStatus =
+            active > 0 ? "ready" : total > 0 ? "partial" : "missing";
+
+          return {
+            key: "expanded_articles",
+            label:
+              "\u0420\u0430\u0437\u0432\u0435\u0440\u043d\u0443\u0442\u044b\u0435 \u0441\u0442\u0430\u0442\u044c\u0438 \u043a\u0430\u0440\u0442\u043e\u0447\u0435\u043a",
+            status,
+            source: total > 0 ? "research_articles" : "none",
+            counts: {
+              researchArticles: active,
+              activeResearchArticles: active,
+              researchArticlesTotal: total,
+            },
+            relationConfidence: "needs_verification",
+            wouldGenerateIfOpenedPublicly: active === 0,
+            canOpenReadOnly: active > 0,
+            notes:
+              total > 0
+                ? [
+                    "Expanded article relation to a specific card was not inferred in Step 2.",
+                  ]
+                : [
+                    "No expanded article rows were found using known article_type values.",
+                    "Relation between expanded article and card id needs verification before per-card counts are shown.",
+                  ],
+          };
+        })(),        deep: {
           text_findings: buildDeepSection({
             label: "\u0422\u0435\u043a\u0441\u0442\u043e\u0432\u044b\u0435 \u043d\u0430\u0445\u043e\u0434\u043a\u0438",
             articleType: "text_findings",
@@ -516,6 +778,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
 
 
 

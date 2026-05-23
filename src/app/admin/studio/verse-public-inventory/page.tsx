@@ -11,6 +11,10 @@ type InventoryResponse = {
   lang?: string;
   sections?: {
     observations?: InventorySection;
+    lexicon?: InventorySection;
+    translations?: InventorySection;
+    context?: InventorySection;
+    expanded_articles?: InventorySection;
     deep?: Record<string, InventorySection>;
   };
   rawCounts?: Record<string, number>;
@@ -260,6 +264,14 @@ export default function VersePublicInventoryPage() {
           </div>
 
           <SectionCard title="Observations" section={observations} />
+
+          <div className="grid">
+            <SectionCard title="Lexicon" section={data.sections?.lexicon} />
+            <SectionCard title="Translations" section={data.sections?.translations} />
+            <SectionCard title="Context" section={data.sections?.context} />
+          </div>
+
+          <SectionCard title="Expanded articles" section={data.sections?.expanded_articles} />
 
           <div className="grid">
             <SectionCard title="Text findings" section={deep.text_findings} />
@@ -594,6 +606,8 @@ export default function VersePublicInventoryPage() {
     </main>
   );
 }
+
+
 
 
 
