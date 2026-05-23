@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useState } from "react";
 
@@ -31,25 +31,119 @@ type InventorySection = {
   status?: string;
   source?: string;
   counts?: Record<string, number>;
+  relationConfidence?: string;
   wouldGenerateIfOpenedPublicly?: boolean;
   canOpenReadOnly?: boolean;
   notes?: string[];
 };
 
-const STATUS_LABELS: Record<string, string> = { ready: "Ready", partial: "Partial", missing: "Missing", legacy_only: "Legacy/cache only", generated_but_not_published: "Generated but not published" };
+const STATUS_LABELS: Record<string, string> = {
+  ready: "Готово",
+  partial: "Частично",
+  missing: "Пусто",
+  legacy_only: "Только старый кэш",
+  generated_but_not_published: "Есть материал",
+};
 
-function statusText(status?: string) {
-  if (!status) return "unknown";
+const SECTION_TITLES = {
+  observations: "Наблюдения",
+  lexicon: "Лексика",
+  translations: "Переводы",
+  context: "Контекст",
+  expanded: "Развернутые статьи",
+  textFindings: "Текстовые находки",
+  historicalScene: "Историческая сцена",
+  scriptureLinks: "Связи с другими стихами",
+};
+
+function n(section: InventorySection | undefined, key: string): number {
+  const value = section?.counts?.[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function publicVisibleCount(section?: InventorySection): number {
+  return n(section, "publishedCards") || n(section, "researchArticles") || n(section, "activeResearchArticles");
+}
+
+function hiddenMaterialCount(section?: InventorySection): number {
+  return n(section, "researchArticles") + n(section, "lensDiscoveryActive") + n(section, "cachedResults");
+}
+
+function statusText(status?: string): string {
+  if (!status) return "Неизвестно";
   return STATUS_LABELS[status] ?? status;
 }
 
-function statusClass(status?: string) {
+function statusClass(status?: string): string {
   if (status === "ready") return "status ready";
-  if (status === "partial") return "status partial";
-  if (status === "generated_but_not_published") return "status partial";
+  if (status === "partial" || status === "generated_but_not_published") return "status partial";
   if (status === "legacy_only") return "status legacy";
   if (status === "missing") return "status missing";
   return "status";
+}
+
+function boolText(value?: boolean): string {
+  return value ? "да" : "нет";
+}
+
+function itemWord(title: string): string {
+  if (title === SECTION_TITLES.observations) return "наблюдений";
+  if (title === SECTION_TITLES.lexicon) return "лексических материалов";
+  if (title === SECTION_TITLES.translations) return "материалов по переводам";
+  if (title === SECTION_TITLES.context) return "контекстных материалов";
+  return "статей";
+}
+
+function readerLine(title: string, section?: InventorySection): string {
+  const visible = publicVisibleCount(section);
+
+  if (section?.status === "ready" && visible > 0) {
+    return `Читатель сейчас видит: ${visible} ${itemWord(title)}.`;
+  }
+
+  if (
+    section?.status === "generated_but_not_published" ||
+    section?.status === "partial" ||
+    section?.status === "legacy_only"
+  ) {
+    return "Есть материал, но он ещё не в публичной витрине.";
+  }
+
+  return "Пусто: читатель пока ничего не видит.";
+}
+
+function makeHumanSummary(data: InventoryResponse | null): string {
+  if (!data || data.error) return "Пока нет данных. Введите стих и нажмите «Проверить».";
+
+  const sections = data.sections ?? {};
+  const mainSections = [
+    sections.observations,
+    sections.lexicon,
+    sections.translations,
+    sections.context,
+  ];
+
+  const visibleCount = mainSections.filter(
+    (section) => section?.status === "ready" && publicVisibleCount(section) > 0,
+  ).length;
+
+  const hiddenCount = mainSections.filter(
+    (section) =>
+      section?.status === "generated_but_not_published" ||
+      section?.status === "partial" ||
+      section?.status === "legacy_only",
+  ).length;
+
+  const emptyCount = mainSections.filter(
+    (section) => !section || section.status === "missing",
+  ).length;
+
+  const parts: string[] = [];
+  if (visibleCount > 0) parts.push(`видно сейчас: ${visibleCount}`);
+  if (hiddenCount > 0) parts.push(`есть материал вне витрины: ${hiddenCount}`);
+  if (emptyCount > 0) parts.push(`пусто: ${emptyCount}`);
+
+  return `Что видит читатель: ${parts.join(" · ") || "пока ничего"}.`;
 }
 
 function SectionCard({
@@ -59,66 +153,58 @@ function SectionCard({
   title: string;
   section?: InventorySection;
 }) {
-  if (!section) {
-    return (
-      <div className="card">
-        <div className="cardTop">
-          <h2>{title}</h2>
-          <span className="status missing">No data</span>
-        </div>
-      </div>
-    );
-  }
+  const visible = publicVisibleCount(section);
+  const hidden = hiddenMaterialCount(section);
+  const notes = section?.notes ?? [];
 
   return (
-    <div className="card">
-      <div className="cardTop">
+    <article className="sectionCard">
+      <div className="sectionHeader">
         <div>
-          <h2>{section.label || title}</h2>
-          <div className="meta">
-            {section.key ? <span>key: {section.key}</span> : null}
-            {section.uiId ? <span>ui: {section.uiId}</span> : null}
-            {section.publishedLensId ? (
-              <span>published: {section.publishedLensId}</span>
-            ) : null}
-            {section.articleType ? <span>article: {section.articleType}</span> : null}
-            {section.source ? <span>source: {section.source}</span> : null}
-          </div>
+          <h3>{title}</h3>
+          <p className="readerLine">{readerLine(title, section)}</p>
         </div>
-        <span className={statusClass(section.status)}>
-          {statusText(section.status)}
-        </span>
+        <span className={statusClass(section?.status)}>{statusText(section?.status)}</span>
       </div>
 
-      {section.counts ? (
-        <div className="counts">
-          {Object.entries(section.counts).map(([key, value]) => (
-            <div className="count" key={key}>
-              <span>{key}</span>
-              <strong>{value}</strong>
-            </div>
-          ))}
-        </div>
-      ) : null}
+      <div className="humanFacts">
+        {section?.status === "ready" && visible > 0 ? (
+          <p>
+            В публичной витрине: <strong>{visible}</strong>
+          </p>
+        ) : null}
 
-      <div className="flags">
-        <span>
-          wouldGenerateIfOpenedPublicly:{" "}
-          <strong>{String(Boolean(section.wouldGenerateIfOpenedPublicly))}</strong>
-        </span>
-        <span>
-          canOpenReadOnly: <strong>{String(Boolean(section.canOpenReadOnly))}</strong>
-        </span>
+        {section?.status !== "ready" && hidden > 0 ? (
+          <p>
+            Есть материал вне публичной витрины: <strong>{hidden}</strong>
+          </p>
+        ) : null}
+
+        <p>
+          Можно читать сохранённое: <strong>{boolText(section?.canOpenReadOnly)}</strong>
+        </p>
+
+        <p>
+          Если открыть публично, может начаться генерация:{" "}
+          <strong>{boolText(section?.wouldGenerateIfOpenedPublicly)}</strong>
+        </p>
+
+        {section?.relationConfidence === "needs_verification" ? (
+          <p className="verificationNote">Связь требует проверки</p>
+        ) : null}
       </div>
 
-      {section.notes && section.notes.length > 0 ? (
-        <ul className="notes">
-          {section.notes.map((note, index) => (
-            <li key={index}>{note}</li>
-          ))}
-        </ul>
+      {notes.length > 0 ? (
+        <details className="notesDetails">
+          <summary>notes</summary>
+          <ul>
+            {notes.map((note, index) => (
+              <li key={index}>{note}</li>
+            ))}
+          </ul>
+        </details>
       ) : null}
-    </div>
+    </article>
   );
 }
 
@@ -126,10 +212,11 @@ export default function VersePublicInventoryPage() {
   const [reference, setReference] = useState("John 17:3");
   const [lang, setLang] = useState("ru");
   const [adminSecret, setAdminSecret] = useState("");
+  const [secretSaved, setSecretSaved] = useState(false);
   const [data, setData] = useState<InventoryResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [secretSaved, setSecretSaved] = useState(false);
+  const [copied, setCopied] = useState("");
 
   useEffect(() => {
     const savedSecret = window.localStorage.getItem("scriptura_admin_secret");
@@ -140,22 +227,38 @@ export default function VersePublicInventoryPage() {
   }, []);
 
   const endpoint = useMemo(() => {
-    const params = new URLSearchParams({
-      reference,
-      lang,
-    });
-
+    const params = new URLSearchParams({ reference, lang });
     return `/api/admin/studio/verse-public-inventory?${params.toString()}`;
   }, [reference, lang]);
+
+  const humanSummary = useMemo(() => makeHumanSummary(data), [data]);
+
+  const technicalSummary = useMemo(() => {
+    if (!data || data.error) return "";
+    return `${data.reference ?? "-"} · ${data.canonical_ref ?? "-"} · ${data.lang ?? "-"} · ${data.mode ?? "-"} · generated:${String(Boolean(data.generated))}`;
+  }, [data]);
+
+  const rawJson = data ? JSON.stringify(data, null, 2) : "";
+
+  async function copyText(value: string, label: string) {
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(label);
+      window.setTimeout(() => setCopied(""), 1600);
+    } catch {
+      setCopied("");
+    }
+  }
 
   async function loadInventory() {
     setLoading(true);
     setError("");
     setData(null);
+    setCopied("");
 
     try {
       const cleanSecret = adminSecret.trim();
-
       if (cleanSecret) {
         window.localStorage.setItem("scriptura_admin_secret", cleanSecret);
         setSecretSaved(true);
@@ -163,17 +266,19 @@ export default function VersePublicInventoryPage() {
 
       const res = await fetch(endpoint, {
         method: "GET",
-        headers: {
-          "x-admin-secret": cleanSecret,
-        },
+        headers: { "x-admin-secret": cleanSecret },
       });
 
-      const json = (await res.json()) as InventoryResponse;
+      const text = await res.text();
+      let json: InventoryResponse;
 
-      if (!res.ok) {
-        setError(json.error || `Request failed with status ${res.status}`);
+      try {
+        json = JSON.parse(text) as InventoryResponse;
+      } catch {
+        throw new Error("Endpoint returned non-JSON response.");
       }
 
+      if (!res.ok) setError(json.error || `Request failed with status ${res.status}`);
       setData(json);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Request failed");
@@ -182,52 +287,46 @@ export default function VersePublicInventoryPage() {
     }
   }
 
-  const observations = data?.sections?.observations;
   const deep = data?.sections?.deep ?? {};
 
   return (
     <main className="page">
-      <div className="hero">
-        <div>
-          <p className="eyebrow">Scriptura Studio - Read-only diagnostic</p>
-          <h1>Verse Public Content Inventory</h1>
-          <p className="subtitle">Shows what already exists in published, cache, and research layers for one verse. This page does not call /api/analyze and does not run AI generation.</p>
-        </div>
-      </div>
+      <section className="topHeader">
+        <p className="eyebrow">Scriptura Studio</p>
+        <h1>Обзор стиха</h1>
+        <p className="subtitle">Карта того, что читатель уже видит, что пусто, и где есть риск генерации.</p>
+      </section>
 
-      <section className="panel">
-        <label>Reference<input
-            value={reference}
-            onChange={(event) => setReference(event.target.value)}
-            placeholder="John 17:3"
-          />
+      <section className="controlPanel">
+        <label>
+          reference
+          <input value={reference} onChange={(event) => setReference(event.target.value)} placeholder="John 17:3" />
         </label>
 
-        <label>Lang<select value={lang} onChange={(event) => setLang(event.target.value)}>
+        <label>
+          lang
+          <select value={lang} onChange={(event) => setLang(event.target.value)}>
             <option value="ru">ru</option>
             <option value="en">en</option>
             <option value="es">es</option>
           </select>
         </label>
 
-        <label>Admin Secret<input
-            value={adminSecret}
-            onChange={(event) => setAdminSecret(event.target.value)}
-            placeholder="localtest"
-            type="password"
-          />
+        <label>
+          admin secret
+          <input value={adminSecret} onChange={(event) => setAdminSecret(event.target.value)} placeholder="Admin Secret" type="password" />
         </label>
 
         <button onClick={loadInventory} disabled={loading}>
-          {loading ? "Checking..." : "Check"}
+          {loading ? "Проверяю..." : "Проверить"}
         </button>
       </section>
 
-      <div className="secretHint">
-        <span>{secretSaved ? "Admin Secret saved in this browser." : "Admin Secret will be saved in this browser after a successful check."}</span>
+      <section className="utilityRow">
+        <span>{secretSaved ? "Admin Secret сохранён в этом браузере." : "Admin Secret сохранится в этом браузере после проверки."}</span>
         <button
+          className="softButton"
           type="button"
-          className="secondaryButton"
           onClick={() => {
             window.localStorage.removeItem("scriptura_admin_secret");
             setAdminSecret("");
@@ -236,104 +335,134 @@ export default function VersePublicInventoryPage() {
         >
           Clear saved secret
         </button>
-      </div>
+      </section>
 
-      <div className="endpoint">{endpoint}</div>
+      {error ? <div className="errorBox">{error}</div> : null}
 
-      {error ? <div className="error">{error}</div> : null}
+      <section className="verseHero">
+        <div>
+          <p className="sectionKicker">Стих</p>
+          <h2>{data?.reference || reference}</h2>
+          <p className="versePlaceholder">
+            Текст стиха пока не входит в inventory JSON. Место оставлено для будущего подключения текста стиха без запуска генерации.
+          </p>
+        </div>
+        {data ? <div className="systemBadge">{data.mode || "read_only"} · generated:{String(Boolean(data.generated))}</div> : null}
+      </section>
+
+      <section className="summaryBox">
+        <p className="sectionKicker">Что видит читатель</p>
+        <strong>{humanSummary}</strong>
+        {data ? (
+          <div className="summaryActions">
+            <button className="softButton" type="button" onClick={() => copyText(humanSummary, "summary")}>
+              Скопировать сводку
+            </button>
+            <button className="softButton" type="button" onClick={() => copyText(rawJson, "raw")}>
+              Скопировать Raw JSON
+            </button>
+          </div>
+        ) : null}
+      </section>
+
+      {copied ? <div className="copiedHint">Скопировано</div> : null}
 
       {data ? (
-        <section className="results">
-          <div className="summary">
-            <div>
-              <span>reference</span>
-              <strong>{data.reference || "â€”"}</strong>
+        <>
+          <section className="overviewBlock">
+            <div className="blockIntro">
+              <h2>Публичная витрина</h2>
+              <p>Главные разделы, которые важны читателю. Внутренняя pipeline-модель здесь не показывается.</p>
             </div>
-            <div>
-              <span>canonical_ref</span>
-              <strong>{data.canonical_ref || "â€”"}</strong>
+            <div className="publicGrid">
+              <SectionCard title={SECTION_TITLES.observations} section={data.sections?.observations} />
+              <SectionCard title={SECTION_TITLES.lexicon} section={data.sections?.lexicon} />
+              <SectionCard title={SECTION_TITLES.translations} section={data.sections?.translations} />
+              <SectionCard title={SECTION_TITLES.context} section={data.sections?.context} />
             </div>
-            <div>
-              <span>mode</span>
-              <strong>{data.mode || "â€”"}</strong>
+          </section>
+
+          <section className="overviewBlock">
+            <div className="blockIntro">
+              <h2>Длинные материалы / Углубления</h2>
+              <p>Статьи и дополнительные материалы, которые помогают разворачивать стих глубже.</p>
             </div>
-            <div>
-              <span>generated</span>
-              <strong>{String(Boolean(data.generated))}</strong>
+            <div className="publicGrid">
+              <SectionCard title={SECTION_TITLES.expanded} section={data.sections?.expanded_articles} />
+              <SectionCard title={SECTION_TITLES.textFindings} section={deep.text_findings} />
+              <SectionCard title={SECTION_TITLES.historicalScene} section={deep.historical_scene} />
+              <SectionCard title={SECTION_TITLES.scriptureLinks} section={deep.scripture_links} />
             </div>
-          </div>
-
-          <SectionCard title="Observations" section={observations} />
-
-          <div className="grid">
-            <SectionCard title="Lexicon" section={data.sections?.lexicon} />
-            <SectionCard title="Translations" section={data.sections?.translations} />
-            <SectionCard title="Context" section={data.sections?.context} />
-          </div>
-
-          <SectionCard title="Expanded articles" section={data.sections?.expanded_articles} />
-
-          <div className="grid">
-            <SectionCard title="Text findings" section={deep.text_findings} />
-            <SectionCard title="Historical scene" section={deep.historical_scene} />
-            <SectionCard title="Scripture links" section={deep.scripture_links} />
-          </div>
-
-          {data.rawCounts ? (
-            <div className="card">
-              <div className="cardTop">
-                <h2>Raw counts</h2>
-              </div>
-              <div className="counts">
-                {Object.entries(data.rawCounts).map(([key, value]) => (
-                  <div className="count" key={key}>
-                    <span>{key}</span>
-                    <strong>{value}</strong>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : null}
+          </section>
 
           {data.warnings && data.warnings.length > 0 ? (
-            <div className="card warningCard">
-              <div className="cardTop">
-                <h2>Warnings</h2>
-              </div>
-              <ul className="notes">
+            <section className="warningsBox">
+              <h2>Предупреждения</h2>
+              <ul>
                 {data.warnings.map((warning, index) => (
                   <li key={index}>{warning}</li>
                 ))}
               </ul>
-            </div>
+            </section>
           ) : null}
 
-          <details className="raw">
-            <summary>Raw JSON</summary>
-            <pre>{JSON.stringify(data, null, 2)}</pre>
+          <details className="technicalData">
+            <summary>Технические данные</summary>
+            <p>
+              Здесь спрятаны технические поля inventory JSON. Они не являются пользовательской моделью Studio vNext.
+            </p>
+            <p className="technicalSummary">{technicalSummary}</p>
+
+            {data.rawCounts ? (
+              <>
+                <h3>rawCounts</h3>
+                <div className="rawCountsGrid">
+                  {Object.entries(data.rawCounts).map(([key, value]) => (
+                    <div className="rawCount" key={key}>
+                      <span>{key}</span>
+                      <strong>{value}</strong>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : null}
+
+            <h3>Raw JSON</h3>
+            <pre>{rawJson}</pre>
           </details>
-        </section>
+        </>
       ) : null}
 
-      <style jsx>{`
+      <style jsx global>{`
         .page {
           min-height: 100vh;
+          padding: 32px;
           background: #f7efe2;
           color: #2b241b;
-          padding: 32px;
-          font-family:
-            ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
+          font-family: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
         }
 
-        .hero {
-          max-width: 1100px;
-          margin: 0 auto 20px;
-          display: flex;
-          justify-content: space-between;
-          gap: 24px;
+        .topHeader,
+        .controlPanel,
+        .utilityRow,
+        .verseHero,
+        .summaryBox,
+        .overviewBlock,
+        .warningsBox,
+        .technicalData,
+        .errorBox,
+        .copiedHint {
+          max-width: 1120px;
+          margin-left: auto;
+          margin-right: auto;
         }
 
-        .eyebrow {
+        .topHeader {
+          margin-bottom: 22px;
+        }
+
+        .eyebrow,
+        .sectionKicker {
           margin: 0 0 8px;
           color: #7e6143;
           font-size: 13px;
@@ -343,40 +472,47 @@ export default function VersePublicInventoryPage() {
 
         h1 {
           margin: 0;
-          font-size: 38px;
+          font-size: 42px;
           line-height: 1.05;
         }
 
         h2 {
           margin: 0;
-          font-size: 20px;
+          font-size: 24px;
+        }
+
+        h3 {
+          margin: 0;
+          font-size: 18px;
         }
 
         .subtitle {
-          max-width: 780px;
-          color: #655342;
-          font-size: 17px;
+          max-width: 760px;
+          margin: 12px 0 0;
+          color: #66533e;
+          font-size: 18px;
           line-height: 1.5;
         }
 
-        .panel,
-        .summary,
-        .card,
-        .raw {
-          max-width: 1100px;
-          margin: 0 auto 16px;
-          background: rgba(255, 252, 246, 0.88);
+        .controlPanel,
+        .verseHero,
+        .summaryBox,
+        .overviewBlock,
+        .warningsBox,
+        .technicalData {
           border: 1px solid rgba(109, 82, 51, 0.16);
-          border-radius: 22px;
-          box-shadow: 0 16px 40px rgba(92, 66, 36, 0.08);
+          border-radius: 24px;
+          background: rgba(255, 252, 246, 0.9);
+          box-shadow: 0 16px 42px rgba(92, 66, 36, 0.08);
         }
 
-        .panel {
+        .controlPanel {
           display: grid;
           grid-template-columns: 1.5fr 120px 1.2fr auto;
           gap: 12px;
           align-items: end;
           padding: 18px;
+          margin-bottom: 12px;
         }
 
         label {
@@ -412,98 +548,143 @@ export default function VersePublicInventoryPage() {
           opacity: 0.55;
         }
 
-        .secretHint {
-          max-width: 1100px;
-          margin: -4px auto 16px;
+        .softButton {
+          background: #eee2d0;
+          color: #5f4c36;
+          padding: 10px 13px;
+          font-size: 13px;
+        }
+
+        .utilityRow {
           display: flex;
           justify-content: space-between;
           gap: 12px;
           align-items: center;
+          margin-bottom: 16px;
           color: #7c6650;
           font-size: 13px;
         }
 
-        .secondaryButton {
-          background: #eee2d0;
-          color: #5f4c36;
-          padding: 9px 12px;
-          font-size: 13px;
-        }
-
-        .endpoint {
-          max-width: 1100px;
-          margin: 0 auto 16px;
-          color: #7c6650;
-          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-            "Liberation Mono", "Courier New", monospace;
-          font-size: 13px;
-        }
-
-        .error {
-          max-width: 1100px;
-          margin: 0 auto 16px;
-          background: #fff0ec;
-          border: 1px solid #d08a77;
-          color: #8a2e1e;
-          border-radius: 18px;
+        .errorBox {
+          margin-bottom: 16px;
           padding: 14px 16px;
+          border: 1px solid #d08a77;
+          border-radius: 18px;
+          background: #fff0ec;
+          color: #8a2e1e;
         }
 
-        .results {
-          display: grid;
-          gap: 16px;
-        }
-
-        .summary {
-          display: grid;
-          grid-template-columns: repeat(4, 1fr);
-          gap: 10px;
-          padding: 16px;
-        }
-
-        .summary div {
-          display: grid;
-          gap: 5px;
-        }
-
-        .summary span,
-        .count span,
-        .meta,
-        .flags {
-          color: #7b6750;
-          font-size: 13px;
-        }
-
-        .card {
-          padding: 18px;
-        }
-
-        .cardTop {
+        .verseHero {
           display: flex;
           justify-content: space-between;
-          gap: 16px;
+          gap: 20px;
           align-items: flex-start;
-          margin-bottom: 14px;
+          padding: 22px;
+          margin-bottom: 16px;
         }
 
-        .meta {
+        .verseHero h2 {
+          margin-bottom: 10px;
+          font-size: 30px;
+        }
+
+        .versePlaceholder {
+          max-width: 760px;
+          margin: 0;
+          color: #6c5842;
+          font-size: 17px;
+          line-height: 1.55;
+        }
+
+        .systemBadge {
+          flex: 0 0 auto;
+          border-radius: 999px;
+          background: #eee2d0;
+          color: #5f4c36;
+          padding: 8px 12px;
+          font-size: 13px;
+          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        }
+
+        .summaryBox {
+          padding: 18px 20px;
+          margin-bottom: 16px;
+        }
+
+        .summaryBox strong {
+          display: block;
+          max-width: 860px;
+          color: #33281c;
+          font-size: 19px;
+          line-height: 1.45;
+        }
+
+        .summaryActions {
           display: flex;
           gap: 8px;
           flex-wrap: wrap;
-          margin-top: 7px;
-          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-            "Liberation Mono", "Courier New", monospace;
+          margin-top: 14px;
+        }
+
+        .copiedHint {
+          margin-top: -8px;
+          margin-bottom: 12px;
+          color: #476f48;
+          font-size: 13px;
+        }
+
+        .overviewBlock {
+          padding: 20px;
+          margin-bottom: 16px;
+        }
+
+        .blockIntro {
+          margin-bottom: 16px;
+        }
+
+        .blockIntro p {
+          margin: 7px 0 0;
+          color: #6c5842;
+          line-height: 1.45;
+        }
+
+        .publicGrid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 14px;
+        }
+
+        .sectionCard {
+          border: 1px solid rgba(109, 82, 51, 0.14);
+          border-radius: 20px;
+          background: #fffaf2;
+          padding: 16px;
+        }
+
+        .sectionHeader {
+          display: flex;
+          justify-content: space-between;
+          gap: 14px;
+          align-items: flex-start;
+          margin-bottom: 12px;
+        }
+
+        .readerLine {
+          margin: 7px 0 0;
+          color: #6c5842;
+          font-size: 15px;
+          line-height: 1.45;
         }
 
         .status {
+          flex: 0 0 auto;
           border-radius: 999px;
           padding: 7px 11px;
           background: #eee2d0;
           color: #5f4c36;
           font-size: 13px;
+          font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
           white-space: nowrap;
-          font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-            "Segoe UI", sans-serif;
         }
 
         .status.ready {
@@ -526,91 +707,128 @@ export default function VersePublicInventoryPage() {
           color: #7c2d1d;
         }
 
-        .counts {
+        .humanFacts {
           display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-          gap: 10px;
+          gap: 7px;
+          color: #6c5842;
+          font-size: 14px;
         }
 
-        .count {
-          border-radius: 16px;
-          background: #f8f0e3;
-          padding: 12px;
-          display: grid;
-          gap: 6px;
+        .humanFacts p {
+          margin: 0;
         }
 
-        .count strong {
-          font-size: 22px;
+        .verificationNote {
+          color: #745000;
         }
 
-        .flags {
-          margin-top: 14px;
-          display: flex;
-          gap: 14px;
-          flex-wrap: wrap;
-          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-            "Liberation Mono", "Courier New", monospace;
+        .notesDetails {
+          margin-top: 12px;
+          color: #6c5842;
+          font-size: 13px;
         }
 
-        .notes {
-          margin: 14px 0 0;
+        .notesDetails summary {
+          cursor: pointer;
+        }
+
+        .notesDetails ul {
+          margin: 8px 0 0;
+          padding-left: 18px;
+          line-height: 1.45;
+        }
+
+        .warningsBox {
+          padding: 18px;
+          margin-bottom: 16px;
+          border-color: rgba(173, 98, 52, 0.3);
+        }
+
+        .warningsBox ul {
+          margin: 12px 0 0;
           padding-left: 18px;
           color: #5d4b39;
           line-height: 1.45;
         }
 
-        .grid {
-          max-width: 1100px;
-          margin: 0 auto;
-          display: grid;
-          grid-template-columns: repeat(3, 1fr);
-          gap: 16px;
-        }
-
-        .warningCard {
-          border-color: rgba(173, 98, 52, 0.3);
-        }
-
-        .raw {
+        .technicalData {
           padding: 16px 18px;
         }
 
-        .raw summary {
+        .technicalData summary {
           cursor: pointer;
           font-weight: 700;
         }
 
+        .technicalData p {
+          color: #6c5842;
+          line-height: 1.45;
+        }
+
+        .technicalSummary {
+          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+          font-size: 13px;
+        }
+
+        .technicalData h3 {
+          margin-top: 18px;
+          margin-bottom: 10px;
+        }
+
+        .rawCountsGrid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+          gap: 10px;
+        }
+
+        .rawCount {
+          display: grid;
+          gap: 5px;
+          border-radius: 14px;
+          background: #f8f0e3;
+          padding: 11px 12px;
+        }
+
+        .rawCount span {
+          color: #7b6750;
+          font-size: 12px;
+        }
+
+        .rawCount strong {
+          font-size: 20px;
+        }
+
         pre {
           overflow: auto;
+          border-radius: 16px;
           background: #251f18;
           color: #f8ead6;
-          border-radius: 16px;
           padding: 16px;
           font-size: 13px;
           line-height: 1.45;
         }
 
         @media (max-width: 900px) {
-          .panel,
-          .summary,
-          .grid {
+          .page {
+            padding: 18px;
+          }
+
+          .controlPanel,
+          .publicGrid {
             grid-template-columns: 1fr;
           }
 
-          .page {
-            padding: 18px;
+          .verseHero,
+          .utilityRow {
+            align-items: flex-start;
+            flex-direction: column;
+          }
+
+          .systemBadge {
+            align-self: flex-start;
           }
         }
       `}</style>
     </main>
   );
 }
-
-
-
-
-
-
-
-
