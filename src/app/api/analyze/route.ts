@@ -1,8 +1,12 @@
-import { requireProductAccess } from "@/lib/auth/productAccess";
-﻿import { after, NextResponse } from "next/server";
+﻿import { requireProductAccess } from "@/lib/auth/productAccess";
+import { after, NextResponse } from "next/server";
 import { createHash } from "crypto";
 import { runAI, resolveAIModel } from "@/lib/ai/runAI";
 import { isProvider, defaultProvider, type Provider } from "@/lib/ai/providers";
+import {
+  resolveAnalyzeProviderTask,
+  resolveProviderPolicy,
+} from "@/lib/ai/providerPolicy";
 import { normalizeReference } from "@/lib/bible/normalizeReference";
 import { getChapterText } from "@/lib/bible/getVerseText";
 import {
@@ -150,14 +154,14 @@ function getExtraArticleTitle(id: ExtraId, lang: Lang): string {
       scripture_links: "Scripture Links",
     },
     ru: {
-      text_findings: "Ð¢ÐµÐºÑÑ‚Ð¾Ð²Ñ‹Ðµ Ð½Ð°Ñ…Ð¾Ð´ÐºÐ¸",
-      historical_scene: "Ð˜ÑÑ‚Ð¾Ñ€Ð¸Ñ‡ÐµÑÐºÐ°Ñ ÑÑ†ÐµÐ½Ð°",
-      scripture_links: "Ð¡Ð²ÑÐ·Ð¸ Ñ Ð´Ñ€ÑƒÐ³Ð¸Ð¼Ð¸ ÑÑ‚Ð¸Ñ…Ð°Ð¼Ð¸",
+      text_findings: "ÃÂ¢ÃÂµÃÂºÃ‘ÂÃ‘â€šÃÂ¾ÃÂ²Ã‘â€¹ÃÂµ ÃÂ½ÃÂ°Ã‘â€¦ÃÂ¾ÃÂ´ÃÂºÃÂ¸",
+      historical_scene: "ÃËœÃ‘ÂÃ‘â€šÃÂ¾Ã‘â‚¬ÃÂ¸Ã‘â€¡ÃÂµÃ‘ÂÃÂºÃÂ°Ã‘Â Ã‘ÂÃ‘â€ ÃÂµÃÂ½ÃÂ°",
+      scripture_links: "ÃÂ¡ÃÂ²Ã‘ÂÃÂ·ÃÂ¸ Ã‘Â ÃÂ´Ã‘â‚¬Ã‘Æ’ÃÂ³ÃÂ¸ÃÂ¼ÃÂ¸ Ã‘ÂÃ‘â€šÃÂ¸Ã‘â€¦ÃÂ°ÃÂ¼ÃÂ¸",
     },
     es: {
       text_findings: "Hallazgos textuales",
-      historical_scene: "Escena histÃ³rica",
-      scripture_links: "Conexiones bÃ­blicas",
+      historical_scene: "Escena histÃƒÂ³rica",
+      scripture_links: "Conexiones bÃƒÂ­blicas",
     },
   };
 
@@ -165,8 +169,8 @@ function getExtraArticleTitle(id: ExtraId, lang: Lang): string {
 }
 
 function getWordLensArticleTitle(lang: Lang): string {
-  if (lang === "ru") return "Word Lens / Ð›ÐµÐºÑÐ¸ÐºÐ°";
-  if (lang === "es") return "Word Lens / LÃ©xico";
+  if (lang === "ru") return "Word Lens / Ãâ€ºÃÂµÃÂºÃ‘ÂÃÂ¸ÃÂºÃÂ°";
+  if (lang === "es") return "Word Lens / LÃƒÂ©xico";
   return "Word Lens / Lexicon";
 }
 
@@ -417,9 +421,9 @@ function buildWordLensContentText(args: {
   });
 
   return [
-    `# Word Lens / Lexicon â€” ${args.reference}`,
+    `# Word Lens / Lexicon Ã¢â‚¬â€ ${args.reference}`,
     "",
-    "This is a set of word-card observations produced by the Word Lens. Extract only public-worthy pearl candidates where a word, form, particle, preposition, semantic range, or translation gap changes how the verse is read. Do not extract a candidate if it is merely â€œthe word means X.â€",
+    "This is a set of word-card observations produced by the Word Lens. Extract only public-worthy pearl candidates where a word, form, particle, preposition, semantic range, or translation gap changes how the verse is read. Do not extract a candidate if it is merely Ã¢â‚¬Å“the word means X.Ã¢â‚¬Â",
     "",
     ...chunks,
   ].join("\n");
@@ -932,9 +936,17 @@ export async function POST(req: Request) {
     const verseText =
       typeof body?.verseText === "string" ? body.verseText.trim() : "";
     const lang: Lang = isLang(body?.lang) ? body.lang : "en";
-    const provider = isProvider(body?.provider)
+    const clientProvider = isProvider(body?.provider)
       ? body.provider
       : defaultProvider();
+    const analyzeProviderTask = resolveAnalyzeProviderTask(
+      typeof kind === "string" ? kind : "",
+      typeof id === "string" ? id : null,
+    );
+    const provider =
+      analyzeProviderTask === "lexicon_generation"
+        ? resolveProviderPolicy(analyzeProviderTask).provider
+        : clientProvider;
 
     if (!reference || !verseText) {
       return NextResponse.json(
@@ -1602,6 +1614,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
+
 
 
 
