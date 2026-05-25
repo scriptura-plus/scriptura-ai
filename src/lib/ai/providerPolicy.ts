@@ -170,3 +170,67 @@ export function getCanonicalGenerationProvider(): Provider {
 export function getTranslationProviderPolicy(): ProviderPolicy {
   return resolveProviderPolicy("translation_localization");
 }
+
+/**
+ * Maps public /api/analyze request shape to an internal provider task.
+ *
+ * This helper is intentionally NOT wired into /api/analyze yet.
+ * It only documents the future task-based routing plan.
+ *
+ * Important distinction:
+ * - translations_generation = public Bible translations/comparison lens
+ * - translation_localization = translating already generated cards/articles into another UI language
+ */
+export function resolveAnalyzeProviderTask(
+  kind: string,
+  id?: string | null,
+): ProviderTask | null {
+  if (kind === "lens") {
+    if (id === "angles") {
+      // This branch can create canonical public observations / Pearl sets.
+      // Do not treat it as cheap generic observations.
+      return "canonical_pearl_generation";
+    }
+
+    if (id === "word") {
+      return "lexicon_generation";
+    }
+
+    if (id === "context") {
+      return "context_generation";
+    }
+
+    if (id === "translations") {
+      // Bible translation comparison lens, NOT localization translation.
+      return "translations_generation";
+    }
+
+    return null;
+  }
+
+  if (kind === "extra") {
+    if (
+      id === "text_findings" ||
+      id === "historical_scene" ||
+      id === "scripture_links"
+    ) {
+      // scripture_links is especially high-risk and may need stronger
+      // evaluation/verification before public use in later steps.
+      return "deep_article_generation";
+    }
+
+    return null;
+  }
+
+  if (kind === "context") {
+    // Legacy/special context path.
+    return "context_generation";
+  }
+
+  if (kind === "expand-angle") {
+    return "expanded_article_generation";
+  }
+
+  // Unknown analyze kinds must not silently fall back to a default provider.
+  return null;
+}
