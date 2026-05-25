@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireProductAccess } from "@/lib/auth/productAccess";
 import { getVerseText } from "@/lib/bible/getVerseText";
 import { isProvider, defaultProvider } from "@/lib/ai/providers";
 
@@ -9,6 +10,9 @@ type Lang = "en" | "ru" | "es";
 const isLang = (v: unknown): v is Lang => v === "en" || v === "ru" || v === "es";
 
 export async function POST(req: Request) {
+  const accessError = await requireProductAccess(req);
+  if (accessError) return accessError;
+
   try {
     const body = await req.json();
     const reference = typeof body?.reference === "string" ? body.reference.trim() : "";

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireProductAccess } from "@/lib/auth/productAccess";
 import { isProvider, defaultProvider } from "@/lib/ai/providers";
 import {
   getAngleCards,
@@ -151,6 +152,9 @@ async function readCards(reference: string, lang: Lang) {
 }
 
 export async function POST(req: Request) {
+  const accessError = await requireProductAccess(req);
+  if (accessError) return accessError;
+
   try {
     const body = await req.json();
 

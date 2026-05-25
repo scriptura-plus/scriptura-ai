@@ -1,3 +1,4 @@
+import { requireProductAccess } from "@/lib/auth/productAccess";
 ﻿import { after, NextResponse } from "next/server";
 import { createHash } from "crypto";
 import { runAI, resolveAIModel } from "@/lib/ai/runAI";
@@ -918,6 +919,9 @@ async function autoProcessInitialAngles(args: {
 }
 
 export async function POST(req: Request) {
+  const accessError = await requireProductAccess(req);
+  if (accessError) return accessError;
+
   try {
     const body = await req.json();
 
