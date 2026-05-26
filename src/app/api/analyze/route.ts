@@ -53,6 +53,13 @@ const INITIAL_ANGLE_PROCESS_LIMIT = 4;
 const WORD_LENS_ARTICLE_TYPE = "word_lens_generation";
 const WORD_LENS_PROMPT_VERSION = "word_lens_v2_original_packet";
 
+function isCyrillicHeavyForEnglishPublicOutput(text: string): boolean {
+  const cyrillic = (text.match(/[\u0400-\u04FF]/g) ?? []).length;
+  const latin = (text.match(/[A-Za-z]/g) ?? []).length;
+
+  return cyrillic >= 40 && cyrillic > latin;
+}
+
 const isLang = (v: unknown): v is Lang =>
   v === "en" || v === "ru" || v === "es";
 
@@ -1001,8 +1008,44 @@ export async function POST(req: Request) {
           cards: publishedPearlSet.data.cards.length,
         });
 
+        const publishedText = publishedCardsToAngleCardsJson(publishedPearlSet.data.cards);
+
+        if (lang === "en" && isCyrillicHeavyForEnglishPublicOutput(publishedText)) {
+          console.warn("[PUBLIC_OUTPUT_GUARD] blocked Cyrillic-heavy EN published pearls", {
+            reference,
+            canonical_ref: normalizedReference.canonical_ref,
+            lang,
+            set_id: publishedPearlSet.data.set.id,
+            version: publishedPearlSet.data.set.version,
+          });
+
+          const fallbackText = await buildAnglesResponseFromCards({
+            reference,
+            lang,
+            canonical_ref: normalizedReference.canonical_ref,
+          });
+
+          if (fallbackText && !isCyrillicHeavyForEnglishPublicOutput(fallbackText)) {
+            return NextResponse.json({
+              text: fallbackText,
+              cached: true,
+              source: "angle_cards",
+              generated: false,
+              canonical_ref: normalizedReference.canonical_ref,
+            });
+          }
+
+          return NextResponse.json({
+            text: "[]",
+            cached: true,
+            source: "en_pearl_content_unavailable",
+            generated: false,
+            canonical_ref: normalizedReference.canonical_ref,
+          });
+        }
+
         return NextResponse.json({
-          text: publishedCardsToAngleCardsJson(publishedPearlSet.data.cards),
+          text: publishedText,
           cached: true,
           source: "published_lens_sets",
           canonical_ref: normalizedReference.canonical_ref,
@@ -1635,6 +1678,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
 
 
 
