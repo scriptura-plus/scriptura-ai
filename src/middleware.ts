@@ -35,8 +35,7 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    const loginUrl = request.nextUrl.clone();
-    loginUrl.pathname = "/login";
+    const loginUrl = new URL("/login", request.url);
     loginUrl.searchParams.set(
       "next",
       request.nextUrl.pathname + request.nextUrl.search,

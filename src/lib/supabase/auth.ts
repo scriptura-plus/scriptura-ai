@@ -10,6 +10,9 @@ export async function createSupabaseAuthServerClient() {
   const cookieStore = await cookies();
 
   return createServerClient(url, key, {
+    auth: {
+      flowType: "pkce",
+    },
     cookies: {
       getAll() {
         return cookieStore.getAll();
