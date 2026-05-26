@@ -1013,6 +1013,27 @@ export async function POST(req: Request) {
       }
 
       try {
+        if (lang === "en") {
+          console.log("[PEARL_V3_DISABLED] skipping EN pearl generation", {
+            reference,
+            canonical_ref: normalizedReference.canonical_ref,
+            lang,
+          });
+
+          const fallbackText = await buildAnglesResponseFromCards({
+            reference,
+            lang,
+            canonical_ref: normalizedReference.canonical_ref,
+          });
+
+          return NextResponse.json({
+            text: fallbackText ?? "[]",
+            cached: true,
+            source: fallbackText ? "angle_cards" : "en_pearl_generation_disabled",
+            generated: false,
+            canonical_ref: normalizedReference.canonical_ref,
+          });
+        }
         console.log("[PUBLISHED_LENS_SETS] pearl miss; generating Pearl v3", {
           reference,
           canonical_ref: normalizedReference.canonical_ref,
@@ -1614,6 +1635,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
 
 
 
