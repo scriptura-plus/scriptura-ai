@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -28,9 +28,9 @@ const ABBR: Record<string, string> = {
 /**
  * Canonical color-group system.
  *
- * darker  — Pentateuch · Major+Minor Prophets · Four Gospels · Revelation
- * lighter — Historical books (Josh–Esther) · Acts
- * mid     — Wisdom/Poetic (Job–Song) · Epistles (Rom–Jude)
+ * darker  â€” Pentateuch Â· Major+Minor Prophets Â· Four Gospels Â· Revelation
+ * lighter â€” Historical books (Joshâ€“Esther) Â· Acts
+ * mid     â€” Wisdom/Poetic (Jobâ€“Song) Â· Epistles (Româ€“Jude)
  */
 const DARKER_BOOKS = new Set([
   // Pentateuch
@@ -54,7 +54,7 @@ const LIGHTER_BOOKS = new Set([
   "acts",
 ]);
 
-// Mid = Wisdom/Poetic + Epistles — everything not in the above two sets
+// Mid = Wisdom/Poetic + Epistles â€” everything not in the above two sets
 
 function bookGroupClass(id: string): string {
   if (DARKER_BOOKS.has(id)) return "picker-btn-group-darker";
@@ -108,7 +108,7 @@ export function VersePicker({ lang }: { lang: Lang }) {
     return (
       <div className="picker-root">
         <button className="picker-back" onClick={() => setStep("book")}>
-          ← {t.back}
+          â† {t.back}
         </button>
         <div className="picker-step-label">SELECT CHAPTER</div>
         <div className="picker-book-title">{book[lang]}</div>
@@ -133,7 +133,7 @@ export function VersePicker({ lang }: { lang: Lang }) {
     return (
       <div className="picker-root">
         <button className="picker-back" onClick={() => setStep("chapter")}>
-          ← {t.back}
+          â† {t.back}
         </button>
         <div className="picker-step-label">SELECT VERSE</div>
         <div className="picker-book-title">{book[lang]} {chapter}</div>
@@ -182,28 +182,8 @@ export function VersePicker({ lang }: { lang: Lang }) {
         ))}
       </div>
 
-      <div className="picker-free-row">
-        {!freeOpen ? (
-          <button
-            className="picker-free-toggle"
-            onClick={() => setFreeOpen(true)}
-          >
-            {t.enterReference}
-          </button>
-        ) : (
-          <form onSubmit={onFree} className="row" style={{ gap: 8, width: "100%" }}>
-            <input
-              className="input"
-              placeholder={t.enterReference}
-              value={free}
-              onChange={(e) => setFree(e.target.value)}
-              style={{ flex: 1 }}
-              autoFocus
-            />
-            <button type="submit" className="btn">{t.go}</button>
-          </form>
-        )}
-      </div>
     </div>
   );
 }
+
+
