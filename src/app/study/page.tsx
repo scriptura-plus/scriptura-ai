@@ -38,8 +38,6 @@ function StudyInner() {
     if (storedLang === "en" || storedLang === "ru" || storedLang === "es") {
       setLang(storedLang);
     }
-    const storedProvider = localStorage.getItem("scriptura.provider");
-    if (isProvider(storedProvider)) setProvider(storedProvider);
   }, []);
 
   useEffect(() => {
@@ -50,21 +48,12 @@ function StudyInner() {
     setLang(l);
     localStorage.setItem("scriptura.lang", l);
   }
-  function onProvider(p: Provider) {
-    setProvider(p);
-    localStorage.setItem("scriptura.provider", p);
-  }
 
   if (!reference) {
     return (
       <main className="container">
         <Header lang={lang} showBack />
-        <LanguageProviderSelector
-          lang={lang}
-          provider={provider}
-          onLang={onLang}
-          onProvider={onProvider}
-        />
+        <LanguageProviderSelector lang={lang} onLang={onLang} />
         <div className="spacer" />
 
         <section className="card">
@@ -82,12 +71,7 @@ function StudyInner() {
   return (
     <main className="container">
       <Header lang={lang} showBack />
-      <LanguageProviderSelector
-        lang={lang}
-        provider={provider}
-        onLang={onLang}
-        onProvider={onProvider}
-      />
+      <LanguageProviderSelector lang={lang} onLang={onLang} />
       <div className="spacer" />
 
       <VerseDisplay
@@ -142,4 +126,7 @@ export default function StudyPage() {
     </Suspense>
   );
 }
+
+
+
 

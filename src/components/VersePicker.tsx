@@ -108,7 +108,7 @@ export function VersePicker({ lang }: { lang: Lang }) {
     return (
       <div className="picker-root">
         <button className="picker-back" onClick={() => setStep("book")}>
-          â† {t.back}
+          {"\u2190"} {t.back}
         </button>
         <div className="picker-step-label">SELECT CHAPTER</div>
         <div className="picker-book-title">{book[lang]}</div>
@@ -133,7 +133,7 @@ export function VersePicker({ lang }: { lang: Lang }) {
     return (
       <div className="picker-root">
         <button className="picker-back" onClick={() => setStep("chapter")}>
-          â† {t.back}
+          {"\u2190"} {t.back}
         </button>
         <div className="picker-step-label">SELECT VERSE</div>
         <div className="picker-book-title">{book[lang]} {chapter}</div>
@@ -185,5 +185,6 @@ export function VersePicker({ lang }: { lang: Lang }) {
     </div>
   );
 }
+
 
 
