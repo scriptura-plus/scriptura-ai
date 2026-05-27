@@ -3,18 +3,11 @@
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Header } from "@/components/Header";
-import { LanguageProviderSelector } from "@/components/LanguageProviderSelector";
 import { VerseDisplay } from "@/components/VerseDisplay";
 import { VersePicker } from "@/components/VersePicker";
 import { LensTabs } from "@/components/LensTabs";
 import { LensResults } from "@/components/LensResults";
 import { ExtraAnalysis } from "@/components/ExtraAnalysis";
-import type { Lang } from "@/lib/i18n/dictionary";
-import {
-  defaultProvider,
-  isProvider,
-  type Provider,
-} from "@/lib/ai/providers";
 import type { LensId } from "@/lib/prompts/buildLensPrompt";
 
 
@@ -25,7 +18,7 @@ function StudyInner() {
   const reference = rawRef || null;
 
   const lang = "ru" as const;
-  const [provider, setProvider] = useState<Provider>(defaultProvider());
+  const provider = "claude";
   const [lens, setLens] = useState<LensId>("angles");
   const [verseText, setVerseText] = useState<string>("");
 
@@ -101,6 +94,8 @@ export default function StudyPage() {
     </Suspense>
   );
 }
+
+
 
 
 
