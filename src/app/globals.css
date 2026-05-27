@@ -584,8 +584,8 @@ a:hover {
 }
 
 .picker-grid-books {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
 }
 
 .picker-grid-numbers {
@@ -612,13 +612,13 @@ a:hover {
 .picker-btn-book {
   font-size: 13px;
   font-weight: 600;
-  min-height: 52px;
-  padding: 10px 3px;
-  line-height: 1;
-  color: #243a52;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  min-height: 46px;
+  padding: 6px 8px;
+  text-align: left;
+  line-height: 1.15;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .picker-btn-group-darker {
@@ -677,7 +677,7 @@ a:hover {
 @media (min-width: 600px) {
   .picker-grid-books {
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 8px;
+    gap: 4px;
   }
 
   .picker-grid-numbers {
@@ -686,9 +686,16 @@ a:hover {
   }
 
   .picker-btn-book {
-    font-size: 14px;
-    min-height: 54px;
-  }
+  font-size: 13px;
+  font-weight: 600;
+  min-height: 46px;
+  padding: 6px 8px;
+  text-align: left;
+  line-height: 1.15;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
   .picker-btn-number {
     font-size: 19px;
@@ -703,7 +710,7 @@ a:hover {
 @media (min-width: 768px) {
   .picker-grid-books {
     grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: 9px;
+    gap: 4px;
   }
 
   .picker-grid-numbers {
@@ -712,9 +719,16 @@ a:hover {
   }
 
   .picker-btn-book {
-    font-size: 15px;
-    min-height: 58px;
-  }
+  font-size: 13px;
+  font-weight: 600;
+  min-height: 46px;
+  padding: 6px 8px;
+  text-align: left;
+  line-height: 1.15;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
   .picker-btn-number {
     font-size: 21px;
@@ -729,6 +743,7 @@ a:hover {
 @media (min-width: 1024px) {
   .picker-grid-books {
     grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 4px;
   }
 
   .picker-grid-numbers {
@@ -1381,4 +1396,5 @@ a:hover {
     font-size: 17px;
   }
 }
+
 
