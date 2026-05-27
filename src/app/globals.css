@@ -1,4 +1,4 @@
-﻿:root {
+:root {
   --bg: #f6efe1;
   --bg-alt: #efe5d0;
   --paper: #fbf6ea;
@@ -282,7 +282,6 @@ a:hover {
   color: var(--ink-soft);
   letter-spacing: 0.02em;
   text-transform: uppercase;
-  margin-bottom: 12px;
 }
 
 .prose ul,
@@ -331,7 +330,7 @@ a:hover {
   }
 }
 
-/* â”€â”€ Premium lens loading skeleton â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Premium lens loading skeleton ───────────────────────────────────────── */
 .lens-skeleton-bar {
   background: linear-gradient(
     90deg,
@@ -430,7 +429,6 @@ a:hover {
 .translation-label {
   font-size: 11px;
   text-transform: uppercase;
-  margin-bottom: 12px;
   letter-spacing: 0.07em;
   color: var(--accent-soft);
   font-weight: 700;
@@ -475,7 +473,7 @@ a:hover {
   margin: 0;
 }
 
-/* â”€â”€â”€ Home page shell â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ─── Home page shell ─────────────────────────────────────────────────────── */
 .home-main {
   max-width: 800px;
   margin: 0 auto;
@@ -526,11 +524,10 @@ a:hover {
   box-shadow: 0 1px 0 rgba(255,255,255,0.62) inset;
 }
 
-/* â”€â”€â”€ Stepped Verse Picker â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ─── Stepped Verse Picker ────────────────────────────────────────────────── */
 .picker-root {
   display: grid;
   gap: 0;
-  padding-bottom: calc(32px + env(safe-area-inset-bottom));
 }
 
 .picker-section-header {
@@ -538,7 +535,6 @@ a:hover {
   font-weight: 700;
   letter-spacing: 0.09em;
   text-transform: uppercase;
-  margin-bottom: 12px;
   color: var(--ink-soft);
   margin-bottom: 10px;
 }
@@ -548,7 +544,6 @@ a:hover {
   font-weight: 700;
   letter-spacing: 0.09em;
   text-transform: uppercase;
-  margin-bottom: 12px;
   color: var(--ink-soft);
   margin-bottom: 6px;
 }
@@ -584,13 +579,11 @@ a:hover {
 }
 
 .picker-grid-books {
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 3px;
+  grid-template-columns: repeat(6, 1fr);
 }
 
 .picker-grid-numbers {
   grid-template-columns: repeat(4, 1fr);
-  gap: 10px;
 }
 
 .picker-btn {
@@ -610,36 +603,36 @@ a:hover {
 }
 
 .picker-btn-book {
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 600;
-  min-height: 58px;
-  padding: 6px 4px;
-  text-align: left;
+  min-height: 52px;
+  padding: 10px 3px;
   line-height: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  color: #243a52;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .picker-btn-group-darker {
-    background: #afc2d4;
-  }
+  background: #afc2d4;
+}
 
 .picker-btn-group-darker:hover {
   background: #9fb5c8;
 }
 
 .picker-btn-group-lighter {
-    background: #d5e2eb;
-  }
+  background: #d5e2eb;
+}
 
 .picker-btn-group-lighter:hover {
   background: #c5d5e3;
 }
 
 .picker-btn-group-mid {
-    background: #c4d3e2;
-  }
+  background: #c4d3e2;
+}
 
 .picker-btn-group-mid:hover {
   background: #b5c6d5;
@@ -676,8 +669,8 @@ a:hover {
 
 @media (min-width: 600px) {
   .picker-grid-books {
-    grid-template-columns: repeat(6, minmax(0, 1fr));
-    gap: 3px;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 8px;
   }
 
   .picker-grid-numbers {
@@ -686,16 +679,9 @@ a:hover {
   }
 
   .picker-btn-book {
-  font-size: 15px;
-  font-weight: 600;
-  min-height: 58px;
-  padding: 6px 4px;
-  text-align: left;
-  line-height: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+    font-size: 14px;
+    min-height: 54px;
+  }
 
   .picker-btn-number {
     font-size: 19px;
@@ -709,8 +695,8 @@ a:hover {
 
 @media (min-width: 768px) {
   .picker-grid-books {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: 3px;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 9px;
   }
 
   .picker-grid-numbers {
@@ -719,16 +705,9 @@ a:hover {
   }
 
   .picker-btn-book {
-  font-size: 15px;
-  font-weight: 600;
-  min-height: 58px;
-  padding: 6px 4px;
-  text-align: left;
-  line-height: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+    font-size: 15px;
+    min-height: 58px;
+  }
 
   .picker-btn-number {
     font-size: 21px;
@@ -742,12 +721,11 @@ a:hover {
 
 @media (min-width: 1024px) {
   .picker-grid-books {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: 3px;
+    grid-template-columns: repeat(9, 1fr);
   }
 
   .picker-grid-numbers {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(8, 1fr);
   }
 }
 
@@ -768,7 +746,7 @@ a:hover {
   margin: 0;
 }
 
-/* â”€â”€â”€ Explore more pearls button â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ─── Explore more pearls button ─────────────────────────────────────────── */
 .pearls-explore-box {
   margin: 22px 0 10px;
   padding: 16px;
@@ -819,9 +797,9 @@ a:hover {
   line-height: 1.4;
 }
 
-/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ────────────────────────────────────────────────────────────────────────── */
 /* PREMIUM PEARL CARDS                                                       */
-/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ────────────────────────────────────────────────────────────────────────── */
 
 .angle-cards-stack {
   display: grid;
@@ -973,7 +951,6 @@ a:hover {
 .angle-anchor-label {
   font-size: 11px;
   text-transform: uppercase;
-  margin-bottom: 12px;
   letter-spacing: 0.11em;
   color: var(--accent-soft);
   font-weight: 800;
@@ -1039,9 +1016,9 @@ a:hover {
   opacity: 0.8;
 }
 
-/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ────────────────────────────────────────────────────────────────────────── */
 /* EDITORIAL EXPANDED ARTICLE MODE                                           */
-/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ────────────────────────────────────────────────────────────────────────── */
 
 .editorial-article {
   margin-top: 4px;
@@ -1071,7 +1048,6 @@ a:hover {
   font-weight: 800;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  margin-bottom: 12px;
 }
 
 .editorial-kicker::before {
@@ -1396,6 +1372,3 @@ a:hover {
     font-size: 17px;
   }
 }
-
-
-
