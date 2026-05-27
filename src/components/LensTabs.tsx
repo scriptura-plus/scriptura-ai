@@ -1,7 +1,7 @@
-"use client";
+﻿"use client";
 
 import { dictionary, type Lang } from "@/lib/i18n/dictionary";
-import { LENS_ORDER, type LensId } from "@/lib/lenses/lensTypes";
+import { type LensId } from "@/lib/lenses/lensTypes";
 
 export function LensTabs({
   lang,
@@ -19,7 +19,7 @@ export function LensTabs({
       <style>{`
         .tab-row.scriptura-lens-tabs {
           display: grid;
-          grid-template-columns: repeat(4, minmax(0, 1fr));
+          grid-template-columns: repeat(2, minmax(0, 1fr));
           gap: 8px;
           width: 100%;
           align-items: center;
@@ -90,7 +90,7 @@ export function LensTabs({
       `}</style>
 
       <div className="tab-row scriptura-lens-tabs" role="tablist">
-        {LENS_ORDER.map((id) => (
+        {(["angles", "word"] as LensId[]).map((id) => (
           <button
             key={id}
             type="button"
@@ -106,3 +106,5 @@ export function LensTabs({
     </>
   );
 }
+
+

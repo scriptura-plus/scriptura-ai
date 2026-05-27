@@ -28,32 +28,19 @@ function StudyInner() {
   const rawRef = params.get("ref")?.trim();
   const reference = rawRef || null;
 
-  const [lang, setLang] = useState<Lang>("en");
+  const lang = "ru" as const;
   const [provider, setProvider] = useState<Provider>(defaultProvider());
   const [lens, setLens] = useState<LensId>("angles");
   const [verseText, setVerseText] = useState<string>("");
 
   useEffect(() => {
-    const storedLang = localStorage.getItem("scriptura.lang");
-    if (storedLang === "en" || storedLang === "ru" || storedLang === "es") {
-      setLang(storedLang);
-    }
-  }, []);
-
-  useEffect(() => {
     setVerseText("");
   }, [reference]);
-
-  function onLang(l: Lang) {
-    setLang(l);
-    localStorage.setItem("scriptura.lang", l);
-  }
 
   if (!reference) {
     return (
       <main className="container">
         <Header lang={lang} showBack />
-        <LanguageProviderSelector lang={lang} onLang={onLang} />
         <div className="spacer" />
 
         <section className="card">
@@ -71,7 +58,6 @@ function StudyInner() {
   return (
     <main className="container">
       <Header lang={lang} showBack />
-      <LanguageProviderSelector lang={lang} onLang={onLang} />
       <div className="spacer" />
 
       <VerseDisplay
@@ -126,6 +112,8 @@ export default function StudyPage() {
     </Suspense>
   );
 }
+
+
 
 
 
