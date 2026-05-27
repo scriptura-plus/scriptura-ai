@@ -584,8 +584,8 @@ a:hover {
 }
 
 .picker-grid-books {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 4px;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 3px;
 }
 
 .picker-grid-numbers {
@@ -610,36 +610,36 @@ a:hover {
 }
 
 .picker-btn-book {
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 600;
-  min-height: 46px;
-  padding: 6px 8px;
+  min-height: 58px;
+  padding: 6px 4px;
   text-align: left;
-  line-height: 1.15;
+  line-height: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .picker-btn-group-darker {
-  background: #afc2d4;
-}
+    background: #afc2d4;
+  }
 
 .picker-btn-group-darker:hover {
   background: #9fb5c8;
 }
 
 .picker-btn-group-lighter {
-  background: #d5e2eb;
-}
+    background: #d5e2eb;
+  }
 
 .picker-btn-group-lighter:hover {
   background: #c5d5e3;
 }
 
 .picker-btn-group-mid {
-  background: #c4d3e2;
-}
+    background: #c4d3e2;
+  }
 
 .picker-btn-group-mid:hover {
   background: #b5c6d5;
@@ -676,8 +676,8 @@ a:hover {
 
 @media (min-width: 600px) {
   .picker-grid-books {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 4px;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 3px;
   }
 
   .picker-grid-numbers {
@@ -686,12 +686,12 @@ a:hover {
   }
 
   .picker-btn-book {
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 600;
-  min-height: 46px;
-  padding: 6px 8px;
+  min-height: 58px;
+  padding: 6px 4px;
   text-align: left;
-  line-height: 1.15;
+  line-height: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -710,7 +710,7 @@ a:hover {
 @media (min-width: 768px) {
   .picker-grid-books {
     grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: 4px;
+    gap: 3px;
   }
 
   .picker-grid-numbers {
@@ -719,12 +719,12 @@ a:hover {
   }
 
   .picker-btn-book {
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 600;
-  min-height: 46px;
-  padding: 6px 8px;
+  min-height: 58px;
+  padding: 6px 4px;
   text-align: left;
-  line-height: 1.15;
+  line-height: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -743,7 +743,7 @@ a:hover {
 @media (min-width: 1024px) {
   .picker-grid-books {
     grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: 4px;
+    gap: 3px;
   }
 
   .picker-grid-numbers {
@@ -1396,5 +1396,6 @@ a:hover {
     font-size: 17px;
   }
 }
+
 
 

@@ -5,6 +5,75 @@ import { useRouter } from "next/navigation";
 import { BOOKS, type Book } from "@/lib/bible/bibleBooks";
 import { dictionary, type Lang } from "@/lib/i18n/dictionary";
 
+const RU_ABBR: Record<string, string> = {
+  genesis: "Бт",
+  exodus: "Исх",
+  leviticus: "Лв",
+  numbers: "Чс",
+  deuteronomy: "Вт",
+  joshua: "ИсН",
+  judges: "Сд",
+  ruth: "Рф",
+  "1samuel": "1См",
+  "2samuel": "2См",
+  "1kings": "1Цр",
+  "2kings": "2Цр",
+  "1chronicles": "1Лт",
+  "2chronicles": "2Лт",
+  ezra: "Езд",
+  nehemiah: "Не",
+  esther: "Эсф",
+  job: "Иов",
+  psalms: "Пс",
+  proverbs: "Пр",
+  ecclesiastes: "Эк",
+  song: "Псн",
+  isaiah: "Иса",
+  jeremiah: "Иер",
+  lamentations: "Пл",
+  ezekiel: "Иез",
+  daniel: "Дан",
+  hosea: "Ос",
+  joel: "Ил",
+  amos: "Ам",
+  obadiah: "Авд",
+  jonah: "Ион",
+  micah: "Мх",
+  nahum: "На",
+  habakkuk: "Авв",
+  zephaniah: "Сф",
+  haggai: "Аг",
+  zechariah: "Зх",
+  malachi: "Мл",
+  matthew: "Мф",
+  mark: "Мк",
+  luke: "Лк",
+  john: "Ин",
+  acts: "Де",
+  romans: "Рм",
+  "1corinthians": "1Кр",
+  "2corinthians": "2Кр",
+  galatians: "Гл",
+  ephesians: "Эф",
+  philippians: "Фп",
+  colossians: "Кл",
+  "1thessalonians": "1Фс",
+  "2thessalonians": "2Фс",
+  "1timothy": "1Тм",
+  "2timothy": "2Тм",
+  titus: "Тит",
+  philemon: "Фм",
+  hebrews: "Евр",
+  james: "Иак",
+  "1peter": "1Пт",
+  "2peter": "2Пт",
+  "1john": "1Ин",
+  "2john": "2Ин",
+  "3john": "3Ин",
+  jude: "Иуды",
+  revelation: "Отк",
+};
+
 
 
 /**
@@ -144,7 +213,7 @@ export function VersePicker({ lang }: { lang: Lang }) {
             className={`picker-btn picker-btn-book ${bookGroupClass(b.id)}`}
             onClick={() => pickBook(b)}
           >
-            {b.ru}
+            {RU_ABBR[b.id] ?? b.ru}
           </button>
         ))}
       </div>
@@ -159,7 +228,7 @@ export function VersePicker({ lang }: { lang: Lang }) {
             className={`picker-btn picker-btn-book ${bookGroupClass(b.id)}`}
             onClick={() => pickBook(b)}
           >
-            {b.ru}
+            {RU_ABBR[b.id] ?? b.ru}
           </button>
         ))}
       </div>
@@ -167,6 +236,7 @@ export function VersePicker({ lang }: { lang: Lang }) {
     </div>
   );
 }
+
 
 
 
