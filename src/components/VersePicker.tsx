@@ -5,25 +5,7 @@ import { useRouter } from "next/navigation";
 import { BOOKS, type Book } from "@/lib/bible/bibleBooks";
 import { dictionary, type Lang } from "@/lib/i18n/dictionary";
 
-const ABBR: Record<string, string> = {
-  genesis: "Ge", exodus: "Ex", leviticus: "Le", numbers: "Nu",
-  deuteronomy: "De", joshua: "Jos", judges: "Jg", ruth: "Ru",
-  "1samuel": "1Sa", "2samuel": "2Sa", "1kings": "1Ki", "2kings": "2Ki",
-  "1chronicles": "1Ch", "2chronicles": "2Ch", ezra: "Ezr", nehemiah: "Ne",
-  esther: "Es", job: "Job", psalms: "Ps", proverbs: "Pr",
-  ecclesiastes: "Ec", song: "Ca", isaiah: "Isa", jeremiah: "Jer",
-  lamentations: "La", ezekiel: "Eze", daniel: "Da", hosea: "Ho",
-  joel: "Joe", amos: "Am", obadiah: "Ob", jonah: "Jon",
-  micah: "Mic", nahum: "Na", habakkuk: "Hab", zephaniah: "Zep",
-  haggai: "Hag", zechariah: "Zec", malachi: "Mal",
-  matthew: "Mt", mark: "Mr", luke: "Lu", john: "Joh",
-  acts: "Ac", romans: "Ro", "1corinthians": "1Co", "2corinthians": "2Co",
-  galatians: "Ga", ephesians: "Eph", philippians: "Php", colossians: "Col",
-  "1thessalonians": "1Th", "2thessalonians": "2Th", "1timothy": "1Ti",
-  "2timothy": "2Ti", titus: "Tit", philemon: "Phm", hebrews: "Heb",
-  james: "Jas", "1peter": "1Pe", "2peter": "2Pe", "1john": "1Jo",
-  "2john": "2Jo", "3john": "3Jo", jude: "Jude", revelation: "Re",
-};
+
 
 /**
  * Canonical color-group system.
@@ -110,7 +92,7 @@ export function VersePicker({ lang }: { lang: Lang }) {
         <button className="picker-back" onClick={() => setStep("book")}>
           {"\u2190"} {t.back}
         </button>
-        <div className="picker-step-label">SELECT CHAPTER</div>
+        <div className="picker-step-label">ВЫБЕРИТЕ ГЛАВУ</div>
         <div className="picker-book-title">{book[lang]}</div>
         <div className="picker-grid picker-grid-numbers">
           {chapters.map((c) => (
@@ -135,7 +117,7 @@ export function VersePicker({ lang }: { lang: Lang }) {
         <button className="picker-back" onClick={() => setStep("chapter")}>
           {"\u2190"} {t.back}
         </button>
-        <div className="picker-step-label">SELECT VERSE</div>
+        <div className="picker-step-label">ВЫБЕРИТЕ СТИХ</div>
         <div className="picker-book-title">{book[lang]} {chapter}</div>
         <div className="picker-grid picker-grid-numbers">
           {verses.map((v) => (
@@ -154,7 +136,7 @@ export function VersePicker({ lang }: { lang: Lang }) {
 
   return (
     <div className="picker-root">
-      <div className="picker-section-header">Hebrew-Aramaic Scriptures</div>
+      <div className="picker-section-header">ЕВРЕЙСКО-АРАМЕЙСКИЕ ПИСАНИЯ</div>
       <div className="picker-grid picker-grid-books">
         {OT.map((b) => (
           <button
@@ -162,13 +144,13 @@ export function VersePicker({ lang }: { lang: Lang }) {
             className={`picker-btn picker-btn-book ${bookGroupClass(b.id)}`}
             onClick={() => pickBook(b)}
           >
-            {ABBR[b.id] ?? b.id}
+            {b.ru}
           </button>
         ))}
       </div>
 
       <div className="picker-section-header" style={{ marginTop: 22 }}>
-        Christian Greek Scriptures
+        ХРИСТИАНСКИЕ ГРЕЧЕСКИЕ ПИСАНИЯ
       </div>
       <div className="picker-grid picker-grid-books">
         {NT.map((b) => (
@@ -177,7 +159,7 @@ export function VersePicker({ lang }: { lang: Lang }) {
             className={`picker-btn picker-btn-book ${bookGroupClass(b.id)}`}
             onClick={() => pickBook(b)}
           >
-            {ABBR[b.id] ?? b.id}
+            {b.ru}
           </button>
         ))}
       </div>
@@ -185,6 +167,7 @@ export function VersePicker({ lang }: { lang: Lang }) {
     </div>
   );
 }
+
 
 
 

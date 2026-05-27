@@ -1,4 +1,4 @@
-:root {
+﻿:root {
   --bg: #f6efe1;
   --bg-alt: #efe5d0;
   --paper: #fbf6ea;
@@ -282,6 +282,7 @@ a:hover {
   color: var(--ink-soft);
   letter-spacing: 0.02em;
   text-transform: uppercase;
+  margin-bottom: 12px;
 }
 
 .prose ul,
@@ -330,7 +331,7 @@ a:hover {
   }
 }
 
-/* ── Premium lens loading skeleton ───────────────────────────────────────── */
+/* â”€â”€ Premium lens loading skeleton â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .lens-skeleton-bar {
   background: linear-gradient(
     90deg,
@@ -429,6 +430,7 @@ a:hover {
 .translation-label {
   font-size: 11px;
   text-transform: uppercase;
+  margin-bottom: 12px;
   letter-spacing: 0.07em;
   color: var(--accent-soft);
   font-weight: 700;
@@ -473,7 +475,7 @@ a:hover {
   margin: 0;
 }
 
-/* ─── Home page shell ─────────────────────────────────────────────────────── */
+/* â”€â”€â”€ Home page shell â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .home-main {
   max-width: 800px;
   margin: 0 auto;
@@ -524,10 +526,11 @@ a:hover {
   box-shadow: 0 1px 0 rgba(255,255,255,0.62) inset;
 }
 
-/* ─── Stepped Verse Picker ────────────────────────────────────────────────── */
+/* â”€â”€â”€ Stepped Verse Picker â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .picker-root {
   display: grid;
   gap: 0;
+  padding-bottom: calc(32px + env(safe-area-inset-bottom));
 }
 
 .picker-section-header {
@@ -535,6 +538,7 @@ a:hover {
   font-weight: 700;
   letter-spacing: 0.09em;
   text-transform: uppercase;
+  margin-bottom: 12px;
   color: var(--ink-soft);
   margin-bottom: 10px;
 }
@@ -544,6 +548,7 @@ a:hover {
   font-weight: 700;
   letter-spacing: 0.09em;
   text-transform: uppercase;
+  margin-bottom: 12px;
   color: var(--ink-soft);
   margin-bottom: 6px;
 }
@@ -579,11 +584,13 @@ a:hover {
 }
 
 .picker-grid-books {
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
 }
 
 .picker-grid-numbers {
   grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
 }
 
 .picker-btn {
@@ -669,7 +676,7 @@ a:hover {
 
 @media (min-width: 600px) {
   .picker-grid-books {
-    grid-template-columns: repeat(7, 1fr);
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 8px;
   }
 
@@ -695,7 +702,7 @@ a:hover {
 
 @media (min-width: 768px) {
   .picker-grid-books {
-    grid-template-columns: repeat(8, 1fr);
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 9px;
   }
 
@@ -721,11 +728,11 @@ a:hover {
 
 @media (min-width: 1024px) {
   .picker-grid-books {
-    grid-template-columns: repeat(9, 1fr);
+    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 
   .picker-grid-numbers {
-    grid-template-columns: repeat(8, 1fr);
+    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 }
 
@@ -746,7 +753,7 @@ a:hover {
   margin: 0;
 }
 
-/* ─── Explore more pearls button ─────────────────────────────────────────── */
+/* â”€â”€â”€ Explore more pearls button â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .pearls-explore-box {
   margin: 22px 0 10px;
   padding: 16px;
@@ -797,9 +804,9 @@ a:hover {
   line-height: 1.4;
 }
 
-/* ────────────────────────────────────────────────────────────────────────── */
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 /* PREMIUM PEARL CARDS                                                       */
-/* ────────────────────────────────────────────────────────────────────────── */
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 .angle-cards-stack {
   display: grid;
@@ -951,6 +958,7 @@ a:hover {
 .angle-anchor-label {
   font-size: 11px;
   text-transform: uppercase;
+  margin-bottom: 12px;
   letter-spacing: 0.11em;
   color: var(--accent-soft);
   font-weight: 800;
@@ -1016,9 +1024,9 @@ a:hover {
   opacity: 0.8;
 }
 
-/* ────────────────────────────────────────────────────────────────────────── */
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 /* EDITORIAL EXPANDED ARTICLE MODE                                           */
-/* ────────────────────────────────────────────────────────────────────────── */
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 .editorial-article {
   margin-top: 4px;
@@ -1048,6 +1056,7 @@ a:hover {
   font-weight: 800;
   letter-spacing: 0.14em;
   text-transform: uppercase;
+  margin-bottom: 12px;
 }
 
 .editorial-kicker::before {
@@ -1372,3 +1381,4 @@ a:hover {
     font-size: 17px;
   }
 }
+
