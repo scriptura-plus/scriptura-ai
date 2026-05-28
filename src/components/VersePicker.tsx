@@ -6,31 +6,31 @@ import { BOOKS, type Book } from "@/lib/bible/bibleBooks";
 import { dictionary, type Lang } from "@/lib/i18n/dictionary";
 
 const ABBR: Record<string, string> = {
-  genesis: "Ge", exodus: "Ex", leviticus: "Le", numbers: "Nu",
-  deuteronomy: "De", joshua: "Jos", judges: "Jg", ruth: "Ru",
-  "1samuel": "1Sa", "2samuel": "2Sa", "1kings": "1Ki", "2kings": "2Ki",
-  "1chronicles": "1Ch", "2chronicles": "2Ch", ezra: "Ezr", nehemiah: "Ne",
-  esther: "Es", job: "Job", psalms: "Ps", proverbs: "Pr",
-  ecclesiastes: "Ec", song: "Ca", isaiah: "Isa", jeremiah: "Jer",
-  lamentations: "La", ezekiel: "Eze", daniel: "Da", hosea: "Ho",
-  joel: "Joe", amos: "Am", obadiah: "Ob", jonah: "Jon",
-  micah: "Mic", nahum: "Na", habakkuk: "Hab", zephaniah: "Zep",
-  haggai: "Hag", zechariah: "Zec", malachi: "Mal",
-  matthew: "Mt", mark: "Mr", luke: "Lu", john: "Joh",
-  acts: "Ac", romans: "Ro", "1corinthians": "1Co", "2corinthians": "2Co",
-  galatians: "Ga", ephesians: "Eph", philippians: "Php", colossians: "Col",
-  "1thessalonians": "1Th", "2thessalonians": "2Th", "1timothy": "1Ti",
-  "2timothy": "2Ti", titus: "Tit", philemon: "Phm", hebrews: "Heb",
-  james: "Jas", "1peter": "1Pe", "2peter": "2Pe", "1john": "1Jo",
-  "2john": "2Jo", "3john": "3Jo", jude: "Jude", revelation: "Re",
+  genesis: "Бт", exodus: "Исх", leviticus: "Лв", numbers: "Чс",
+  deuteronomy: "Вт", joshua: "ИсН", judges: "Сд", ruth: "Рф",
+  "1samuel": "1См", "2samuel": "2См", "1kings": "1Цр", "2kings": "2Цр",
+  "1chronicles": "1Лт", "2chronicles": "2Лт", ezra: "Езд", nehemiah: "Не",
+  esther: "Эсф", job: "Иов", psalms: "Пс", proverbs: "Пр",
+  ecclesiastes: "Эк", song: "Псн", isaiah: "Иса", jeremiah: "Иер",
+  lamentations: "Пл", ezekiel: "Иез", daniel: "Дан", hosea: "Ос",
+  joel: "Ил", amos: "Ам", obadiah: "Авд", jonah: "Ион",
+  micah: "Мх", nahum: "На", habakkuk: "Авв", zephaniah: "Сф",
+  haggai: "Аг", zechariah: "Зх", malachi: "Мл",
+  matthew: "Мф", mark: "Мк", luke: "Лк", john: "Ин",
+  acts: "Де", romans: "Рм", "1corinthians": "1Кр", "2corinthians": "2Кр",
+  galatians: "Гл", ephesians: "Эф", philippians: "Фп", colossians: "Кл",
+  "1thessalonians": "1Фс", "2thessalonians": "2Фс", "1timothy": "1Тм",
+  "2timothy": "2Тм", titus: "Тит", philemon: "Фм", hebrews: "Евр",
+  james: "Иак", "1peter": "1Пт", "2peter": "2Пт", "1john": "1Ин",
+  "2john": "2Ин", "3john": "3Ин", jude: "Иуды", revelation: "Отк",
 };
 
 /**
  * Canonical color-group system.
  *
- * darker  â€” Pentateuch Â· Major+Minor Prophets Â· Four Gospels Â· Revelation
- * lighter â€” Historical books (Joshâ€“Esther) Â· Acts
- * mid     â€” Wisdom/Poetic (Jobâ€“Song) Â· Epistles (Româ€“Jude)
+ * darker  — Pentateuch · Major+Minor Prophets · Four Gospels · Revelation
+ * lighter — Historical books (Josh–Esther) · Acts
+ * mid     — Wisdom/Poetic (Job–Song) · Epistles (Rom–Jude)
  */
 const DARKER_BOOKS = new Set([
   // Pentateuch
@@ -54,7 +54,7 @@ const LIGHTER_BOOKS = new Set([
   "acts",
 ]);
 
-// Mid = Wisdom/Poetic + Epistles â€” everything not in the above two sets
+// Mid = Wisdom/Poetic + Epistles — everything not in the above two sets
 
 function bookGroupClass(id: string): string {
   if (DARKER_BOOKS.has(id)) return "picker-btn-group-darker";
@@ -110,7 +110,7 @@ export function VersePicker({ lang }: { lang: Lang }) {
         <button className="picker-back" onClick={() => setStep("book")}>
           {"\u2190"} {t.back}
         </button>
-        <div className="picker-step-label">SELECT CHAPTER</div>
+        <div className="picker-step-label">ВЫБЕРИТЕ ГЛАВУ</div>
         <div className="picker-book-title">{book[lang]}</div>
         <div className="picker-grid picker-grid-numbers">
           {chapters.map((c) => (
@@ -135,7 +135,7 @@ export function VersePicker({ lang }: { lang: Lang }) {
         <button className="picker-back" onClick={() => setStep("chapter")}>
           {"\u2190"} {t.back}
         </button>
-        <div className="picker-step-label">SELECT VERSE</div>
+        <div className="picker-step-label">ВЫБЕРИТЕ СТИХ</div>
         <div className="picker-book-title">{book[lang]} {chapter}</div>
         <div className="picker-grid picker-grid-numbers">
           {verses.map((v) => (
@@ -154,7 +154,7 @@ export function VersePicker({ lang }: { lang: Lang }) {
 
   return (
     <div className="picker-root">
-      <div className="picker-section-header">Hebrew-Aramaic Scriptures</div>
+      <div className="picker-section-header">ЕВРЕЙСКО-АРАМЕЙСКИЕ ПИСАНИЯ</div>
       <div className="picker-grid picker-grid-books">
         {OT.map((b) => (
           <button
@@ -168,7 +168,7 @@ export function VersePicker({ lang }: { lang: Lang }) {
       </div>
 
       <div className="picker-section-header" style={{ marginTop: 22 }}>
-        Christian Greek Scriptures
+        ХРИСТИАНСКИЕ ГРЕЧЕСКИЕ ПИСАНИЯ
       </div>
       <div className="picker-grid picker-grid-books">
         {NT.map((b) => (
@@ -185,6 +185,3 @@ export function VersePicker({ lang }: { lang: Lang }) {
     </div>
   );
 }
-
-
-
