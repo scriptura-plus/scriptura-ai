@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, type ReactNode, type TouchEvent } from "react";
 import { dictionary, type Lang } from "@/lib/i18n/dictionary";
@@ -81,50 +81,50 @@ function extractCards(raw: string): WordCard[] | null {
 }
 
 function getCollapseLabel(lang: Lang): string {
-  if (lang === "ru") return "Свернуть";
+  if (lang === "ru") return "Ð¡Ð²ÐµÑ€Ð½ÑƒÑ‚ÑŒ";
   if (lang === "es") return "Ocultar";
   return "Collapse";
 }
 
 function getArticleLabel(lang: Lang): string {
-  if (lang === "ru") return "Развернутая мысль";
+  if (lang === "ru") return "Ð Ð°Ð·Ð²ÐµÑ€Ð½ÑƒÑ‚Ð°Ñ Ð¼Ñ‹ÑÐ»ÑŒ";
   if (lang === "es") return "Lectura ampliada";
   return "Expanded reading";
 }
 
 function getShareLabel(lang: Lang): string {
-  if (lang === "ru") return "Поделиться этой мыслью";
+  if (lang === "ru") return "ÐŸÐ¾Ð´ÐµÐ»Ð¸Ñ‚ÑŒÑÑ ÑÑ‚Ð¾Ð¹ Ð¼Ñ‹ÑÐ»ÑŒÑŽ";
   if (lang === "es") return "Compartir esta idea";
   return "Share this insight";
 }
 
 function getPreviousLabel(lang: Lang): string {
-  if (lang === "ru") return "Назад";
+  if (lang === "ru") return "ÐÐ°Ð·Ð°Ð´";
   if (lang === "es") return "Anterior";
   return "Previous";
 }
 
 function getNextLabel(lang: Lang): string {
-  if (lang === "ru") return "Дальше";
+  if (lang === "ru") return "Ð”Ð°Ð»ÑŒÑˆÐµ";
   if (lang === "es") return "Siguiente";
   return "Next";
 }
 
 function getOriginalLabel(lang: Lang): string {
-  if (lang === "ru") return "оригинал";
+  if (lang === "ru") return "Ð¾Ñ€Ð¸Ð³Ð¸Ð½Ð°Ð»";
   if (lang === "es") return "original";
   return "original";
 }
 
 function getGapLabel(lang: Lang): string {
-  if (lang === "ru") return "Что теряется";
-  if (lang === "es") return "Qué se pierde";
+  if (lang === "ru") return "Ð§Ñ‚Ð¾ Ñ‚ÐµÑ€ÑÐµÑ‚ÑÑ";
+  if (lang === "es") return "QuÃ© se pierde";
   return "What gets lost";
 }
 
 function getWhyLabel(lang: Lang): string {
-  if (lang === "ru") return "Почему это важно";
-  if (lang === "es") return "Por qué importa";
+  if (lang === "ru") return "ÐŸÐ¾Ñ‡ÐµÐ¼Ñƒ ÑÑ‚Ð¾ Ð²Ð°Ð¶Ð½Ð¾";
+  if (lang === "es") return "Por quÃ© importa";
   return "Why it matters";
 }
 
@@ -162,7 +162,7 @@ function splitArticleParagraphs(text: string): string[] {
   if (paragraphs.length > 1) return paragraphs;
 
   return normalized
-    .split(/(?<=[.!?…])\s+(?=[А-ЯA-ZЁ])/g)
+    .split(/(?<=[.!?â€¦])\s+(?=[Ð-Ð¯A-ZÐ])/g)
     .map((p) => p.trim())
     .filter((p) => p.length > 20);
 }
@@ -171,7 +171,7 @@ function splitSentences(text: string): string[] {
   return text
     .replace(/\s+/g, " ")
     .trim()
-    .split(/(?<=[.!?…])\s+(?=[А-ЯA-ZЁ«])/g)
+    .split(/(?<=[.!?â€¦])\s+(?=[Ð-Ð¯A-ZÐÂ«])/g)
     .map((sentence) => sentence.trim())
     .filter(Boolean);
 }
@@ -218,7 +218,7 @@ function splitReadingParagraphs(text: string): string[] {
 function cleanInlineMarkdown(text: string): string {
   return text
     .replace(/^#{1,4}\s+/g, "")
-    .replace(/^[-–—]\s+/g, "")
+    .replace(/^[-â€“â€”]\s+/g, "")
     .trim();
 }
 
@@ -242,7 +242,7 @@ function getSentenceCandidates(paragraphs: string[]): string[] {
   return paragraphs
     .flatMap((paragraph) =>
       removeMarkdownMarkers(paragraph)
-        .split(/(?<=[.!?…])\s+/g)
+        .split(/(?<=[.!?â€¦])\s+/g)
         .map((sentence) => sentence.trim()),
     )
     .filter((sentence) => sentence.length >= 70 && sentence.length <= 210);
@@ -253,12 +253,12 @@ function pickPullQuote(paragraphs: string[], title: string): string {
 
   const strong =
     candidates.find((sentence) =>
-      /(не просто|именно|становится|превращает|показывает|открывает|меняет|центр|ключ|слово|нюанс|смысл|теперь)/i.test(
+      /(Ð½Ðµ Ð¿Ñ€Ð¾ÑÑ‚Ð¾|Ð¸Ð¼ÐµÐ½Ð½Ð¾|ÑÑ‚Ð°Ð½Ð¾Ð²Ð¸Ñ‚ÑÑ|Ð¿Ñ€ÐµÐ²Ñ€Ð°Ñ‰Ð°ÐµÑ‚|Ð¿Ð¾ÐºÐ°Ð·Ñ‹Ð²Ð°ÐµÑ‚|Ð¾Ñ‚ÐºÑ€Ñ‹Ð²Ð°ÐµÑ‚|Ð¼ÐµÐ½ÑÐµÑ‚|Ñ†ÐµÐ½Ñ‚Ñ€|ÐºÐ»ÑŽÑ‡|ÑÐ»Ð¾Ð²Ð¾|Ð½ÑŽÐ°Ð½Ñ|ÑÐ¼Ñ‹ÑÐ»|Ñ‚ÐµÐ¿ÐµÑ€ÑŒ)/i.test(
         sentence,
       ),
     ) ?? candidates[0];
 
-  if (strong) return strong.replace(/[.。]$/, "");
+  if (strong) return strong.replace(/[.ã€‚]$/, "");
 
   return title;
 }
@@ -324,9 +324,9 @@ function EditorialArticle({
           <div key={`${cleaned.slice(0, 30)}-${index}`}>
             {shouldInsertPullQuote && (
               <aside className="editorial-pullquote">
-                <span>“</span>
+                <span>â€œ</span>
                 {pullQuote}
-                <span>”</span>
+                <span>â€</span>
               </aside>
             )}
 
@@ -368,7 +368,7 @@ export function WordCards({
   if (!parsedCards || parsedCards.length === 0) {
     return (
       <div className="card error">
-        {t.error} (Could not parse word cards — the AI may have returned non-JSON.)
+        {t.error} (Could not parse word cards â€” the AI may have returned non-JSON.)
       </div>
     );
   }
@@ -814,7 +814,7 @@ export function WordCards({
             className="angle-carousel-btn"
             onClick={goPrevious}
           >
-            ← {getPreviousLabel(lang)}
+            â† {getPreviousLabel(lang)}
           </button>
 
           <button
@@ -822,7 +822,7 @@ export function WordCards({
             className="angle-carousel-btn is-primary"
             onClick={goNext}
           >
-            {getNextLabel(lang)} →
+            {getNextLabel(lang)} â†’
           </button>
         </div>
       )}
@@ -916,12 +916,12 @@ function WordCardItem({
         `${getWhyLabel(lang)}: ${card.why_it_matters}`,
       ].join("\n");
 
-    const shareText = `${reference} — ${card.title}\n\n${baseText}\n\n${t.shareFrom}`;
+    const shareText = `${reference} â€” ${card.title}\n\n${baseText}\n\n${t.shareFrom}`;
 
     if (typeof navigator !== "undefined" && navigator.share) {
       try {
         await navigator.share({
-          title: `${reference} — ${card.title}`,
+          title: `${reference} â€” ${card.title}`,
           text: shareText,
         });
       } catch {
@@ -947,17 +947,9 @@ function WordCardItem({
           aria-label={`${index + 1} of ${totalCount}`}
         >
           <span className="angle-card-progress-current">{cardNumber}</span>
-          <span className="angle-card-progress-separator">—</span>
+          <span className="angle-card-progress-separator">â€”</span>
           <span className="angle-card-progress-total">{totalNumber}</span>
         </div>
-
-        <button
-          type="button"
-          className={`angle-expand-btn${expanded ? " is-open" : ""}`}
-          onClick={handleExpand}
-        >
-          {expanded ? collapseLabel : t.expand}
-        </button>
       </div>
 
       <h3 className="angle-card-title">{card.title}</h3>
@@ -966,7 +958,7 @@ function WordCardItem({
 
       <div className="angle-anchor-box">
         <div className="angle-anchor-label">{getOriginalLabel(lang)}</div>
-        <div className="angle-anchor-text">“{card.original}”</div>
+        <div className="angle-anchor-text">â€œ{card.original}â€</div>
       </div>
 
       <div className="angle-card-body">
@@ -1035,3 +1027,4 @@ function WordCardItem({
     </article>
   );
 }
+
