@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, type ReactNode, type TouchEvent } from "react";
 import { dictionary, type Lang } from "@/lib/i18n/dictionary";
@@ -17,12 +17,12 @@ function normalizeCard(c: unknown): AngleCard | null {
   const o = c as Record<string, unknown>;
 
   const title = String(
-    o.title ?? o["заголовок"] ?? o.heading ?? o.name ?? o.discovery ?? ""
+    o.title ?? o["Ð·Ð°Ð³Ð¾Ð»Ð¾Ð²Ð¾Ðº"] ?? o.heading ?? o.name ?? o.discovery ?? ""
   ).trim();
 
   const teaser = String(
     o.teaser ??
-      o["кратко"] ??
+      o["ÐºÑ€Ð°Ñ‚ÐºÐ¾"] ??
       o.description ??
       o.summary ??
       o.body ??
@@ -32,7 +32,7 @@ function normalizeCard(c: unknown): AngleCard | null {
 
   const anchor = String(
     o.anchor ??
-      o["опора"] ??
+      o["Ð¾Ð¿Ð¾Ñ€Ð°"] ??
       o.anchorQuote ??
       o.keyword ??
       o.key_phrase ??
@@ -45,8 +45,8 @@ function normalizeCard(c: unknown): AngleCard | null {
     o.why_it_matters ??
       o.whyItMatters ??
       o.whyMatters ??
-      o["почему_важно"] ??
-      o["почему это важно"] ??
+      o["Ð¿Ð¾Ñ‡ÐµÐ¼Ñƒ_Ð²Ð°Ð¶Ð½Ð¾"] ??
+      o["Ð¿Ð¾Ñ‡ÐµÐ¼Ñƒ ÑÑ‚Ð¾ Ð²Ð°Ð¶Ð½Ð¾"] ??
       o.significance ??
       o.insight ??
       o.conclusion ??
@@ -88,44 +88,44 @@ function extractCards(raw: string): AngleCard[] | null {
 }
 
 function getCollapseLabel(lang: Lang): string {
-  if (lang === "ru") return "Свернуть";
+  if (lang === "ru") return "Ð¡Ð²ÐµÑ€Ð½ÑƒÑ‚ÑŒ";
   if (lang === "es") return "Ocultar";
   return "Collapse";
 }
 
 function getArticleLabel(lang: Lang): string {
-  if (lang === "ru") return "Развернутая мысль";
+  if (lang === "ru") return "Ð Ð°Ð·Ð²ÐµÑ€Ð½ÑƒÑ‚Ð°Ñ Ð¼Ñ‹ÑÐ»ÑŒ";
   if (lang === "es") return "Lectura ampliada";
   return "Expanded reading";
 }
 
 function getShareLabel(lang: Lang): string {
-  if (lang === "ru") return "Поделиться этой мыслью";
+  if (lang === "ru") return "ÐŸÐ¾Ð´ÐµÐ»Ð¸Ñ‚ÑŒÑÑ ÑÑ‚Ð¾Ð¹ Ð¼Ñ‹ÑÐ»ÑŒÑŽ";
   if (lang === "es") return "Compartir esta idea";
   return "Share this insight";
 }
 
 function getPreviousLabel(lang: Lang): string {
-  if (lang === "ru") return "Назад";
+  if (lang === "ru") return "ÐÐ°Ð·Ð°Ð´";
   if (lang === "es") return "Anterior";
   return "Previous";
 }
 
 function getNextLabel(lang: Lang): string {
-  if (lang === "ru") return "Дальше";
+  if (lang === "ru") return "Ð”Ð°Ð»ÑŒÑˆÐµ";
   if (lang === "es") return "Siguiente";
   return "Next";
 }
 
 function getAnchorLabel(lang: Lang): string {
-  if (lang === "ru") return "опора";
+  if (lang === "ru") return "Ð¾Ð¿Ð¾Ñ€Ð°";
   if (lang === "es") return "apoyo";
   return "anchor";
 }
 
 function getWhyLabel(lang: Lang): string {
-  if (lang === "ru") return "Почему это важно";
-  if (lang === "es") return "Por qué importa";
+  if (lang === "ru") return "ÐŸÐ¾Ñ‡ÐµÐ¼Ñƒ ÑÑ‚Ð¾ Ð²Ð°Ð¶Ð½Ð¾";
+  if (lang === "es") return "Por quÃ© importa";
   return "Why it matters";
 }
 
@@ -163,7 +163,7 @@ function splitArticleParagraphs(text: string): string[] {
   if (paragraphs.length > 1) return paragraphs;
 
   return normalized
-    .split(/(?<=[.!?…])\s+(?=[А-ЯA-ZЁ])/g)
+    .split(/(?<=[.!?â€¦])\s+(?=[Ð-Ð¯A-ZÐ])/g)
     .map((p) => p.trim())
     .filter((p) => p.length > 20);
 }
@@ -172,7 +172,7 @@ function splitSentences(text: string): string[] {
   return text
     .replace(/\s+/g, " ")
     .trim()
-    .split(/(?<=[.!?…])\s+(?=[А-ЯA-ZЁ«])/g)
+    .split(/(?<=[.!?â€¦])\s+(?=[Ð-Ð¯A-ZÐÂ«])/g)
     .map((sentence) => sentence.trim())
     .filter(Boolean);
 }
@@ -219,7 +219,7 @@ function splitReadingParagraphs(text: string): string[] {
 function cleanInlineMarkdown(text: string): string {
   return text
     .replace(/^#{1,4}\s+/g, "")
-    .replace(/^[-–—]\s+/g, "")
+    .replace(/^[-â€“â€”]\s+/g, "")
     .trim();
 }
 
@@ -243,7 +243,7 @@ function getSentenceCandidates(paragraphs: string[]): string[] {
   return paragraphs
     .flatMap((paragraph) =>
       removeMarkdownMarkers(paragraph)
-        .split(/(?<=[.!?…])\s+/g)
+        .split(/(?<=[.!?â€¦])\s+/g)
         .map((sentence) => sentence.trim())
     )
     .filter((sentence) => sentence.length >= 70 && sentence.length <= 210);
@@ -254,18 +254,18 @@ function pickPullQuote(paragraphs: string[], title: string): string {
 
   const strong =
     candidates.find((sentence) =>
-      /(не просто|именно|становится|превращает|показывает|открывает|меняет|центр|ключ|пауза|вдруг|теперь)/i.test(
+      /(Ð½Ðµ Ð¿Ñ€Ð¾ÑÑ‚Ð¾|Ð¸Ð¼ÐµÐ½Ð½Ð¾|ÑÑ‚Ð°Ð½Ð¾Ð²Ð¸Ñ‚ÑÑ|Ð¿Ñ€ÐµÐ²Ñ€Ð°Ñ‰Ð°ÐµÑ‚|Ð¿Ð¾ÐºÐ°Ð·Ñ‹Ð²Ð°ÐµÑ‚|Ð¾Ñ‚ÐºÑ€Ñ‹Ð²Ð°ÐµÑ‚|Ð¼ÐµÐ½ÑÐµÑ‚|Ñ†ÐµÐ½Ñ‚Ñ€|ÐºÐ»ÑŽÑ‡|Ð¿Ð°ÑƒÐ·Ð°|Ð²Ð´Ñ€ÑƒÐ³|Ñ‚ÐµÐ¿ÐµÑ€ÑŒ)/i.test(
         sentence
       )
     ) ?? candidates[0];
 
-  if (strong) return strong.replace(/[.。]$/, "");
+  if (strong) return strong.replace(/[.ã€‚]$/, "");
 
   return title;
 }
 
 function removeTerminalPeriod(text: string): string {
-  return text.trim().replace(/[.。]$/, "");
+  return text.trim().replace(/[.ã€‚]$/, "");
 }
 
 function splitWhyForDisplay(text: string): {
@@ -348,9 +348,9 @@ function EditorialArticle({
           <div key={`${cleaned.slice(0, 30)}-${index}`}>
             {shouldInsertPullQuote && (
               <aside className="editorial-pullquote">
-                <span>“</span>
+                <span>â€œ</span>
                 {pullQuote}
-                <span>”</span>
+                <span>â€</span>
               </aside>
             )}
 
@@ -392,7 +392,7 @@ export function AngleCards({
   if (!parsedCards || parsedCards.length === 0) {
     return (
       <div className="card error">
-        {t.error} (Could not parse angles — the AI may have returned non-JSON.)
+        {t.error} (Could not parse angles â€” the AI may have returned non-JSON.)
       </div>
     );
   }
@@ -838,7 +838,7 @@ export function AngleCards({
             className="angle-carousel-btn"
             onClick={goPrevious}
           >
-            ← {getPreviousLabel(lang)}
+            â† {getPreviousLabel(lang)}
           </button>
 
           <button
@@ -846,7 +846,7 @@ export function AngleCards({
             className="angle-carousel-btn is-primary"
             onClick={goNext}
           >
-            {getNextLabel(lang)} →
+            {getNextLabel(lang)} â†’
           </button>
         </div>
       )}
@@ -930,12 +930,12 @@ function AngleCardItem({
 
   async function handleShare() {
     const baseText = article || card.teaser;
-    const shareText = `${reference} — ${card.title}\n\n${baseText}\n\n${t.shareFrom}`;
+    const shareText = `${reference} â€” ${card.title}\n\n${baseText}\n\n${t.shareFrom}`;
 
     if (typeof navigator !== "undefined" && navigator.share) {
       try {
         await navigator.share({
-          title: `${reference} — ${card.title}`,
+          title: `${reference} â€” ${card.title}`,
           text: shareText,
         });
       } catch {
@@ -961,7 +961,7 @@ function AngleCardItem({
           aria-label={`${index + 1} of ${totalCount}`}
         >
           <span className="angle-card-progress-current">{cardNumber}</span>
-          <span className="angle-card-progress-separator">—</span>
+          <span className="angle-card-progress-separator">â€”</span>
           <span className="angle-card-progress-total">{totalNumber}</span>
         </div>
 
@@ -984,7 +984,7 @@ function AngleCardItem({
 
       <div className="angle-anchor-box">
         <div className="angle-anchor-label">{getAnchorLabel(lang)}</div>
-        <div className="angle-anchor-text">“{card.anchor}”</div>
+        <div className="angle-anchor-text">â€œ{card.anchor}â€</div>
       </div>
 
       <div className="angle-card-body">
@@ -1048,3 +1048,4 @@ function AngleCardItem({
     </article>
   );
 }
+

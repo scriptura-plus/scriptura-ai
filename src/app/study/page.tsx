@@ -7,7 +7,6 @@ import { VerseDisplay } from "@/components/VerseDisplay";
 import { VersePicker } from "@/components/VersePicker";
 import { LensTabs } from "@/components/LensTabs";
 import { LensResults } from "@/components/LensResults";
-import { ExtraAnalysis } from "@/components/ExtraAnalysis";
 import type { LensId } from "@/lib/prompts/buildLensPrompt";
 
 
@@ -65,15 +64,6 @@ function StudyInner() {
           <div className="skeleton" style={{ width: "82%" }} />
         </div>
       )}
-
-      {verseText && (
-        <ExtraAnalysis
-          reference={reference}
-          verseText={verseText}
-          lang={lang}
-          provider={provider}
-        />
-      )}
     </main>
   );
 }
@@ -94,6 +84,7 @@ export default function StudyPage() {
     </Suspense>
   );
 }
+
 
 
 
