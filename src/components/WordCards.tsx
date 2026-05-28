@@ -81,50 +81,50 @@ function extractCards(raw: string): WordCard[] | null {
 }
 
 function getCollapseLabel(lang: Lang): string {
-  if (lang === "ru") return "Ð¡Ð²ÐµÑ€Ð½ÑƒÑ‚ÑŒ";
+  if (lang === "ru") return "Свернуть";
   if (lang === "es") return "Ocultar";
   return "Collapse";
 }
 
 function getArticleLabel(lang: Lang): string {
-  if (lang === "ru") return "Ð Ð°Ð·Ð²ÐµÑ€Ð½ÑƒÑ‚Ð°Ñ Ð¼Ñ‹ÑÐ»ÑŒ";
+  if (lang === "ru") return "Развёрнутая мысль";
   if (lang === "es") return "Lectura ampliada";
   return "Expanded reading";
 }
 
 function getShareLabel(lang: Lang): string {
-  if (lang === "ru") return "ÐŸÐ¾Ð´ÐµÐ»Ð¸Ñ‚ÑŒÑÑ ÑÑ‚Ð¾Ð¹ Ð¼Ñ‹ÑÐ»ÑŒÑŽ";
+  if (lang === "ru") return "Поделиться этой мыслью";
   if (lang === "es") return "Compartir esta idea";
   return "Share this insight";
 }
 
 function getPreviousLabel(lang: Lang): string {
-  if (lang === "ru") return "ÐÐ°Ð·Ð°Ð´";
+  if (lang === "ru") return "Назад";
   if (lang === "es") return "Anterior";
   return "Previous";
 }
 
 function getNextLabel(lang: Lang): string {
-  if (lang === "ru") return "Ð”Ð°Ð»ÑŒÑˆÐµ";
+  if (lang === "ru") return "Дальше";
   if (lang === "es") return "Siguiente";
   return "Next";
 }
 
 function getOriginalLabel(lang: Lang): string {
-  if (lang === "ru") return "Ð¾Ñ€Ð¸Ð³Ð¸Ð½Ð°Ð»";
+  if (lang === "ru") return "Оригинал";
   if (lang === "es") return "original";
   return "original";
 }
 
 function getGapLabel(lang: Lang): string {
-  if (lang === "ru") return "Ð§Ñ‚Ð¾ Ñ‚ÐµÑ€ÑÐµÑ‚ÑÑ";
-  if (lang === "es") return "QuÃ© se pierde";
+  if (lang === "ru") return "Что теряется";
+  if (lang === "es") return "Qué se pierde";
   return "What gets lost";
 }
 
 function getWhyLabel(lang: Lang): string {
-  if (lang === "ru") return "ÐŸÐ¾Ñ‡ÐµÐ¼Ñƒ ÑÑ‚Ð¾ Ð²Ð°Ð¶Ð½Ð¾";
-  if (lang === "es") return "Por quÃ© importa";
+  if (lang === "ru") return "Почему это важно";
+  if (lang === "es") return "Por qué importa";
   return "Why it matters";
 }
 
@@ -814,7 +814,7 @@ export function WordCards({
             className="angle-carousel-btn"
             onClick={goPrevious}
           >
-            â† {getPreviousLabel(lang)}
+            ← {getPreviousLabel(lang)}
           </button>
 
           <button
@@ -822,7 +822,7 @@ export function WordCards({
             className="angle-carousel-btn is-primary"
             onClick={goNext}
           >
-            {getNextLabel(lang)} â†’
+            {getNextLabel(lang)} →
           </button>
         </div>
       )}
@@ -916,12 +916,12 @@ function WordCardItem({
         `${getWhyLabel(lang)}: ${card.why_it_matters}`,
       ].join("\n");
 
-    const shareText = `${reference} â€” ${card.title}\n\n${baseText}\n\n${t.shareFrom}`;
+    const shareText = `${reference} — ${card.title}\n\n${baseText}\n\n${t.shareFrom}`;
 
     if (typeof navigator !== "undefined" && navigator.share) {
       try {
         await navigator.share({
-          title: `${reference} â€” ${card.title}`,
+          title: `${reference} — ${card.title}`,
           text: shareText,
         });
       } catch {
@@ -947,7 +947,7 @@ function WordCardItem({
           aria-label={`${index + 1} of ${totalCount}`}
         >
           <span className="angle-card-progress-current">{cardNumber}</span>
-          <span className="angle-card-progress-separator">â€”</span>
+          <span className="angle-card-progress-separator">—</span>
           <span className="angle-card-progress-total">{totalNumber}</span>
         </div>
       </div>
@@ -958,7 +958,7 @@ function WordCardItem({
 
       <div className="angle-anchor-box">
         <div className="angle-anchor-label">{getOriginalLabel(lang)}</div>
-        <div className="angle-anchor-text">â€œ{card.original}â€</div>
+        <div className="angle-anchor-text">«{card.original}»</div>
       </div>
 
       <div className="angle-card-body">
@@ -1027,4 +1027,5 @@ function WordCardItem({
     </article>
   );
 }
+
 
