@@ -88,44 +88,44 @@ function extractCards(raw: string): AngleCard[] | null {
 }
 
 function getCollapseLabel(lang: Lang): string {
-  if (lang === "ru") return "Ð¡Ð²ÐµÑ€Ð½ÑƒÑ‚ÑŒ";
+  if (lang === "ru") return "Свернуть";
   if (lang === "es") return "Ocultar";
   return "Collapse";
 }
 
 function getArticleLabel(lang: Lang): string {
-  if (lang === "ru") return "Ð Ð°Ð·Ð²ÐµÑ€Ð½ÑƒÑ‚Ð°Ñ Ð¼Ñ‹ÑÐ»ÑŒ";
+  if (lang === "ru") return "Развёрнутая мысль";
   if (lang === "es") return "Lectura ampliada";
   return "Expanded reading";
 }
 
 function getShareLabel(lang: Lang): string {
-  if (lang === "ru") return "ÐŸÐ¾Ð´ÐµÐ»Ð¸Ñ‚ÑŒÑÑ ÑÑ‚Ð¾Ð¹ Ð¼Ñ‹ÑÐ»ÑŒÑŽ";
+  if (lang === "ru") return "Поделиться этой мыслью";
   if (lang === "es") return "Compartir esta idea";
   return "Share this insight";
 }
 
 function getPreviousLabel(lang: Lang): string {
-  if (lang === "ru") return "ÐÐ°Ð·Ð°Ð´";
+  if (lang === "ru") return "Назад";
   if (lang === "es") return "Anterior";
   return "Previous";
 }
 
 function getNextLabel(lang: Lang): string {
-  if (lang === "ru") return "Ð”Ð°Ð»ÑŒÑˆÐµ";
+  if (lang === "ru") return "Дальше";
   if (lang === "es") return "Siguiente";
   return "Next";
 }
 
 function getAnchorLabel(lang: Lang): string {
-  if (lang === "ru") return "Ð¾Ð¿Ð¾Ñ€Ð°";
+  if (lang === "ru") return "Опора";
   if (lang === "es") return "apoyo";
   return "anchor";
 }
 
 function getWhyLabel(lang: Lang): string {
-  if (lang === "ru") return "ÐŸÐ¾Ñ‡ÐµÐ¼Ñƒ ÑÑ‚Ð¾ Ð²Ð°Ð¶Ð½Ð¾";
-  if (lang === "es") return "Por quÃ© importa";
+  if (lang === "ru") return "Почему это важно";
+  if (lang === "es") return "Por qué importa";
   return "Why it matters";
 }
 
@@ -838,7 +838,7 @@ export function AngleCards({
             className="angle-carousel-btn"
             onClick={goPrevious}
           >
-            â† {getPreviousLabel(lang)}
+            ← {getPreviousLabel(lang)}
           </button>
 
           <button
@@ -846,7 +846,7 @@ export function AngleCards({
             className="angle-carousel-btn is-primary"
             onClick={goNext}
           >
-            {getNextLabel(lang)} â†’
+            {getNextLabel(lang)} →
           </button>
         </div>
       )}
@@ -961,17 +961,9 @@ function AngleCardItem({
           aria-label={`${index + 1} of ${totalCount}`}
         >
           <span className="angle-card-progress-current">{cardNumber}</span>
-          <span className="angle-card-progress-separator">â€”</span>
+          <span className="angle-card-progress-separator">—</span>
           <span className="angle-card-progress-total">{totalNumber}</span>
         </div>
-
-        <button
-          type="button"
-          className={`angle-expand-btn${expanded ? " is-open" : ""}`}
-          onClick={handleExpand}
-        >
-          {expanded ? collapseLabel : t.expand}
-        </button>
       </div>
 
       <h3 className="angle-card-title">{card.title}</h3>
@@ -984,7 +976,7 @@ function AngleCardItem({
 
       <div className="angle-anchor-box">
         <div className="angle-anchor-label">{getAnchorLabel(lang)}</div>
-        <div className="angle-anchor-text">â€œ{card.anchor}â€</div>
+        <div className="angle-anchor-text">«{card.anchor}»</div>
       </div>
 
       <div className="angle-card-body">
@@ -1048,4 +1040,5 @@ function AngleCardItem({
     </article>
   );
 }
+
 
