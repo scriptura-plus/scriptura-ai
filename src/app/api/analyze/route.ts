@@ -32,6 +32,7 @@ import {
   publishedCardsToAngleCardsJson,
   savePublishedLensSet,
 } from "@/lib/cache/publishedLensSets";
+import { mirrorPublishedPearlsToResearchNotes } from "@/lib/cache/mirrorPublishedPearlsToResearchNotes";
 import {
   getResearchArticle,
   saveResearchArticle,
@@ -1134,6 +1135,26 @@ export async function POST(req: Request) {
               cards: savedPearlSet.data.cards.length,
             });
 
+            try {
+              await mirrorPublishedPearlsToResearchNotes({
+                set: savedPearlSet.data.set,
+                cards: savedPearlSet.data.cards,
+                referenceParts: {
+                  book_key: normalizedReference.book ?? null,
+                  book: normalizedReference.book ?? null,
+                  chapter: normalizedReference.chapter ?? null,
+                  verse: normalizedReference.verse ?? null,
+                },
+              });
+            } catch (mirrorError) {
+              console.error("[RESEARCH_NOTES_MIRROR] generated pearl mirror failed", {
+                reference,
+                canonical_ref: normalizedReference.canonical_ref,
+                setId: savedPearlSet.data.set.id,
+                error: mirrorError,
+              });
+            }
+
             return NextResponse.json({
               text: publishedCardsToAngleCardsJson(savedPearlSet.data.cards),
               cached: true,
@@ -1678,6 +1699,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
+
 
 
 
