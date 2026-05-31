@@ -1,73 +1,95 @@
-"use client";
+﻿"use client";
 
-import { useState, type FormEvent } from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { useMemo, useState, type FormEvent } from "react";
 
-const text = {
-  eyebrow: "Scriptura Studio",
-  title: "\u041a\u0430\u0431\u0438\u043d\u0435\u0442 \u0441\u0442\u0438\u0445\u0430",
-  subtitle: "\u0412\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u0441\u0442\u0438\u0445, \u0447\u0442\u043e\u0431\u044b \u043e\u0442\u043a\u0440\u044b\u0442\u044c read-only \u043e\u0431\u0437\u043e\u0440 \u0433\u043e\u0442\u043e\u0432\u044b\u0445 \u043f\u0443\u0431\u043b\u0438\u0447\u043d\u044b\u0445 \u043c\u0430\u0442\u0435\u0440\u0438\u0430\u043b\u043e\u0432.",
-  openOverview: "\u041e\u0442\u043a\u0440\u044b\u0442\u044c \u043e\u0431\u0437\u043e\u0440",
-  futureTitle: "\u0411\u0443\u0434\u0443\u0449\u0438\u0435 \u0440\u0430\u0431\u043e\u0447\u0438\u0435 \u044d\u043a\u0440\u0430\u043d\u044b",
-  futureDescription: "\u042d\u0442\u0438 \u043f\u0440\u043e\u0446\u0435\u0441\u0441\u044b \u0431\u0443\u0434\u0443\u0442 \u043e\u0442\u0434\u0435\u043b\u044c\u043d\u044b\u043c\u0438 \u044d\u043a\u0440\u0430\u043d\u0430\u043c\u0438 \u041a\u0430\u0431\u0438\u043d\u0435\u0442\u0430 \u0441\u0442\u0438\u0445\u0430. \u0421\u0435\u0439\u0447\u0430\u0441 \u043e\u043d\u0438 \u043f\u043e\u043a\u0430\u0437\u0430\u043d\u044b \u0442\u043e\u043b\u044c\u043a\u043e \u043a\u0430\u043a \u0441\u0442\u0440\u0443\u043a\u0442\u0443\u0440\u0430 \u0431\u0443\u0434\u0443\u0449\u0435\u0439 \u043d\u0430\u0432\u0438\u0433\u0430\u0446\u0438\u0438.",
-};
-
-const futureScreens = [
-  "\u0421\u043e\u0440\u0442\u0438\u0440\u043e\u0432\u043a\u0430 \u043a\u0430\u0440\u0442\u043e\u0447\u0435\u043a - \u043f\u043e\u0437\u0436\u0435",
-  "\u0414\u043e\u0431\u0430\u0432\u0438\u0442\u044c \u043a\u0430\u0440\u0442\u043e\u0447\u043a\u0438 - \u043f\u043e\u0437\u0436\u0435",
-  "\u0421\u043e\u0431\u0440\u0430\u0442\u044c \u0441\u0442\u0430\u0442\u044c\u044e - \u043f\u043e\u0437\u0436\u0435",
-  "\u041c\u0430\u0442\u0435\u0440\u0438\u0430\u043b\u044b / Knowledge Index - \u043f\u043e\u0437\u0436\u0435",
+const examples = [
+  { label: "Иоанна 17:3", canonicalRef: "john-17-3" },
+  { label: "Иоанна 3:16", canonicalRef: "john-3-16" },
+  { label: "Малахия 3:10", canonicalRef: "malachi-3-10" },
+  { label: "Наум 1:7", canonicalRef: "nahum-1-7" },
 ];
 
-const pageStyles = [
-  ".page { min-height: 100vh; padding: 32px; background: #f7efe2; color: #2b241b; font-family: ui-serif, Georgia, Cambria, \"Times New Roman\", Times, serif; }",
-  ".hero, .panel, .future { max-width: 960px; margin-left: auto; margin-right: auto; }",
-  ".hero { margin-bottom: 24px; }",
-  ".eyebrow { margin: 0 0 8px; color: #7e6143; font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; }",
-  "h1 { margin: 0; font-size: 42px; line-height: 1.05; }",
-  "h2 { margin: 0 0 10px; font-size: 24px; }",
-  ".subtitle, .future p { max-width: 760px; margin: 12px 0 0; color: #66533e; font-size: 18px; line-height: 1.5; }",
-  ".panel, .future { border: 1px solid rgba(109, 82, 51, 0.16); border-radius: 24px; background: rgba(255, 252, 246, 0.92); box-shadow: 0 16px 42px rgba(92, 66, 36, 0.08); }",
-  ".panel { padding: 20px; margin-bottom: 18px; }",
-  ".form { display: grid; grid-template-columns: 1fr 140px auto; gap: 12px; align-items: end; }",
-  "label { display: grid; gap: 7px; color: #6f5b45; font-size: 14px; }",
-  "input, select { border: 1px solid rgba(93, 70, 44, 0.22); background: #fffaf1; border-radius: 14px; padding: 12px 13px; color: #2b241b; font-size: 15px; outline: none; }",
-  "button { border: none; border-radius: 14px; padding: 13px 18px; background: #496f8f; color: white; font-weight: 700; cursor: pointer; }",
-  ".future { padding: 20px; }",
-  ".futureGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 18px; }",
-  ".futureCard { border-radius: 18px; background: #f4eadb; color: #6b563f; padding: 16px; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif; font-weight: 700; }",
-  "@media (max-width: 820px) { .page { padding: 18px; } .form, .futureGrid { grid-template-columns: 1fr; } h1 { font-size: 34px; } }",
-].join("\n");
+function normalizeReference(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[.:]/g, "-")
+    .replace(/\s+/g, "-")
+    .replace(/[^a-z0-9-]/g, "")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
 
-export default function VerseWorkspaceEntryPage() {
-  const router = useRouter();
-  const [reference, setReference] = useState("John 17:3");
+function buildHref(path: string, canonicalRef: string, lang: string): string {
+  const params = new URLSearchParams();
+  params.set("canonical_ref", canonicalRef);
+  params.set("lang", lang);
+  return `${path}?${params.toString()}`;
+}
+
+export default function VerseWorkspaceHubPage() {
+  const [reference, setReference] = useState("john-17-3");
   const [lang, setLang] = useState("ru");
+  const [selectedRef, setSelectedRef] = useState("john-17-3");
 
-  function openOverview(event: FormEvent<HTMLFormElement>) {
+  const canonicalRef = useMemo(() => {
+    return normalizeReference(selectedRef) || "john-17-3";
+  }, [selectedRef]);
+
+  function openVerse(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const cleanReference = reference.trim() || "John 17:3";
-    const params = new URLSearchParams({ reference: cleanReference, lang });
-    router.push("/admin/studio/verse/overview?" + params.toString());
+    setSelectedRef(normalizeReference(reference) || "john-17-3");
   }
+
+  const activeSections = [
+    {
+      title: "Обзор",
+      description: "Посмотреть, что уже есть по этому стиху в публичном наборе.",
+      href: buildHref("/admin/studio/verse/overview", canonicalRef, lang),
+    },
+    {
+      title: "Наблюдения",
+      description: "Открыть карточки Наблюдений из research_notes.",
+      href: buildHref("/admin/studio/verse-notes", canonicalRef, lang),
+    },
+  ];
+
+  const futureSections = [
+    "Лексика",
+    "Переводы",
+    "Статьи",
+    "Материалы",
+    "Работа с Opus",
+    "Добавить карточки",
+  ];
 
   return (
     <main className="page">
       <section className="hero">
-        <p className="eyebrow">{text.eyebrow}</p>
-        <h1>{text.title}</h1>
-        <p className="subtitle">{text.subtitle}</p>
+        <p className="eyebrow">Scriptura Studio</p>
+        <h1>Кабинет стиха</h1>
+        <p className="subtitle">
+          Выберите стих и откройте нужный раздел. Сейчас доступны read-only
+          обзор и Наблюдения; остальные рабочие разделы будут добавлены позже.
+        </p>
       </section>
 
       <section className="panel">
-        <form onSubmit={openOverview} className="form">
+        <h2>Выберите стих</h2>
+
+        <form onSubmit={openVerse} className="form">
           <label>
-            Reference
-            <input value={reference} onChange={(event) => setReference(event.target.value)} placeholder="John 17:3" />
+            canonical_ref или reference
+            <input
+              value={reference}
+              onChange={(event) => setReference(event.target.value)}
+              placeholder="john-17-3"
+            />
           </label>
 
           <label>
-            Lang
+            Язык
             <select value={lang} onChange={(event) => setLang(event.target.value)}>
               <option value="ru">ru</option>
               <option value="en">en</option>
@@ -75,21 +97,268 @@ export default function VerseWorkspaceEntryPage() {
             </select>
           </label>
 
-          <button type="submit">{text.openOverview}</button>
+          <button type="submit">Открыть стих</button>
         </form>
-      </section>
 
-      <section className="future">
-        <h2>{text.futureTitle}</h2>
-        <p>{text.futureDescription}</p>
-        <div className="futureGrid">
-          {futureScreens.map((item) => (
-            <div className="futureCard" key={item}>{item}</div>
+        <div className="examples">
+          <span>Быстрые примеры:</span>
+          {examples.map((item) => (
+            <button
+              key={item.canonicalRef}
+              type="button"
+              onClick={() => {
+                setReference(item.canonicalRef);
+                setSelectedRef(item.canonicalRef);
+              }}
+            >
+              {item.label}
+            </button>
           ))}
         </div>
       </section>
 
-      <style jsx>{pageStyles}</style>
+      <section className="current">
+        <div>
+          <span>Текущий стих</span>
+          <strong>{canonicalRef}</strong>
+        </div>
+        <div>
+          <span>Язык</span>
+          <strong>{lang}</strong>
+        </div>
+      </section>
+
+      <section className="sections">
+        <h2>Откройте раздел</h2>
+
+        <div className="grid">
+          {activeSections.map((section) => (
+            <Link className="sectionCard active" href={section.href} key={section.title}>
+              <span>Доступно</span>
+              <strong>{section.title}</strong>
+              <p>{section.description}</p>
+            </Link>
+          ))}
+
+          {futureSections.map((title) => (
+            <div className="sectionCard disabled" key={title} aria-disabled="true">
+              <span>Скоро</span>
+              <strong>{title}</strong>
+              <p>Этот раздел будет добавлен позже.</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <style jsx>{`
+        .page {
+          min-height: 100vh;
+          padding: 42px;
+          background: #f6ead7;
+          color: #24180e;
+          font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+
+        .hero,
+        .panel,
+        .current,
+        .sections {
+          max-width: 1040px;
+          margin-left: auto;
+          margin-right: auto;
+        }
+
+        .hero {
+          margin-bottom: 24px;
+        }
+
+        .eyebrow {
+          margin: 0 0 10px;
+          color: #8a5a2b;
+          font-size: 14px;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+        }
+
+        h1 {
+          margin: 0;
+          font-size: clamp(42px, 7vw, 72px);
+          line-height: 0.98;
+        }
+
+        h2 {
+          margin: 0 0 16px;
+          font-size: 26px;
+        }
+
+        .subtitle {
+          max-width: 760px;
+          margin: 18px 0 0;
+          color: #5d4934;
+          font-size: 20px;
+          line-height: 1.6;
+        }
+
+        .panel,
+        .current,
+        .sections {
+          border: 1px solid rgba(120, 84, 45, 0.18);
+          border-radius: 24px;
+          background: rgba(255, 250, 241, 0.62);
+          box-shadow: 0 14px 36px rgba(54, 36, 18, 0.07);
+        }
+
+        .panel {
+          padding: 24px;
+          margin-bottom: 18px;
+        }
+
+        .form {
+          display: grid;
+          grid-template-columns: 1fr 140px auto;
+          gap: 12px;
+          align-items: end;
+        }
+
+        label {
+          display: grid;
+          gap: 7px;
+          color: #6d5a45;
+          font-size: 14px;
+        }
+
+        input,
+        select,
+        button {
+          min-height: 42px;
+          border: 1px solid rgba(120, 84, 45, 0.28);
+          border-radius: 12px;
+          padding: 9px 12px;
+          background: rgba(255,255,255,0.76);
+          color: #24180e;
+          font: inherit;
+        }
+
+        button {
+          cursor: pointer;
+          background: #8a4f18;
+          border-color: #8a4f18;
+          color: white;
+          font-weight: 700;
+        }
+
+        .examples {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 10px;
+          align-items: center;
+          margin-top: 18px;
+        }
+
+        .examples span {
+          color: #6d5a45;
+        }
+
+        .examples button {
+          min-height: 34px;
+          padding: 7px 10px;
+          background: #fffaf1;
+          color: #8a4f18;
+          border-color: rgba(120, 84, 45, 0.24);
+          font-weight: 600;
+        }
+
+        .current {
+          display: flex;
+          justify-content: space-between;
+          gap: 20px;
+          padding: 22px 24px;
+          margin-bottom: 18px;
+        }
+
+        .current div {
+          display: grid;
+          gap: 6px;
+        }
+
+        .current span {
+          color: #6d5a45;
+          font-size: 14px;
+        }
+
+        .current strong {
+          font-size: 28px;
+        }
+
+        .sections {
+          padding: 24px;
+        }
+
+        .grid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 14px;
+        }
+
+        .sectionCard {
+          display: block;
+          min-height: 144px;
+          padding: 20px;
+          border-radius: 20px;
+          text-decoration: none;
+          border: 1px solid rgba(120, 84, 45, 0.16);
+        }
+
+        .sectionCard span {
+          display: inline-block;
+          margin-bottom: 12px;
+          color: #7b6851;
+          font-size: 13px;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+        }
+
+        .sectionCard strong {
+          display: block;
+          margin-bottom: 10px;
+          color: #24180e;
+          font-size: 26px;
+        }
+
+        .sectionCard p {
+          margin: 0;
+          color: #5d4934;
+          font-size: 16px;
+          line-height: 1.45;
+        }
+
+        .sectionCard.active {
+          background: rgba(255, 253, 248, 0.92);
+        }
+
+        .sectionCard.active:hover {
+          border-color: rgba(138, 79, 24, 0.55);
+          transform: translateY(-1px);
+        }
+
+        .sectionCard.disabled {
+          background: rgba(244, 234, 219, 0.68);
+          opacity: 0.72;
+        }
+
+        @media (max-width: 820px) {
+          .page {
+            padding: 24px 18px;
+          }
+
+          .form,
+          .grid,
+          .current {
+            grid-template-columns: 1fr;
+            display: grid;
+          }
+        }
+      `}</style>
     </main>
   );
 }
