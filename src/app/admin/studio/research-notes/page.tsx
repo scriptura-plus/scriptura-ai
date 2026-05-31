@@ -53,9 +53,9 @@ function getLang(value: string | undefined): string {
 }
 
 function truncate(value: string | null, max = 420): string {
-  if (!value) return "â€”";
+  if (!value) return "-";
   if (value.length <= max) return value;
-  return `${value.slice(0, max).trim()}â€¦`;
+  return `${value.slice(0, max).trim()}...`;
 }
 
 export default async function ResearchNotesPage({
@@ -124,14 +124,13 @@ export default async function ResearchNotesPage({
     <main className="page">
       <section className="hero">
         <Link className="backLink" href="/admin/studio">
-          â† Studio
+          &lt; Studio
         </Link>
         <p className="eyebrow">Read-only diagnostic</p>
         <h1>Generated Observation Notes</h1>
         <p className="subtitle">
-          Ð”Ð¸Ð°Ð³Ð½Ð¾ÑÑ‚Ð¸Ñ‡ÐµÑÐºÐ¸Ð¹ ÑÐºÑ€Ð°Ð½ Ð´Ð»Ñ research_notes Ñ note_kind =
-          generated_observation_card. Ð—Ð´ÐµÑÑŒ Ð½ÐµÑ‚ Ñ€ÐµÐ´Ð°ÐºÑ‚Ð¸Ñ€Ð¾Ð²Ð°Ð½Ð¸Ñ, Ð¿ÑƒÐ±Ð»Ð¸ÐºÐ°Ñ†Ð¸Ð¸,
-          ÑÐ¾Ñ€Ñ‚Ð¸Ñ€Ð¾Ð²ÐºÐ¸ Ð¸Ð»Ð¸ Ð·Ð°Ð¿Ð¸ÑÐ¸ Ð´Ð°Ð½Ð½Ñ‹Ñ….
+          Diagnostic read-only view for generated observation notes stored in
+          research_notes. No editing, publishing, sorting or write operations.
         </p>
       </section>
 
@@ -157,15 +156,21 @@ export default async function ResearchNotesPage({
 
           <label>
             limit
-            <input name="limit" type="number" min="1" max="200" defaultValue={limit} />
+            <input
+              name="limit"
+              type="number"
+              min="1"
+              max="200"
+              defaultValue={limit}
+            />
           </label>
 
-          <button type="submit">ÐŸÐ¾ÐºÐ°Ð·Ð°Ñ‚ÑŒ</button>
+          <button type="submit">Show</button>
         </form>
 
         <div className="summary">
-          <strong>{rows.length}</strong> rows Â· note_kind: generated_observation_card Â·
-          lens_id: pearl
+          <strong>{rows.length}</strong> rows | note_kind:
+          generated_observation_card | lens_id: pearl
         </div>
 
         {errorMessage && <div className="error">{errorMessage}</div>}
@@ -173,7 +178,7 @@ export default async function ResearchNotesPage({
 
       <section className="list" aria-label="Generated observation notes">
         {rows.length === 0 && !errorMessage ? (
-          <article className="empty">ÐÐµÑ‚ ÑÑ‚Ñ€Ð¾Ðº Ð¿Ð¾ Ñ‚ÐµÐºÑƒÑ‰ÐµÐ¼Ñƒ Ñ„Ð¸Ð»ÑŒÑ‚Ñ€Ñƒ.</article>
+          <article className="empty">No rows for the current filter.</article>
         ) : null}
 
         {rows.map((row) => {
@@ -183,25 +188,25 @@ export default async function ResearchNotesPage({
               <div className="noteTop">
                 <div>
                   <p className="meta">
-                    {row.reference} Â· {row.canonical_ref ?? "no canonical_ref"} Â·{" "}
+                    {row.reference} | {row.canonical_ref ?? "no canonical_ref"} |{" "}
                     {row.lang}
                   </p>
-                  <h2>{row.title ?? "Ð‘ÐµÐ· Ð·Ð°Ð³Ð¾Ð»Ð¾Ð²ÐºÐ°"}</h2>
+                  <h2>{row.title ?? "Untitled"}</h2>
                 </div>
                 <div className="scoreBox">
                   <span>score</span>
-                  <strong>{row.score ?? "â€”"}</strong>
+                  <strong>{row.score ?? "-"}</strong>
                 </div>
               </div>
 
               <div className="grid">
                 <div>
-                  <h3>ÐžÐ¿Ð¾Ñ€Ð°</h3>
-                  <p>{row.anchor ?? "â€”"}</p>
+                  <h3>Anchor</h3>
+                  <p>{row.anchor ?? "-"}</p>
                 </div>
                 <div>
-                  <h3>ÐŸÐ¾Ñ‡ÐµÐ¼Ñƒ Ð²Ð°Ð¶Ð½Ð¾ / summary</h3>
-                  <p>{row.summary ?? "â€”"}</p>
+                  <h3>Why it matters / summary</h3>
+                  <p>{row.summary ?? "-"}</p>
                 </div>
               </div>
 
@@ -212,10 +217,10 @@ export default async function ResearchNotesPage({
 
               <div className="chips">
                 <span>status: {row.status}</span>
-                <span>review: {json.review_status ?? "â€”"}</span>
-                <span>source: {row.source_kind ?? "â€”"}</span>
-                <span>protocol: {row.protocol_version ?? "â€”"}</span>
-                <span>evidence: {row.evidence_level ?? "â€”"}</span>
+                <span>review: {json.review_status ?? "-"}</span>
+                <span>source: {row.source_kind ?? "-"}</span>
+                <span>protocol: {row.protocol_version ?? "-"}</span>
+                <span>evidence: {row.evidence_level ?? "-"}</span>
               </div>
 
               <details>
@@ -223,33 +228,33 @@ export default async function ResearchNotesPage({
                 <dl>
                   <div>
                     <dt>created_at</dt>
-                    <dd>{row.created_at ?? "â€”"}</dd>
+                    <dd>{row.created_at ?? "-"}</dd>
                   </div>
                   <div>
                     <dt>legacy</dt>
                     <dd>
-                      {row.legacy_table ?? "â€”"} / {row.legacy_id ?? "â€”"}
+                      {row.legacy_table ?? "-"} / {row.legacy_id ?? "-"}
                     </dd>
                   </div>
                   <div>
                     <dt>published_set_id</dt>
-                    <dd>{json.published_set_id ?? "â€”"}</dd>
+                    <dd>{json.published_set_id ?? "-"}</dd>
                   </div>
                   <div>
                     <dt>published_card_id</dt>
-                    <dd>{json.published_card_id ?? "â€”"}</dd>
+                    <dd>{json.published_card_id ?? "-"}</dd>
                   </div>
                   <div>
                     <dt>position</dt>
-                    <dd>{json.position ?? "â€”"}</dd>
+                    <dd>{json.position ?? "-"}</dd>
                   </div>
                   <div>
                     <dt>source_pipeline</dt>
-                    <dd>{json.source_pipeline ?? "â€”"}</dd>
+                    <dd>{json.source_pipeline ?? "-"}</dd>
                   </div>
                   <div>
                     <dt>source_model</dt>
-                    <dd>{json.source_model ?? "â€”"}</dd>
+                    <dd>{json.source_model ?? "-"}</dd>
                   </div>
                 </dl>
               </details>
@@ -264,8 +269,7 @@ export default async function ResearchNotesPage({
           padding: 32px;
           background: #f7efe2;
           color: #2b241b;
-          font-family:
-            ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
+          font-family: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
         }
 
         .hero,
@@ -284,9 +288,7 @@ export default async function ResearchNotesPage({
           display: inline-flex;
           margin-bottom: 16px;
           color: #496f8f;
-          font-family:
-            ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-            "Segoe UI", sans-serif;
+          font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
           font-weight: 700;
           text-decoration: none;
         }
@@ -338,9 +340,7 @@ export default async function ResearchNotesPage({
           display: grid;
           gap: 6px;
           color: #66533e;
-          font-family:
-            ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-            "Segoe UI", sans-serif;
+          font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
           font-size: 13px;
           font-weight: 700;
         }
@@ -368,9 +368,7 @@ export default async function ResearchNotesPage({
         .summary {
           margin-top: 14px;
           color: #66533e;
-          font-family:
-            ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-            "Segoe UI", sans-serif;
+          font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
           font-size: 14px;
         }
 
@@ -401,9 +399,7 @@ export default async function ResearchNotesPage({
         .meta {
           margin: 0 0 6px;
           color: #7e6143;
-          font-family:
-            ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-            "Segoe UI", sans-serif;
+          font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
           font-size: 13px;
           font-weight: 700;
         }
@@ -420,9 +416,7 @@ export default async function ResearchNotesPage({
           background: #eee2d0;
           padding: 10px 12px;
           text-align: center;
-          font-family:
-            ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-            "Segoe UI", sans-serif;
+          font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         }
 
         .scoreBox span {
@@ -469,9 +463,7 @@ export default async function ResearchNotesPage({
           flex-wrap: wrap;
           gap: 8px;
           margin-bottom: 12px;
-          font-family:
-            ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-            "Segoe UI", sans-serif;
+          font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
           font-size: 12px;
         }
 
@@ -490,9 +482,7 @@ export default async function ResearchNotesPage({
         summary {
           cursor: pointer;
           color: #496f8f;
-          font-family:
-            ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-            "Segoe UI", sans-serif;
+          font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
           font-weight: 800;
         }
 
@@ -501,14 +491,8 @@ export default async function ResearchNotesPage({
           grid-template-columns: repeat(2, minmax(0, 1fr));
           gap: 8px 14px;
           margin: 12px 0 0;
-          font-family:
-            ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-            "Segoe UI", sans-serif;
+          font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
           font-size: 13px;
-        }
-
-        dl div {
-          min-width: 0;
         }
 
         dt {
@@ -545,4 +529,3 @@ export default async function ResearchNotesPage({
     </main>
   );
 }
-
