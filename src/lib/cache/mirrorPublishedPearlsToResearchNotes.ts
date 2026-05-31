@@ -1,4 +1,4 @@
-import { createAdminClient } from "@/lib/supabase/server";
+﻿import { createAdminClient } from "@/lib/supabase/server";
 import type {
   PublishedLensCardRow,
   PublishedLensSetRow,
@@ -102,7 +102,7 @@ export async function mirrorPublishedPearlsToResearchNotes(args: {
         verse: args.referenceParts?.verse ?? null,
         lang: args.set.lang,
 
-        source_id: args.set.id,
+        source_id: null,
         legacy_table: "published_lens_cards",
         legacy_id: card.id,
 
